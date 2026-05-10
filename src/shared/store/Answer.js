@@ -44,6 +44,7 @@ export default {
             heuristicQuestions: value.heuristicQuestions.map((heuristic) => ({
               ...heuristic,
               heuristicQuestions: heuristic.heuristicQuestions.map(
+<<<<<<< HEAD
                 (question) => {
                   const heuristicAnswer = question.heuristicAnswer
 
@@ -70,6 +71,20 @@ export default {
                           },
                   }
                 },
+=======
+                (question) => ({
+                  ...question,
+                  heuristicAnswer: question.heuristicAnswer?.text
+                    ? question.heuristicAnswer
+                    : {
+                        text:
+                          testOptions?.find(
+                            (op) => op.value === question.heuristicAnswer,
+                          )?.text ?? '',
+                        value: question.heuristicAnswer,
+                      },
+                }),
+>>>>>>> upstream/develop
               ),
             })),
           }

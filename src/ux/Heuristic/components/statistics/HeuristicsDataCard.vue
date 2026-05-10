@@ -81,6 +81,7 @@
                 >
                   <v-chip
                     v-if="header.value != 'heuristic'"
+<<<<<<< HEAD
                     :class="[
                       'score-chip',
                       getColor(item[header.value], item.max, item.min),
@@ -88,6 +89,12 @@
                     variant="flat"
                   >
                     {{ formatScore(item[header.value]) }}
+=======
+                    :color="getColor(item[header.value], item.max, item.min)"
+                    class="chip"
+                  >
+                    {{ item[header.value] ? item[header.value].toFixed(2) : 0 }}
+>>>>>>> upstream/develop
                   </v-chip>
                   <v-btn
                     v-else
@@ -113,11 +120,15 @@
                   <div style="padding-top: 2px; padding-bottom: 2px">
                     <v-chip
                       style="width: 35%"
+<<<<<<< HEAD
                       :class="[
                         'score-chip',
                         getColor(item.average, item.max, item.min),
                       ]"
                       variant="flat"
+=======
+                      :color="getColor(item.average, item.max, item.min)"
+>>>>>>> upstream/develop
                     >
                       {{ checkIfNan(item.percentage) }}
                     </v-chip>
@@ -292,6 +303,7 @@ defineProps({
 
 defineEmits(['go-to-heuristic'])
 
+<<<<<<< HEAD
 const getColor = (value, max, min) => {
   const numericValue = Number(value)
   const numericMax = Number(max)
@@ -310,11 +322,23 @@ const getColor = (value, max, min) => {
   if (normalized < 0.5) return 'score-chip--medium-low'
   if (normalized < 0.75) return 'score-chip--medium-high'
   return 'score-chip--high'
+=======
+// Local copy — keeps component self-contained without importing from parent
+const getColor = (value, max, min) => {
+  if (value === null || value === undefined) return 'grey'
+  if (max === min) return 'blue'
+  const normalized = (value - min) / (max - min)
+  if (normalized < 0.25) return 'red'
+  if (normalized < 0.5) return 'orange'
+  if (normalized < 0.75) return 'yellow'
+  return 'green'
+>>>>>>> upstream/develop
 }
 
 const checkIfNan = (value) => {
   return isNaN(value) || value === null ? '—' : value
 }
+<<<<<<< HEAD
 
 const formatScore = (value) => {
   const numericValue = Number(value)
@@ -354,3 +378,6 @@ const formatScore = (value) => {
   color: #777777 !important;
 }
 </style>
+=======
+</script>
+>>>>>>> upstream/develop

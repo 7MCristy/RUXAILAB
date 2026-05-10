@@ -1,6 +1,7 @@
 import { STUDY_TYPES } from '@/shared/constants/methodDefinitions'
 import store from '@/store'
 
+<<<<<<< HEAD
 const EMPTY_PERCENTAGE = '0.00'
 const HEURISTICS_HEADER = {
   title: 'HEURISTICS',
@@ -67,19 +68,53 @@ function standardDeviation(values) {
     values.length
 
   return Math.sqrt(variance)
+=======
+// Final Statistic
+// Final Result
+const testData = {
+  average: null,
+  max: null,
+  min: null,
+  sd: null,
+}
+
+function percentage(value, result) {
+  return (value * 100) / result
+}
+
+function standardDeviation(array) {
+  const average = array.reduce(
+    (total, value) => total + value / array.length,
+    0,
+  )
+  return Math.sqrt(
+    array.reduce(
+      (total, valor) => total + Math.pow(average - valor, 2) / array.length,
+      0,
+    ),
+  )
+>>>>>>> upstream/develop
 }
 
 function parseTimeSpentToMs(timeSpent) {
   if (typeof timeSpent !== 'string') return 0
+<<<<<<< HEAD
 
   const [minutes = '0', seconds = '0'] = timeSpent.split(':')
   const min = toFiniteNumber(minutes)
   const sec = toFiniteNumber(seconds)
 
+=======
+  const [minutes = '0', seconds = '0'] = timeSpent.split(':')
+  const min = Number(minutes)
+  const sec = Number(seconds)
+  if (!Number.isFinite(min) || !Number.isFinite(sec)) return 0
+>>>>>>> upstream/develop
   return (Math.max(0, min) * 60 + Math.max(0, sec)) * 1000
 }
 
 function formatTimeSpentFromMs(ms) {
+<<<<<<< HEAD
   const totalSeconds = Math.max(0, Math.floor(toFiniteNumber(ms) / 1000))
   const minutes = Math.floor(totalSeconds / 60)
   const seconds = totalSeconds % 60
@@ -108,10 +143,55 @@ function getQuestionImages(question) {
   if (Array.isArray(question?.images)) return question.images
   if (Array.isArray(question?.heuristicAnswer?.images)) {
     return question.heuristicAnswer.images
+=======
+  const totalSeconds = Math.max(0, Math.floor((Number(ms) || 0) / 1000))
+  const minutes = Math.floor(totalSeconds / 60)
+  const seconds = totalSeconds % 60
+  return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
+}
+
+function calcFinalResult(array) {
+  let result = 0
+  let qtdQuestion = 0
+  let qtdNoAplication = 0
+
+  // Check if test and testOptions exist
+  const test = store.getters.test
+  if (!test || !Array.isArray(test.testOptions)) {
+    console.warn('calcFinalResult: test or testOptions is not available', test)
+    return '0.00' // Return a default value to prevent errors
+  }
+
+  const maxOption = Math.max(...test.testOptions.map((item) => item.value))
+
+  array.forEach((res) => {
+    let individualResult = res.result
+    if (individualResult === -1) {
+      individualResult = 0
+    }
+
+    result += individualResult
+    qtdQuestion += res.totalQuestions
+    qtdNoAplication += res.totalNoAplication
+  })
+
+  const perfectResult = (qtdQuestion - qtdNoAplication) * maxOption
+  return perfectResult === 0
+    ? '0.00'
+    : ((result * 100) / perfectResult).toFixed(2)
+}
+
+function answers() {
+  if (store.getters.testAnswerDocument) {
+    return store.getters.testAnswerDocument.type === STUDY_TYPES.HEURISTIC
+      ? Object.values(store.getters.testAnswerDocument.heuristicAnswers || {})
+      : Object.values(store.getters.testAnswerDocument.taskAnswers || {})
+>>>>>>> upstream/develop
   }
   return []
 }
 
+<<<<<<< HEAD
 function hasLegacyImage(question) {
   return Boolean(
     question?.answerImageUrl?.trim() ||
@@ -447,10 +527,139 @@ function finalResult(
       0,
     ),
   }
+=======
+// Final statistics
+function created(resultEvaluator) {
+  store.dispatch('processStatistics', {
+    resultEvaluator: resultEvaluator,
+  })
+}
+
+function statistics() {
+  // Check if test and testAnswerDocument exist
+  const test = store.getters.test
+  const testAnswerDocument = store.getters.testAnswerDocument
+  if (!test || !testAnswerDocument) {
+    console.warn('statistics: test or testAnswerDocument is not available', {
+      test,
+      testAnswerDocument,
+    })
+    return []
+  }
+
+  if (testAnswerDocument.type === STUDY_TYPES.HEURISTIC) {
+    const resultEvaluator = []
+
+    // Get Evaluator answers
+    answers().forEach((evaluator) => {
+      let SelectEvaluator = resultEvaluator.find(
+        (e) => e.userDocId == evaluator.userDocId,
+      )
+
+      if (!SelectEvaluator) {
+        resultEvaluator.push({
+          userDocId: evaluator.userDocId,
+          id: evaluator.userDocId,
+          heuristics: [],
+          result: 0,
+          lastUpdate: evaluator.lastUpdate,
+        })
+        SelectEvaluator = resultEvaluator[resultEvaluator.length - 1]
+      } else {
+        // Update lastUpdate if evaluator already exists
+        SelectEvaluator.lastUpdate = evaluator.lastUpdate
+      }
+
+      // Get Heuristics for evaluators
+      let heurisIndex = 1
+      evaluator.heuristicQuestions.forEach((heuristic) => {
+        let noAplication = 0
+        let noReply = 0
+        let qNotApplicable = 0
+        let res = heuristic.heuristicQuestions.reduce(
+          (totalQuestions, question) => {
+            if (question.heuristicAnswer.value === null) {
+              noAplication++
+            }
+            if (
+              question.heuristicAnswer.value === 0 ||
+              question.heuristicAnswer.value === '0'
+            ) {
+              qNotApplicable++
+            }
+
+            if (
+              question.heuristicAnswer.value === '' ||
+              Object.values(question.heuristicAnswer).length < 3
+            )
+              noReply++
+            return totalQuestions + Number(question.heuristicAnswer.value)
+          },
+          0,
+        )
+
+        if (noAplication == heuristic.heuristicQuestions.length) res = null
+
+        SelectEvaluator.heuristics.push({
+          id: `H${heurisIndex}`,
+          result: res == -1 ? 0 : res,
+          totalQuestions: heuristic.heuristicTotal,
+          totalNoAplication: noAplication,
+          totalNoReply: noReply,
+          timeSpentMs: parseTimeSpentToMs(heuristic.timeSpent),
+        })
+        heurisIndex++
+      })
+    })
+
+    // Sort resultEvaluator based on lastUpdate
+    resultEvaluator.sort((a, b) => b.lastUpdate - a.lastUpdate)
+
+    // Calc Final result
+    resultEvaluator.forEach((ev) => {
+      ev.result = calcFinalResult(ev.heuristics)
+    })
+
+    return resultEvaluator
+  }
+  return []
+}
+
+function finalResult(itemsArg) {
+  // Permite pasar los items directamente, o usa el store como fallback
+  const items = Array.isArray(itemsArg)
+    ? itemsArg
+    : (store.state.Answer.evaluatorStatistics &&
+        store.state.Answer.evaluatorStatistics.items) ||
+      []
+  if (items.length) {
+    const res = items.reduce((total, value) => {
+      return !isNaN(parseInt(value.result))
+        ? total + value.result / items.length
+        : 0
+    }, 0)
+
+    testData.average = `${Math.fround(res).toFixed(2)}%`
+
+    testData.max = `${Math.max(
+      ...items.map((item) => (!isNaN(parseInt(item.result)) ? item.result : 0)),
+    ).toFixed(2)}%`
+
+    testData.min = `${Math.min(
+      ...items.map((item) => (!isNaN(parseInt(item.result)) ? item.result : 0)),
+    ).toFixed(2)}%`
+
+    testData.sd = `${standardDeviation(
+      items.map((item) => (!isNaN(parseInt(item.result)) ? item.result : 0)),
+    ).toFixed(2)}%`
+  }
+  return testData
+>>>>>>> upstream/develop
 }
 
 function buildHeuristicsEvaluator(resultEvaluator, testOptions) {
   const table = {
+<<<<<<< HEAD
     header: [
       {
         title: HEURISTICS_HEADER.title,
@@ -491,13 +700,62 @@ function buildHeuristicsEvaluator(resultEvaluator, testOptions) {
   })
 
   table.items = Array.from(rowsByHeuristic.values())
+=======
+    header: [{ title: 'HEURISTICS', align: 'start', value: 'heuristic' }],
+    items: [],
+  }
+
+  const options = Array.isArray(testOptions)
+    ? testOptions.map((op) => op.value)
+    : []
+  const max = options.length > 0 ? Math.max(...options) : 0
+  const min = options.length > 0 ? Math.min(...options) : 0
+
+  if (!Array.isArray(resultEvaluator)) return table
+
+  let evaluatorIndex = 1
+  for (const evaluator of resultEvaluator) {
+    evaluator.id = `Ev${evaluatorIndex}`
+    const headerExists = table.header.find((h) => h.value === evaluator.id)
+    if (!headerExists) {
+      table.header.push({
+        text: evaluator.id,
+        align: 'center',
+        value: evaluator.id,
+      })
+    }
+
+    if (Array.isArray(evaluator.heuristics)) {
+      for (const heuristic of evaluator.heuristics) {
+        const item = table.items.find((i) => i.heuristic === heuristic.id)
+        if (item) {
+          item[evaluator.id] = heuristic.result
+        } else {
+          table.items.push({
+            heuristic: heuristic.id,
+            max: max * (heuristic.totalQuestions || 0),
+            min: min * (heuristic.totalQuestions || 0),
+            [evaluator.id]: heuristic.result,
+          })
+        }
+      }
+    }
+
+    evaluatorIndex++
+  }
+
+>>>>>>> upstream/develop
   return table
 }
 
 function buildHeuristicsStatistics(heuristicsEvaluator) {
   const table = {
     header: [
+<<<<<<< HEAD
       { ...HEURISTICS_HEADER, value: 'name' },
+=======
+      { title: 'HEURISTICS', align: 'start', sortable: false, value: 'name' },
+>>>>>>> upstream/develop
       {
         title: 'Percentage (%)',
         value: 'percentage',
@@ -519,6 +777,7 @@ function buildHeuristicsStatistics(heuristicsEvaluator) {
 
   if (!heuristicsEvaluator?.items?.length) return table
 
+<<<<<<< HEAD
   table.items = heuristicsEvaluator.items.map((item) => {
     const results = Object.entries(item)
       .filter(([key, value]) => key.startsWith('Ev') && value != null)
@@ -541,6 +800,32 @@ function buildHeuristicsStatistics(heuristicsEvaluator) {
       average: averageValue.toFixed(2),
     }
   })
+=======
+  for (const item of heuristicsEvaluator.items) {
+    const results = Object.entries(item)
+      .filter(([key]) => key.includes('Ev'))
+      .map(([, value]) => value)
+      .filter((value) => value !== undefined && value !== null)
+
+    const average = results.length
+      ? (results.reduce((sum, val) => sum + val, 0) / results.length).toFixed(2)
+      : '0.00'
+
+    const percentage =
+      item.max && item.min && item.max !== item.min
+        ? (((average - item.min) / (item.max - item.min)) * 100).toFixed(2)
+        : '0.00'
+
+    table.items.push({
+      name: item.heuristic || 'Unknown',
+      max: item.max ? Number(item.max).toFixed(2) : '0.00',
+      min: item.min ? Number(item.min).toFixed(2) : '0.00',
+      percentage,
+      sd: results.length ? standardDeviation(results).toFixed(2) : '0.00',
+      average,
+    })
+  }
+>>>>>>> upstream/develop
 
   return table
 }
@@ -551,8 +836,11 @@ export {
   calcFinalResult,
   statistics,
   finalResult,
+<<<<<<< HEAD
   buildHeuristicTestBundlePayload,
   downloadHeuristicTestBundlePayload,
+=======
+>>>>>>> upstream/develop
   buildHeuristicsStatistics,
   buildHeuristicsEvaluator,
   parseTimeSpentToMs,

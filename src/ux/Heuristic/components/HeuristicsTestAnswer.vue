@@ -40,7 +40,6 @@
         <template #content>
           <div class="ma-0 pa-0">
             <!-- Tab 1 - Statistics -->
-<<<<<<< HEAD
             <StatisticsSummaryCard
               v-if="tab == 0"
               :result="showFinalResult"
@@ -49,9 +48,6 @@
               :test-title="testTitle"
               :evaluator-identity="singleEvaluatorIdentity"
             />
-=======
-            <StatisticsSummaryCard v-if="tab == 0" :result="showFinalResult" />
->>>>>>> upstream/develop
 
             <!-- Tab 2 - Evaluators -->
             <EvaluatorsAndGraphicsCard
@@ -87,11 +83,7 @@
 <script setup>
 import { ref, computed, watch, onMounted, onBeforeMount } from 'vue'
 import { useStore } from 'vuex'
-<<<<<<< HEAD
 import { useRoute, useRouter } from 'vue-router'
-=======
-import { useRouter } from 'vue-router'
->>>>>>> upstream/develop
 import { useI18n } from 'vue-i18n'
 import BarChart from '@/ux/Heuristic/components/charts/BarChart.vue'
 import RadarChart from '@/shared/components/charts/RadarChart.vue'
@@ -108,16 +100,12 @@ import {
   standardDeviation,
   finalResult,
   statistics,
-<<<<<<< HEAD
   FinalResultWarnings,
   calcFinalResult,
   calcResultsWarnings,
   formatTimeSpentFromMs,
   buildHeuristicTestBundlePayload,
   downloadHeuristicTestBundlePayload,
-=======
-  formatTimeSpentFromMs,
->>>>>>> upstream/develop
 } from '@/ux/Heuristic/utils/statistics'
 import {
   heuristicsStatisticsHeaders,
@@ -127,10 +115,7 @@ import {
 
 const store = useStore()
 const router = useRouter()
-<<<<<<< HEAD
 const route = useRoute()
-=======
->>>>>>> upstream/develop
 const { t } = useI18n()
 
 const props = defineProps({
@@ -153,7 +138,6 @@ const usability_total = ref(0)
 const loading = ref(false) // Note: Check if Vuex getter 'loading' is needed
 const array_scores = ref([])
 
-<<<<<<< HEAD
 const showFinalResult = computed(() => finalResult(resultEvaluator.value))
 
 const imageTotalsByHeuristic = computed(() => {
@@ -224,9 +208,6 @@ const optionResponseTotals = computed(() => {
     (a, b) => Number(a.value) - Number(b.value),
   )
 })
-=======
-const showFinalResult = computed(() => finalResult())
->>>>>>> upstream/develop
 
 const evaluatorStatistics = computed(
   () => store.state.Answer.evaluatorStatistics || { header: [], items: [] },
@@ -250,29 +231,19 @@ const heuristicsEvaluator = computed(() => {
     let evaluatorIndex = 1
     resultEvaluator.value.forEach((evaluator) => {
       evaluator.id = `Ev${evaluatorIndex}`
-<<<<<<< HEAD
       const header = table.header.find((h) => h.value === evaluator.id)
       if (!header) {
         table.header.push({
           title: `Evaluator ${evaluatorIndex}`,
-=======
-      const header = table.header.find((h) => h.text === evaluator.id)
-      if (!header) {
-        table.header.push({
-          text: evaluator.id,
->>>>>>> upstream/develop
           align: 'center',
           value: evaluator.id,
         })
       }
       if (evaluator.heuristics && Array.isArray(evaluator.heuristics)) {
         evaluator.heuristics.forEach((heuristic) => {
-<<<<<<< HEAD
           const totalQuestions = Number(
             heuristic.SumOfValues ?? heuristic.totalQuestions ?? 0,
           )
-=======
->>>>>>> upstream/develop
           const item = table.items.find((i) => i.heuristic === heuristic.id)
           if (item) {
             Object.assign(item, {
@@ -281,13 +252,8 @@ const heuristicsEvaluator = computed(() => {
           } else {
             table.items.push({
               heuristic: heuristic.id,
-<<<<<<< HEAD
               max: max * totalQuestions,
               min: min * totalQuestions,
-=======
-              max: max * (heuristic.totalQuestions || 0),
-              min: min * (heuristic.totalQuestions || 0),
->>>>>>> upstream/develop
               [evaluator.id]: heuristic.result,
             })
           }
@@ -315,11 +281,7 @@ const timeByHeuristics = computed(() => {
   resultEvaluator.value.forEach((evaluator, evaluatorPosition) => {
     const evaluatorKey = `Ev${evaluatorPosition + 1}`
     table.header.push({
-<<<<<<< HEAD
       title: `Evaluator ${evaluatorPosition + 1}`,
-=======
-      title: evaluatorKey,
->>>>>>> upstream/develop
       value: evaluatorKey,
       align: 'center',
     })
@@ -341,29 +303,17 @@ const timeByHeuristics = computed(() => {
   })
 
   table.header.push({
-<<<<<<< HEAD
     title: 'Total time',
-=======
-    title: 'Total',
->>>>>>> upstream/develop
     value: 'totalTime',
     align: 'center',
   })
   table.header.push({
-<<<<<<< HEAD
     title: 'Average time per evaluator',
-=======
-    title: 'Average Time',
->>>>>>> upstream/develop
     value: 'averageTime',
     align: 'center',
   })
   table.header.push({
-<<<<<<< HEAD
     title: 'Time standard deviation',
-=======
-    title: 'Standard deviation',
->>>>>>> upstream/develop
     value: 'timeSd',
     align: 'center',
   })
@@ -406,13 +356,9 @@ const heuristicsStatistics = computed(() => {
           .toFixed(2)
       : '0.00'
     const convertedValue =
-<<<<<<< HEAD
       item.max !== undefined &&
       item.min !== undefined &&
       Number(item.max) !== Number(item.min)
-=======
-      item.max && item.min && item.max !== item.min
->>>>>>> upstream/develop
         ? ((valueToConvert - item.min) / (item.max - item.min)) * 100
         : 0
     table.items.push({
@@ -494,7 +440,6 @@ const test = computed(() => {
   return store.getters.test || {}
 })
 
-<<<<<<< HEAD
 const testTitle = computed(
   () => test.value?.testTitle || test.value?.title || test.value?.name || '',
 )
@@ -532,8 +477,6 @@ const singleEvaluatorIdentity = computed(() => {
   )
 })
 
-=======
->>>>>>> upstream/develop
 const checkIfNan = (value) => {
   return !isNaN(Number(value)) ? value : '-'
 }
@@ -678,19 +621,15 @@ watch(
 )
 
 onBeforeMount(async () => {
-<<<<<<< HEAD
   const studyId = props.id || route.params.id
   if (studyId && !store.getters.test?.id) {
     await store.dispatch('getStudy', { id: studyId })
   }
-=======
->>>>>>> upstream/develop
   await store.dispatch('getCurrentTestAnswerDoc')
 })
 
 onMounted(() => {
   pythonFunction()
-<<<<<<< HEAD
 
   if (typeof window !== 'undefined') {
     // Handy debug API from browser console to inspect/download test+answers.
@@ -698,8 +637,6 @@ onMounted(() => {
     window.downloadHeuristicTestBundlePayload = (fileName) =>
       downloadHeuristicTestBundlePayload(testBundlePayload.value, fileName)
   }
-=======
->>>>>>> upstream/develop
 })
 </script>
 

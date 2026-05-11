@@ -23,16 +23,12 @@
             marginRight: '8px',
           }"
         />
-<<<<<<< HEAD
         <span>
           {{ option }} ({{ counts[option] || 0 }})
           <template v-if="showPercentages">
             - {{ optionPercent(option) }}%
           </template>
         </span>
-=======
-        <span>{{ option }} ({{ counts[option] || 0 }})</span>
->>>>>>> upstream/develop
       </div>
     </div>
   </v-card>
@@ -59,7 +55,6 @@ const props = defineProps({
       '#D4E157',
     ],
   },
-<<<<<<< HEAD
   showPercentages: {
     type: Boolean,
     default: false,
@@ -100,27 +95,18 @@ const drawPercentLabel = (ctx, option, startAngle, endAngle) => {
   ctx.restore()
 }
 
-=======
-})
-
->>>>>>> upstream/develop
 const drawChart = () => {
   nextTick(() => {
     const canvas = document.getElementById(props.canvasId)
     if (!canvas) return
     const ctx = canvas.getContext('2d')
     ctx.clearRect(0, 0, canvas.width, canvas.height)
-<<<<<<< HEAD
     const total = getTotal()
-=======
-    const total = Object.values(props.counts).reduce((a, b) => a + b, 0)
->>>>>>> upstream/develop
     if (!total) return
     let start = -0.5 * Math.PI
     props.options.forEach((opt, idx) => {
       const count = props.counts[opt] || 0
       const angle = (count / total) * 2 * Math.PI
-<<<<<<< HEAD
       const end = start + angle
       ctx.beginPath()
       ctx.moveTo(90, 90)
@@ -134,15 +120,6 @@ const drawChart = () => {
       }
 
       start = end
-=======
-      ctx.beginPath()
-      ctx.moveTo(90, 90)
-      ctx.arc(90, 90, 80, start, start + angle)
-      ctx.closePath()
-      ctx.fillStyle = props.chartColors[idx % props.chartColors.length]
-      ctx.fill()
-      start += angle
->>>>>>> upstream/develop
     })
     // Círculo central blanco (donut)
     ctx.beginPath()

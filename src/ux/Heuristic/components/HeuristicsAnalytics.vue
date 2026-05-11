@@ -130,28 +130,17 @@
                       >
                         <template
                           v-for="header in headersHeuristic"
-<<<<<<< HEAD
                           :key="header.value"
                           #[`item.${header.value}`]="{ item }"
                         >
                           <div
                             v-if="item[header.value]?.uid"
-=======
-                          #[`item.${header.value}`]="{ item }"
-                        >
-                          <div
-                            v-if="item[header.value].uid"
->>>>>>> upstream/develop
                             :key="item[header.value].uid"
                           >
                             {{ item[header.value].uid }}
                           </div>
                           <div
-<<<<<<< HEAD
                             v-else-if="item[header.value]?.heuristicAnswer"
-=======
-                            v-else
->>>>>>> upstream/develop
                             :key="item[header.value].heuristicAnswer.value"
                           >
                             <div
@@ -162,7 +151,6 @@
                               -
                             </div>
                             <div v-else>
-<<<<<<< HEAD
                               <v-chip
                                 :class="[
                                   'answer-chip',
@@ -177,11 +165,6 @@
                             </div>
                           </div>
                           <div v-else>-</div>
-=======
-                              {{ item[header.value].heuristicAnswer.value }}
-                            </div>
-                          </div>
->>>>>>> upstream/develop
                         </template>
                       </v-data-table>
                     </v-col>
@@ -356,11 +339,7 @@ const headersHeuristic = computed(() => {
     test.value.testStructure[heuristicSelect.value].questions.forEach(
       (question) => {
         header.push({
-<<<<<<< HEAD
           title: `Q${question.id + 1} - ${question.title}`,
-=======
-          title: `Q${question.id + 1}`,
->>>>>>> upstream/develop
           align: 'center',
           value: question.id.toString(),
         })
@@ -479,7 +458,6 @@ const questionGraph = computed(() => {
   return graph
 })
 
-<<<<<<< HEAD
 const getAnswerChipClass = (value) => {
   const options = Array.isArray(test.value?.testOptions)
     ? test.value.testOptions
@@ -507,8 +485,6 @@ const getAnswerChipClass = (value) => {
   return 'answer-chip--high'
 }
 
-=======
->>>>>>> upstream/develop
 watch(
   answers,
   () => {
@@ -577,7 +553,6 @@ const formatDate = (timestamp) => {
 .list-scroll::-webkit-scrollbar-thumb:hover {
   background: #fca326;
 }
-<<<<<<< HEAD
 
 .answer-chip {
   min-width: 50px;
@@ -609,6 +584,4 @@ const formatDate = (timestamp) => {
   background-color: #eeeeee !important;
   color: #777777 !important;
 }
-=======
->>>>>>> upstream/develop
 </style>

@@ -239,12 +239,8 @@
       v-model:dialog="dialog"
       :option="option"
       :has-value="hasValue"
-<<<<<<< HEAD
       :warning="warning"
       @change-option-flags="updateOptionFlags"
-=======
-      @change-has-value="updateHasValue"
->>>>>>> upstream/develop
       @add-option="updateOptions"
       @change="emitChange"
     />
@@ -300,21 +296,15 @@ const option = ref({
   text: '',
   description: '',
   value: null,
-<<<<<<< HEAD
   hasValue: true,
   warning: false,
-=======
->>>>>>> upstream/develop
   timestamp: null,
 })
 
 const dialog = ref(false)
 const editIndex = ref(-1)
 const hasValue = ref(true)
-<<<<<<< HEAD
 const warning = ref(false)
-=======
->>>>>>> upstream/develop
 
 const optionsWithFormattedValue = computed(() =>
   (store.state.Tests.Test.testOptions || []).map((opt) => ({
@@ -336,14 +326,9 @@ watch(dialog, (newVal) => {
   }
 })
 
-<<<<<<< HEAD
 const updateOptionFlags = ({ hasValue: newHasValue, warning: newWarning }) => {
   hasValue.value = newHasValue
   warning.value = newWarning
-=======
-const updateHasValue = (newValue) => {
-  hasValue.value = newValue
->>>>>>> upstream/develop
 }
 
 const updateOptions = (newOption) => {
@@ -382,10 +367,7 @@ const editItem = (item) => {
   )
   option.value = { ...store.state.Tests.Test.testOptions[editIndex.value] }
   hasValue.value = option.value.value !== null
-<<<<<<< HEAD
   warning.value = option.value.warning ?? false
-=======
->>>>>>> upstream/develop
   dialog.value = true
 }
 
@@ -394,7 +376,6 @@ const emitChange = () => {
 }
 
 const resetForm = () => {
-<<<<<<< HEAD
   option.value = {
     text: '',
     value: null,
@@ -405,10 +386,6 @@ const resetForm = () => {
   }
   hasValue.value = true
   warning.value = false
-=======
-  option.value = { text: '', value: null, description: '', timestamp: null }
-  hasValue.value = true
->>>>>>> upstream/develop
   editIndex.value = -1
 }
 </script>

@@ -822,7 +822,6 @@
       "min": "Min",
       "std": "Standard deviation"
     },
-<<<<<<< HEAD
     "summary": {
       "title": "Evaluation Summary",
       "stats": {
@@ -860,8 +859,6 @@
         "metrics": "metrics"
       }
     },
-=======
->>>>>>> upstream/develop
     "evaluators": {
       "headers": {
         "table": "Table",
@@ -874,11 +871,7 @@
     "heuristics": {
       "headers": {
         "heuristicsData": "Heuristics Data",
-<<<<<<< HEAD
         "answersByEvaluator": "Response Values by Evaluator",
-=======
-        "answersByEvaluator": "Answers by Evaluator",
->>>>>>> upstream/develop
         "answersByHeuristics": "Answers by Heuristics",
         "graphic": "Graphic",
         "weights": "Weights"

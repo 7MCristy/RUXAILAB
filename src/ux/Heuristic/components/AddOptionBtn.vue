@@ -30,11 +30,7 @@
                   <v-text-field
                     v-model.number="localOption.value"
                     :label="$t('common.value')"
-<<<<<<< HEAD
                     :disabled="!localHasValue || localWarning"
-=======
-                    :disabled="!localHasValue"
->>>>>>> upstream/develop
                     type="number"
                     placeholder="Ex. 0.5"
                     :rules="valueRequired"
@@ -69,7 +65,6 @@
               </v-row>
 
               <v-row justify="center">
-<<<<<<< HEAD
                 <v-col cols="12" class="d-flex align-center">
                   <v-checkbox
                     v-model="localHasValue"
@@ -83,12 +78,6 @@
                     hide-details
                   />
                 </v-col>
-=======
-                <v-checkbox
-                  v-model="localHasValue"
-                  :label="$t('HeuristicsTable.titles.hasValue')"
-                />
->>>>>>> upstream/develop
               </v-row>
             </v-form>
           </v-col>
@@ -116,38 +105,23 @@
 
 <script setup>
 import { ref, computed, watch } from 'vue'
-<<<<<<< HEAD
-=======
-import { useStore } from 'vuex'
->>>>>>> upstream/develop
 import { useI18n } from 'vue-i18n'
 
 const props = defineProps({
   option: { type: Object, required: true },
   dialog: { type: Boolean, default: false },
   hasValue: { type: Boolean, required: true, default: true },
-<<<<<<< HEAD
   warning: { type: Boolean, required: true, default: false },
-=======
->>>>>>> upstream/develop
 })
 
 const emit = defineEmits([
   'update:dialog',
-<<<<<<< HEAD
   'changeOptionFlags',
-=======
-  'changeHasValue',
->>>>>>> upstream/develop
   'addOption',
   'change',
 ])
 
 const { t } = useI18n()
-<<<<<<< HEAD
-=======
-const store = useStore()
->>>>>>> upstream/develop
 const form = ref(null)
 
 const textRequired = [
@@ -155,16 +129,10 @@ const textRequired = [
 ]
 const localOption = ref({ text: '', value: null, description: '' })
 const localHasValue = ref(true)
-<<<<<<< HEAD
 const localWarning = ref(false)
 
 const valueRequired = computed(() => {
   if (!localHasValue.value || localWarning.value) return []
-=======
-
-const valueRequired = computed(() => {
-  if (!localHasValue.value) return []
->>>>>>> upstream/develop
   return [
     (v) =>
       (v !== null && v !== '' && v >= 0) ||
@@ -188,7 +156,6 @@ watch(
   { immediate: true },
 )
 
-<<<<<<< HEAD
 watch(
   () => props.warning,
   (newValue) => {
@@ -212,24 +179,15 @@ watch(localHasValue, (newValue) => {
 watch(localWarning, () => {
   if (localWarning.value) localOption.value.value = null
   emitOptionFlags()
-=======
-watch(localHasValue, (newValue) => {
-  if (!newValue) localOption.value.value = null
-  emit('changeHasValue', newValue)
->>>>>>> upstream/develop
 })
 
 const validate = async () => {
   const { valid } = await form.value.validate()
   if (valid) {
     const optionToSave = { ...localOption.value }
-<<<<<<< HEAD
     if (!localHasValue.value || localWarning.value) optionToSave.value = null
     optionToSave.hasValue = localHasValue.value
     optionToSave.warning = localWarning.value
-=======
-    if (!localHasValue.value) optionToSave.value = null
->>>>>>> upstream/develop
     emit('addOption', optionToSave)
     emit('change')
     emit('update:dialog', false)
@@ -245,10 +203,7 @@ const cancel = () => {
 const resetVal = () => {
   localOption.value = { text: '', value: null, description: '' }
   localHasValue.value = true
-<<<<<<< HEAD
   localWarning.value = false
-=======
->>>>>>> upstream/develop
   form.value.resetValidation()
 }
 </script>

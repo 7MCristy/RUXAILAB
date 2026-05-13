@@ -4,16 +4,15 @@
       <!-- Título no topo -->
       <h2>Final Report Content</h2>
 
-      <!-- Lista de conteúdo do relatório -->
+      <!-- Puntos más relevantes del informe -->
       <ul class="mt-4" style="padding-left: 1.2rem; line-height: 1.6">
-        <li>Test description</li>
-        <li>Conclusion and final observations</li>
-        <li>General test data and metadata</li>
-        <li>Results with statistics and visual tables</li>
-        <li>All evaluator answers with optional comments and images</li>
-        <li>Grouped answers by heuristic and evaluator</li>
-        <li>Formatted layout for presentation</li>
-        <li>Downloadable PDF document</li>
+        <li>Descripción del test y metadatos básicos</li>
+        <li>Resumen y conclusión general</li>
+        <li>Tabla de heurísticas ordenadas por impacto negativo</li>
+        <li>Resultados con estadísticas y tablas comparativas por evaluador</li>
+        <li>Hallazgos y evidencias (comentarios e imágenes) por heurística</li>
+        <li>Recomendaciones priorizadas y posibles mejoras</li>
+        <li>Tiempo de evaluación por evaluador y tiempo medio</li>
       </ul>
 
       <div v-if="isLoading" class="mt-12">
@@ -35,11 +34,56 @@
         >
           {{ $t('buttons.previous') }}
         </v-btn>
-        <v-btn :disabled="isLoading" color="orange" @click="submitPdf">
-          <span v-if="!isLoading">{{ $t('pages.finalReport.pdf') }}</span>
-          <span v-else>{{ $t('pages.finalReport.options.loading') }}</span>
-        </v-btn>
+        <div class="d-flex gap-2">
+          <v-btn
+            v-if="pdfBlobUrl"
+            color="success"
+            :href="pdfBlobUrl"
+            :download="pdfFilename"
+            elevation="0"
+          >
+            Descargar PDF
+          </v-btn>
+          <v-btn :disabled="isLoading" color="orange" @click="submitPdf">
+            <span v-if="!isLoading">{{ $t('pages.finalReport.pdf') }}</span>
+            <span v-else>{{ $t('pages.finalReport.options.loading') }}</span>
+          </v-btn>
+        </div>
       </v-row>
+      <!-- Modal preview del informe -->
+      <v-dialog v-model="showHtmlReport" width="1000">
+        <v-card>
+          <v-toolbar flat>
+            <v-toolbar-title>Informe - Vista previa</v-toolbar-title>
+            <v-spacer />
+            <v-btn icon @click="() => (showHtmlReport = false)">
+              <v-icon>mdi-close</v-icon>
+            </v-btn>
+          </v-toolbar>
+          <v-card-text style="max-height: 70vh; overflow: auto">
+            <div v-html="htmlReportContent"></div>
+          </v-card-text>
+          <v-card-actions>
+            <v-spacer />
+            <v-btn
+              color="black"
+              :disabled="!pdfBlobUrl"
+              variant="flat"
+              prepend-icon="mdi-download"
+              @click="downloadPdf"
+            >
+              Descargar informe
+            </v-btn>
+            <v-btn
+              variant="text"
+              color="primary"
+              @click="showHtmlReport = false"
+            >
+              Cerrar
+            </v-btn>
+          </v-card-actions>
+        </v-card>
+      </v-dialog>
     </v-col>
   </div>
 </template>
@@ -55,6 +99,10 @@ import {
   finalResult,
   statistics,
 } from '@/ux/Heuristic/utils/statistics'
+import {
+  buildNarrativeHtmlReport,
+  buildNarrativeTextReport,
+} from '@/ux/Heuristic/utils/heuristicNarrativeReport'
 import { STUDY_TYPES } from '@/shared/constants/methodDefinitions'
 
 // Vuex store
@@ -77,6 +125,11 @@ const props = defineProps({
 // Reactive state
 const statisticsData = ref('')
 const isLoading = ref(false)
+const htmlReportContent = ref('')
+const showHtmlReport = ref(false)
+const pdfBlobUrl = ref('')
+const pdfFilename = ref('')
+const testId = computed(() => store.getters.test?.id || '')
 
 // Computed properties
 const testAnswerDocument = computed(() => store.state.Answer.testAnswerDocument)
@@ -116,6 +169,38 @@ const submitPdf = async () => {
     statisticsData.value = finalResult()
     const cooperatorsEmailsList = getCooperatorEmails()
 
+    // Generate narrative reports
+    const htmlReport = buildNarrativeHtmlReport({
+      test: test.value,
+      testAnswerDocument: testAnswerDocument.value,
+      generalStatistics: statisticsData.value,
+      statisticsByEvaluator: Array.isArray(
+        statisticsData.value?.statisticsByEvaluator,
+      )
+        ? statisticsData.value.statisticsByEvaluator
+        : [],
+      statisticsByEvaluatorAnswer: heuristicsEvaluator.value,
+      statisticsByHeuristics: heuristicsStatistics.value,
+    })
+
+    const textReport = buildNarrativeTextReport({
+      test: test.value,
+      testAnswerDocument: testAnswerDocument.value,
+      generalStatistics: statisticsData.value,
+      statisticsByEvaluator: Array.isArray(
+        statisticsData.value?.statisticsByEvaluator,
+      )
+        ? statisticsData.value.statisticsByEvaluator
+        : [],
+      statisticsByEvaluatorAnswer: heuristicsEvaluator.value,
+      statisticsByHeuristics: heuristicsStatistics.value,
+      heuristicComments: props.heuristicComments,
+    })
+
+    // Store the HTML report and show it in the UI
+    htmlReportContent.value = htmlReport
+    showHtmlReport.value = true
+
     const finalReportItem = {
       title: test.value.testTitle,
       creationDate: test.value.creationDate,
@@ -133,6 +218,8 @@ const submitPdf = async () => {
       statisticsTable: store.state.Answer.evaluatorStatistics,
       type: testAnswerDocument.value?.type || STUDY_TYPES.HEURISTIC,
       heuristicComments: props.heuristicComments,
+      htmlReport,
+      textReport,
     }
     console.log(finalReportItem)
 
@@ -160,22 +247,33 @@ const submitPdf = async () => {
     )
     const filename = `final_report_${title}_${creationDate}.pdf`
 
-    // Trigger file download
-    const blob = new Blob([response.data])
-    const url = URL.createObjectURL(blob)
-    const link = Object.assign(document.createElement('a'), {
-      href: url,
-      download: filename,
-    })
-
-    document.body.appendChild(link)
-    link.click()
-    link.remove()
-    URL.revokeObjectURL(url)
+    // Prepare PDF for manual download (do NOT auto-click)
+    const blob = new Blob([response.data], { type: 'application/pdf' })
+    // revoke previous if any
+    if (pdfBlobUrl.value) URL.revokeObjectURL(pdfBlobUrl.value)
+    pdfBlobUrl.value = URL.createObjectURL(blob)
+    pdfFilename.value = filename
   } catch (error) {
     console.error('PDF export failed:', error)
   } finally {
     isLoading.value = false
   }
 }
+
+const downloadPdf = () => {
+  if (!pdfBlobUrl.value) return
+
+  const link = document.createElement('a')
+  link.href = pdfBlobUrl.value
+  link.download = pdfFilename.value || 'final_report.pdf'
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+}
 </script>
+
+<style scoped>
+.gap-2 {
+  gap: 8px;
+}
+</style>

@@ -11,6 +11,7 @@
     <v-divider class="summary-divider" />
 
     <v-row class="ma-0 pa-4 summary-grid" dense>
+      <p>{{ result }}</p>
       <v-col cols="12" md="12">
         <v-card flat rounded="lg" class="stat-tile stat-tile--hero pa-5 h-100">
           <div class="d-flex align-center justify-space-between mb-2">
@@ -292,7 +293,8 @@ const evaluatorsCount = computed(() => Number(props.result?.evaluators) || 0)
 const isSingleEvaluator = computed(() => evaluatorsCount.value === 1)
 
 const evaluatorsLabel = computed(() => {
-  const key = evaluatorsCount.value === 1 ? 'common.evaluator' : 'common.evaluators'
+  const key =
+    evaluatorsCount.value === 1 ? 'common.evaluator' : 'common.evaluators'
   return `${evaluatorsCount.value} ${t(key)}`
 })
 

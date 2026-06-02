@@ -21,6 +21,8 @@ function createEmptySummary() {
     evaluators: 0,
     totalComments: 0,
     totalImages: 0,
+    totalTimeMs: 0,
+    averageTimeMs: 0,
   }
 }
 
@@ -218,6 +220,11 @@ function summarizeEvaluator(evaluator) {
       )
     : []
 
+  const totalTimeMs = heuristics.reduce(
+    (total, heuristic) => total + toFiniteNumber(heuristic.timeSpentMs),
+    0,
+  )
+
   return {
     userDocId: evaluator?.userDocId,
     id: evaluator?.userDocId,
@@ -230,6 +237,7 @@ function summarizeEvaluator(evaluator) {
       (total, heuristic) => total + toFiniteNumber(heuristic.totalImages),
       0,
     ),
+    totalTimeMs,
     result: 0,
     lastUpdate: toFiniteNumber(evaluator?.lastUpdate),
   }
@@ -352,6 +360,21 @@ function calcFinalResult(
   const maxPerfResultWarnings =
     (totals.applicableQuestions + totals.totalWarnings) * maxOption
 
+  console.log(
+    '[calcFinalResult] totals.result:',
+    totals.result,
+    'applicableQuestions:',
+    totals.applicableQuestions,
+    'maxOption:',
+    maxOption,
+    'maxPerfectResult:',
+    maxPerfectResult,
+  )
+  console.log(
+    '[calcFinalResult] result%:',
+    percentage(totals.result, maxPerfectResult).toFixed(2),
+  )
+
   return {
     result: percentage(totals.result, maxPerfectResult).toFixed(2),
     baseWarning: percentage(totals.result, maxPerfResultWarnings).toFixed(2),
@@ -372,17 +395,51 @@ function statistics() {
   const test = store.getters.test
   const testAnswerDocument = store.getters.testAnswerDocument
 
+  console.log(
+    '[statistics] test:',
+    test ? 'OK' : 'null',
+    'testAnswerDocument:',
+    testAnswerDocument ? 'OK' : 'null',
+  )
+  if (testAnswerDocument) {
+    console.log(
+      '[statistics] testAnswerDocument.type:',
+      testAnswerDocument.type,
+    )
+    console.log(
+      '[statistics] heuristicAnswers keys:',
+      Object.keys(testAnswerDocument.heuristicAnswers || {}),
+    )
+    console.log(
+      '[statistics] raw heuristicAnswers:',
+      testAnswerDocument.heuristicAnswers,
+    )
+  }
+
   if (!test || !testAnswerDocument) {
+    console.log('[statistics] RETORNA [] — test o testAnswerDocument es null')
     return []
   }
 
   if (testAnswerDocument.type !== STUDY_TYPES.HEURISTIC) {
+    console.log(
+      '[statistics] RETORNA [] — type no es HEURISTIC:',
+      testAnswerDocument.type,
+    )
     return []
   }
 
-  return answers()
+  const result = answers()
     .map((evaluator) => {
       const evaluatorSummary = summarizeEvaluator(evaluator)
+      console.log(
+        '[statistics] evaluador:',
+        evaluator?.userDocId,
+        '-> heuristics:',
+        evaluatorSummary.heuristics.length,
+        'result:',
+        evaluatorSummary.result,
+      )
 
       return {
         ...evaluatorSummary,
@@ -390,6 +447,9 @@ function statistics() {
       }
     })
     .sort((left, right) => right.lastUpdate - left.lastUpdate)
+
+  console.log('[statistics] RESULTADO FINAL:', result.length, 'evaluadores')
+  return result
 }
 
 function finalResult(
@@ -428,6 +488,12 @@ function finalResult(
     minWarningValues.reduce((total, value) => total + value, 0) /
     validItems.length
 
+  const timeValues = validItems
+    .map((item) => toFiniteNumber(item.totalTimeMs))
+    .filter((v) => v > 0)
+  const totalTimeMs = timeValues.reduce((sum, v) => sum + v, 0)
+  const averageTimeMs = timeValues.length ? totalTimeMs / timeValues.length : 0
+
   return {
     average: formatPercentage(averageResult),
     max: formatPercentage(Math.max(...resultValues)),
@@ -446,6 +512,8 @@ function finalResult(
       (total, item) => total + toFiniteNumber(item.totalImages),
       0,
     ),
+    totalTimeMs,
+    averageTimeMs,
   }
 }
 
@@ -545,6 +613,119 @@ function buildHeuristicsStatistics(heuristicsEvaluator) {
   return table
 }
 
+function getSeverityLabel(percentageValue) {
+  if (percentageValue >= 75) return 'Leve'
+  if (percentageValue >= 50) return 'Moderado'
+  if (percentageValue >= 25) return 'Grave'
+  return 'Crítico'
+}
+
+function getEvaluatorName(evaluatorItem, participants = []) {
+  const evaluator = participants.find(
+    (p) =>
+      p?.userDocId === evaluatorItem?.userDocId ||
+      p?.uid === evaluatorItem?.userDocId,
+  )
+  return evaluator?.fullName || evaluator?.name || evaluator?.displayName || ''
+}
+
+function buildEvaluatorPercentages(resultEvaluator, participants = []) {
+  if (!Array.isArray(resultEvaluator)) {
+    return { items: [], globalAverage: '0.00' }
+  }
+
+  const items = resultEvaluator.map((item) => {
+    const percentageValue = toNumericScore(item.result)
+    return {
+      name: getEvaluatorName(item, participants),
+      percentage: Number.isFinite(percentageValue)
+        ? percentageValue.toFixed(2)
+        : '0.00',
+      severity: getSeverityLabel(percentageValue),
+    }
+  })
+
+  const validPercentages = items
+    .map((i) => parseFloat(i.percentage))
+    .filter((v) => Number.isFinite(v))
+  const globalAverage = validPercentages.length
+    ? (
+        validPercentages.reduce((s, v) => s + v, 0) / validPercentages.length
+      ).toFixed(2)
+    : '0.00'
+
+  return { items, globalAverage }
+}
+
+function buildHeuristicRanking(heuristicsStatistics, heuristicsEvaluator) {
+  if (
+    !heuristicsStatistics?.items?.length ||
+    !heuristicsEvaluator?.items?.length
+  ) {
+    return { items: [] }
+  }
+
+  const heuristicMap = new Map()
+  heuristicsEvaluator.items.forEach((item) => {
+    heuristicMap.set(item.heuristic, item)
+  })
+
+  const items = heuristicsStatistics.items
+    .map((stat) => {
+      const percentageValue = parseFloat(stat.percentage)
+      const maxValue = toFiniteNumber(stat.max)
+      const minValue = toFiniteNumber(stat.min)
+
+      return {
+        name: stat.name,
+        percentage: Number.isFinite(percentageValue) ? percentageValue : 0,
+        max: maxValue,
+        min: minValue,
+        severity: getSeverityLabel(percentageValue),
+      }
+    })
+    .sort((a, b) => a.percentage - b.percentage)
+    .map((item, index) => ({
+      position: index + 1,
+      ...item,
+    }))
+
+  return { items }
+}
+
+function extractEvaluatorComments(resultEvaluator, participants = []) {
+  const commentsByHeuristic = {}
+
+  if (!Array.isArray(resultEvaluator)) return commentsByHeuristic
+
+  resultEvaluator.forEach((evaluator) => {
+    const evaluatorName =
+      getEvaluatorName(evaluator, participants) || evaluator.id
+
+    if (!Array.isArray(evaluator.heuristics)) return
+
+    evaluator.heuristics.forEach((heuristic) => {
+      const heuristicId = heuristic.id
+      if (!commentsByHeuristic[heuristicId]) {
+        commentsByHeuristic[heuristicId] = []
+      }
+      if (heuristic.totalComments > 0) {
+        commentsByHeuristic[heuristicId].push({
+          evaluatorName,
+          hasComments: true,
+        })
+      } else {
+        commentsByHeuristic[heuristicId].push({
+          evaluatorName,
+          hasComments: false,
+        })
+      }
+    })
+  })
+
+  return commentsByHeuristic
+}
+
 export {
   percentage,
   standardDeviation,
@@ -557,4 +738,8 @@ export {
   buildHeuristicsEvaluator,
   parseTimeSpentToMs,
   formatTimeSpentFromMs,
+  buildEvaluatorPercentages,
+  buildHeuristicRanking,
+  extractEvaluatorComments,
+  getSeverityLabel,
 }

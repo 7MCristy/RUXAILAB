@@ -2,22 +2,25 @@
   <div>
     <v-col class="d-flex flex-column" style="min-height: 500px">
       <!-- Título no topo -->
-      <h2>{{ reportTitle }}</h2>
+      <h2>Final Report Content</h2>
 
       <!-- Lista de conteúdo do relatório -->
       <ul class="mt-4" style="padding-left: 1.2rem; line-height: 1.6">
-        <li>{{ reportItems[0] }}</li>
-        <li>{{ reportItems[1] }}</li>
-        <li>{{ reportItems[2] }}</li>
-        <li>{{ reportItems[3] }}</li>
-        <li>{{ reportItems[4] }}</li>
-        <li>{{ reportItems[5] }}</li>
-        <li>{{ reportItems[6] }}</li>
-        <li>{{ reportItems[7] }}</li>
+        <li>Test description</li>
+        <li>Conclusion and final observations</li>
+        <li>General test data and metadata</li>
+        <li>Results with statistics and visual tables</li>
+        <li>All evaluator answers with optional comments and images</li>
+        <li>Grouped answers by heuristic and evaluator</li>
+        <li>Formatted layout for presentation</li>
+        <li>Downloadable PDF document</li>
       </ul>
 
       <div v-if="isLoading" class="mt-12">
-        <p>{{ loadingMessage }}</p>
+        <p>
+          Generating Report PDF. This operation might take a few minutes. Don't
+          close this tab.
+        </p>
         <v-progress-linear indeterminate />
       </div>
 
@@ -30,16 +33,18 @@
           elevation="0"
           @click="emit('return-step')"
         >
-          {{ previousLabel }}
+          {{ $t('buttons.previous') }}
         </v-btn>
-        <v-btn
-          :disabled="isLoading"
-          color="blue-grey-darken-3"
-          @click="submitPdf"
-        >
-          <span v-if="!isLoading">{{ generateLabel }}</span>
-          <span v-else>{{ loadingLabel }}</span>
-        </v-btn>
+        <div class="d-flex ga-2">
+          <v-btn :disabled="isLoading" color="blue-grey" @click="previewPdf">
+            <span v-if="!isLoading">Vista previa sin IA</span>
+            <span v-else>{{ $t('pages.finalReport.options.loading') }}</span>
+          </v-btn>
+          <v-btn :disabled="isLoading" color="orange" @click="previewPdfWithAi">
+            <span v-if="!isLoading">Vista previa con IA</span>
+            <span v-else>{{ $t('pages.finalReport.options.loading') }}</span>
+          </v-btn>
+        </div>
       </v-row>
     </v-col>
 
@@ -54,7 +59,7 @@
             :disabled="!previewUrl"
             @click="downloadPreview"
           >
-            {{ downloadLabel }}
+            Descargar PDF
           </v-btn>
           <v-btn icon variant="text" @click="closePreview">
             <v-icon>mdi-close</v-icon>
@@ -65,7 +70,7 @@
           <iframe
             v-if="previewUrl"
             :src="previewUrl"
-            title="Vista previa del informe heurístico"
+            title="Vista previa del informe heuristico"
             style="width: 100%; height: 100%; border: 0"
           />
           <div
@@ -78,7 +83,7 @@
               color="blue-grey-darken-3"
               size="48"
             />
-            <p class="mt-4">{{ previewLoadingLabel }}</p>
+            <p class="mt-4">Generando vista previa...</p>
           </div>
         </v-card-text>
       </v-card>
@@ -87,23 +92,26 @@
 </template>
 
 <script setup>
-/* eslint-disable no-console */
-import { ref, computed, watch, onBeforeUnmount } from 'vue'
+import { ref, computed, onBeforeUnmount, watch } from 'vue'
 import { useStore } from 'vuex'
+import { useI18n } from 'vue-i18n'
 import { generateHeuristicPdf } from '@/ux/Heuristic/utils/pdfGenerator'
 import {
   buildHeuristicsEvaluator,
   buildHeuristicsStatistics,
   finalResult,
   formatTimeSpentFromMs,
-  getSeverityLabel,
   statistics,
   standardDeviation,
 } from '@/ux/Heuristic/utils/statistics'
+import { buildOllamaRequestBody } from '@/ux/Heuristic/utils/aiReportPrompt'
 import { STUDY_TYPES } from '@/shared/constants/methodDefinitions'
 
 // Vuex store
 const store = useStore()
+
+// Vue I18n
+const { t } = useI18n()
 
 // Emits
 const emit = defineEmits(['return-step'])
@@ -122,25 +130,7 @@ const isLoading = ref(false)
 const isPreviewOpen = ref(false)
 const previewUrl = ref('')
 const previewFileName = ref('informe_heuristica_evaluacion.pdf')
-const reportTitle = 'Final Report Content'
-const reportItems = [
-  'Test description',
-  'Conclusion and final observations',
-  'General test data and metadata',
-  'Results with statistics and visual tables',
-  'All evaluator answers with optional comments and images',
-  'Grouped answers by heuristic and evaluator',
-  'Professional layout with index and numbered pages',
-  'Interactive popup report preview',
-]
-const loadingMessage =
-  'Generating report preview. This operation might take a few minutes.'
-const previousLabel = 'Previous'
-const generateLabel = 'Preview PDF'
-const loadingLabel = 'Loading...'
-const previewTitle = 'Previsualización del informe'
-const downloadLabel = 'Descargar PDF'
-const previewLoadingLabel = 'Generando vista previa del informe...'
+const previewTitle = ref('Vista previa del informe')
 
 // Computed properties
 const testAnswerDocument = computed(() => store.state.Answer.testAnswerDocument)
@@ -167,6 +157,16 @@ const heuristicsStatistics = computed(() =>
   buildHeuristicsStatistics(heuristicsEvaluator.value),
 )
 
+const getSeverityLabel = (value) => {
+  const percentage = Number.parseFloat(String(value ?? '').replace('%', ''))
+
+  if (!Number.isFinite(percentage)) return 'Crítico'
+  if (percentage >= 75) return 'Leve'
+  if (percentage >= 50) return 'Moderado'
+  if (percentage >= 25) return 'Grave'
+  return 'Crítico'
+}
+
 const getEvaluatorDisplayName = (evaluator, index) => {
   const cooperators = test.value?.cooperators || []
   const cooperator = cooperators.find(
@@ -190,6 +190,31 @@ const getEvaluatorDisplayName = (evaluator, index) => {
     `Ev${index + 1}`
   )
 }
+
+const evaluatorPercentages = computed(() => {
+  const items = (resultEvaluator.value || []).map((item, index) => {
+    const percentage = Number.parseFloat(item?.result || '0')
+    const safePercentage = Number.isFinite(percentage) ? percentage : 0
+
+    return {
+      name: getEvaluatorDisplayName(item, index),
+      percentage: safePercentage.toFixed(2),
+      severity: getSeverityLabel(safePercentage),
+    }
+  })
+
+  const validPercentages = items
+    .map((item) => Number.parseFloat(item.percentage))
+    .filter((value) => Number.isFinite(value))
+  const globalAverage = validPercentages.length
+    ? (
+        validPercentages.reduce((sum, value) => sum + value, 0) /
+        validPercentages.length
+      ).toFixed(2)
+    : '0.00'
+
+  return { items, globalAverage }
+})
 
 const timeByHeuristics = computed(() => {
   const table = {
@@ -257,39 +282,76 @@ const timeByHeuristics = computed(() => {
   return table
 })
 
-const evaluatorPercentages = computed(() => {
-  const items = (resultEvaluator.value || []).map((item, index) => {
-    const percentage = Number.parseFloat(item?.result || '0')
-    return {
-      name: getEvaluatorDisplayName(item, index),
-      percentage: Number.isFinite(percentage) ? percentage.toFixed(2) : '0.00',
-      severity: getSeverityLabel(percentage),
-    }
+const generateAiFinalReport = async (finalReportItem) => {
+  const ollamaUrl =
+    process.env.VUE_APP_OLLAMA_API_URL || 'http://localhost:11434/api/chat'
+  const body = buildOllamaRequestBody(finalReportItem)
+
+  const response = await fetch(ollamaUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
   })
 
-  const validPercentages = items
-    .map((item) => Number.parseFloat(item.percentage))
-    .filter((value) => Number.isFinite(value))
-  const globalAverage = validPercentages.length
-    ? (
-        validPercentages.reduce((sum, value) => sum + value, 0) /
-        validPercentages.length
-      ).toFixed(2)
-    : '0.00'
+  if (!response.ok) {
+    throw new Error(`Ollama report generation failed: ${response.status}`)
+  }
 
-  console.log(
-    '[evaluatorPercentages] resultEvaluator:',
-    resultEvaluator.value.length,
-    'evaluadores',
-  )
-  console.log(
-    '[evaluatorPercentages] items:',
-    JSON.parse(JSON.stringify(items)),
-  )
-  console.log('[evaluatorPercentages] globalAverage:', globalAverage)
+  const { message } = await response.json()
+  return message?.content || finalReportItem.finalReport || ''
+}
 
-  return { items, globalAverage }
-})
+const getCooperatorEmails = () => {
+  const cooperators = test.value.cooperators || []
+  return cooperators.filter((coop) => coop?.email).map((coop) => coop.email)
+}
+
+const buildFinalReportItem = () => {
+  statisticsData.value = finalResult(resultEvaluator.value)
+  const heuristicRankingItems = [...(heuristicsStatistics.value?.items || [])]
+    .map((item) => ({
+      ...item,
+      percentage: Number.parseFloat(item.percentage || '0'),
+    }))
+    .sort((left, right) => left.percentage - right.percentage)
+    .map((item, index) => ({
+      position: index + 1,
+      name: item.name,
+      percentage: item.percentage,
+      severity: getSeverityLabel(item.percentage),
+    }))
+
+  return {
+    testTitle: test.value.testTitle,
+    title: test.value.testTitle,
+    creationDate: test.value.creationDate,
+    testDescription: test.value.testDescription,
+    cooperatorsEmail: getCooperatorEmails(),
+    creatorEmail: test.value.testAdmin?.email || '',
+    finalReport: test.value.studyConclusion,
+    studyConclusion: test.value.studyConclusion,
+    allOptions: test.value.testOptions,
+    allAnswers: answers.value,
+    finalResult: statisticsData.value,
+    finalResultData: statisticsData.value,
+    taskAnswers: Object.values(testAnswerDocument.value?.taskAnswers || {}),
+    testStructure: test.value.testStructure,
+    statisticsByEvaluatorAnswer: heuristicsEvaluator.value,
+    heuristicsEvaluator: heuristicsEvaluator.value,
+    statisticsByHeuristics: heuristicsStatistics.value,
+    heuristicsStatistics: heuristicsStatistics.value,
+    timeByHeuristics: timeByHeuristics.value,
+    generalStatistics: statisticsData.value,
+    statisticsTable: store.state.Answer.evaluatorStatistics,
+    type: testAnswerDocument.value?.type || STUDY_TYPES.HEURISTIC,
+    heuristicComments: props.heuristicComments,
+    evaluatorPercentages: evaluatorPercentages.value,
+    heuristicRanking: {
+      items: heuristicRankingItems,
+    },
+    participants: getCooperatorEmails().map((email) => ({ email })),
+  }
+}
 
 const slugify = (text) =>
   text
@@ -297,6 +359,15 @@ const slugify = (text) =>
     .toLowerCase()
     .replace(/\s+/g, '_')
     .replace(/[^\w\-]+/g, '')
+
+const buildPreviewFileName = (suffix = '') => {
+  const title = slugify(test.value.testTitle || 'report')
+  const creationDate = slugify(
+    test.value.creationDate || new Date().toISOString(),
+  )
+
+  return `final_report${suffix}_${title}_${creationDate}.pdf`
+}
 
 const revokePreviewUrl = () => {
   if (previewUrl.value) {
@@ -312,12 +383,56 @@ const closePreview = () => {
 
 const downloadPreview = () => {
   if (!previewUrl.value) return
-  const link = document.createElement('a')
-  link.href = previewUrl.value
-  link.download = previewFileName.value
+
+  const link = Object.assign(document.createElement('a'), {
+    href: previewUrl.value,
+    download: previewFileName.value,
+  })
+
   document.body.appendChild(link)
   link.click()
-  document.body.removeChild(link)
+  link.remove()
+}
+
+const openPdfPreview = async (finalReportItem, suffix = '') => {
+  revokePreviewUrl()
+
+  const previewResult = await generateHeuristicPdf(finalReportItem, {
+    mode: 'preview',
+  })
+
+  previewUrl.value = previewResult?.url || ''
+  previewFileName.value = suffix
+    ? buildPreviewFileName(suffix)
+    : previewResult?.fileName || buildPreviewFileName()
+  isPreviewOpen.value = Boolean(previewUrl.value)
+}
+
+const previewPdf = async () => {
+  isLoading.value = true
+  try {
+    previewTitle.value = 'Vista previa del informe sin IA'
+    await openPdfPreview(buildFinalReportItem())
+  } catch (error) {
+    console.error('PDF preview failed:', error)
+  } finally {
+    isLoading.value = false
+  }
+}
+
+const previewPdfWithAi = async () => {
+  isLoading.value = true
+  try {
+    const finalReportItem = buildFinalReportItem()
+    finalReportItem.finalReport = await generateAiFinalReport(finalReportItem)
+    finalReportItem.studyConclusion = finalReportItem.finalReport
+    previewTitle.value = 'Vista previa del informe con IA'
+    await openPdfPreview(finalReportItem, '_ai')
+  } catch (error) {
+    console.error('AI PDF preview failed:', error)
+  } finally {
+    isLoading.value = false
+  }
 }
 
 onBeforeUnmount(() => {
@@ -327,163 +442,4 @@ onBeforeUnmount(() => {
 watch(isPreviewOpen, (value) => {
   if (!value) revokePreviewUrl()
 })
-
-// Methods
-const submitPdf = async () => {
-  isLoading.value = true
-  try {
-    // Extract valid emails from cooperators
-    const getCooperatorEmails = () => {
-      const cooperators = test.value.cooperators || []
-      return cooperators.filter((coop) => coop?.email).map((coop) => coop.email)
-    }
-
-    console.log(
-      '[FinalReportSelectionBox] testAnswerDocument (raw state):',
-      store.state.Answer.testAnswerDocument ? 'OK' : 'null',
-    )
-    console.log(
-      '[FinalReportSelectionBox] testAnswerDocument.heuristicAnswers keys:',
-      Object.keys(
-        store.state.Answer.testAnswerDocument?.heuristicAnswers || {},
-      ),
-    )
-    console.log(
-      '[FinalReportSelectionBox] answers.value:',
-      answers.value.length,
-      'items',
-    )
-    console.log(
-      '[FinalReportSelectionBox] resultEvaluator:',
-      resultEvaluator.value.length,
-      'evaluadores',
-    )
-    if (resultEvaluator.value.length > 0) {
-      console.log(
-        '[FinalReportSelectionBox] primer evaluador:',
-        JSON.parse(JSON.stringify(resultEvaluator.value[0])),
-      )
-    }
-    console.log(
-      '[FinalReportSelectionBox] test (getter):',
-      store.getters.test ? 'OK' : 'null',
-    )
-    if (store.getters.test) {
-      console.log(
-        '[FinalReportSelectionBox] test.testOptions:',
-        store.getters.test.testOptions,
-      )
-    }
-    console.log(
-      '[FinalReportSelectionBox] evaluatorStatistics:',
-      store.state.Answer.evaluatorStatistics,
-    )
-
-    statisticsData.value = finalResult()
-    console.log(
-      '[FinalReportSelectionBox] statisticsData (finalResult):',
-      statisticsData.value,
-    )
-
-    const cooperatorsEmailsList = getCooperatorEmails()
-
-    const finalReportItem = {
-      testTitle: test.value.testTitle,
-      title: test.value.testTitle,
-      creationDate: test.value.creationDate,
-      testDescription: test.value.testDescription,
-      cooperatorsEmail: cooperatorsEmailsList,
-      creatorEmail: test.value.testAdmin?.email || '',
-      finalReport: test.value.studyConclusion,
-      allOptions: test.value.testOptions,
-      allAnswers: answers.value,
-      finalResult: statisticsData.value,
-      taskAnswers: Object.values(testAnswerDocument.value?.taskAnswers || {}),
-      testStructure: test.value.testStructure,
-      statisticsByEvaluatorAnswer: heuristicsEvaluator.value,
-      timeByHeuristics: timeByHeuristics.value,
-      statisticsByHeuristics: heuristicsStatistics.value,
-      generalStatistics: statisticsData.value,
-      statisticsTable: store.state.Answer.evaluatorStatistics,
-      type: testAnswerDocument.value?.type || STUDY_TYPES.HEURISTIC,
-      heuristicComments: props.heuristicComments,
-      evaluatorPercentages: evaluatorPercentages.value,
-      heuristicRanking: {
-        items: [...(heuristicsStatistics.value?.items || [])]
-          .map((item) => ({
-            ...item,
-            percentage: Number.parseFloat(item.percentage || '0'),
-          }))
-          .sort((left, right) => left.percentage - right.percentage)
-          .map((item, index) => ({
-            position: index + 1,
-            name: item.name,
-            percentage: item.percentage,
-            severity: getSeverityLabel(item.percentage),
-          })),
-      },
-      finalResultData: statisticsData.value,
-      participants: cooperatorsEmailsList.map((email) => ({ email })),
-    }
-
-    console.log(
-      '[FinalReportSelectionBox] finalReportItem keys:',
-      Object.keys(finalReportItem),
-    )
-    console.log('[FinalReportSelectionBox] finalReportItem summary:', {
-      testTitle: finalReportItem.testTitle,
-      testStructureLength: Array.isArray(finalReportItem.testStructure)
-        ? finalReportItem.testStructure.length
-        : 0,
-      allAnswersLength: Array.isArray(finalReportItem.allAnswers)
-        ? finalReportItem.allAnswers.length
-        : 0,
-      taskAnswersLength: Array.isArray(finalReportItem.taskAnswers)
-        ? finalReportItem.taskAnswers.length
-        : 0,
-      heuristicCommentsKeys: Object.keys(
-        finalReportItem.heuristicComments || {},
-      ),
-      firstHeuristicQuestionCount: Array.isArray(
-        finalReportItem.testStructure?.[0]?.heuristicQuestions,
-      )
-        ? finalReportItem.testStructure[0].heuristicQuestions.length
-        : 0,
-    })
-    console.log(
-      '[FinalReportSelectionBox] finalReportItem.testStructure:',
-      JSON.parse(JSON.stringify(finalReportItem.testStructure || [])),
-    )
-    console.log(
-      '[FinalReportSelectionBox] finalReportItem.allAnswers[0]:',
-      JSON.parse(JSON.stringify(finalReportItem.allAnswers?.[0] || null)),
-    )
-    console.log(
-      '[FinalReportSelectionBox] finalReportItem.heuristicComments:',
-      JSON.parse(JSON.stringify(finalReportItem.heuristicComments || {})),
-    )
-    console.log(
-      '[FinalReportSelectionBox] finalReportItem.heuristicComments:',
-      JSON.parse(JSON.stringify(finalReportItem.finalReport || {})),
-    )
-
-    const title = slugify(test.value.testTitle || 'report')
-    const creationDate = slugify(
-      test.value.creationDate || new Date().toISOString(),
-    )
-    const filename = `final_report_${title}_${creationDate}.pdf`
-
-    revokePreviewUrl()
-    const previewResult = await generateHeuristicPdf(finalReportItem, {
-      mode: 'preview',
-    })
-    previewUrl.value = previewResult?.url || ''
-    previewFileName.value = previewResult?.fileName || filename
-    isPreviewOpen.value = Boolean(previewUrl.value)
-  } catch (error) {
-    throw error
-  } finally {
-    isLoading.value = false
-  }
-}
 </script>

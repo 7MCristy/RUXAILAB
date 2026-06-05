@@ -74,6 +74,17 @@
             style="width: 100%; height: 100%; border: 0"
           />
           <div
+            v-else-if="previewError"
+            class="d-flex flex-column align-center justify-center pa-8 text-center"
+            style="height: 100%"
+          >
+            <v-icon color="red" size="48">mdi-alert-circle-outline</v-icon>
+            <h3 class="mt-4">No se pudo generar la vista previa</h3>
+            <p class="mt-2 text-grey-darken-1" style="max-width: 720px">
+              {{ previewError }}
+            </p>
+          </div>
+          <div
             v-else
             class="d-flex flex-column align-center justify-center"
             style="height: 100%"
@@ -83,7 +94,7 @@
               color="blue-grey-darken-3"
               size="48"
             />
-            <p class="mt-4">Generando vista previa...</p>
+            <p class="mt-4">{{ previewStatus }}</p>
           </div>
         </v-card-text>
       </v-card>
@@ -94,8 +105,8 @@
 <script setup>
 import { ref, computed, onBeforeUnmount, watch } from 'vue'
 import { useStore } from 'vuex'
-import { useI18n } from 'vue-i18n'
 import { generateHeuristicPdf } from '@/ux/Heuristic/utils/pdfGenerator'
+import { generateHeuristicPdfWithAi } from '@/ux/Heuristic/utils/pdfGeneratorWithAi'
 import {
   buildHeuristicsEvaluator,
   buildHeuristicsStatistics,
@@ -106,13 +117,11 @@ import {
 } from '@/ux/Heuristic/utils/statistics'
 import { buildOllamaRequestBody } from '@/ux/Heuristic/utils/aiReportPrompt'
 import { STUDY_TYPES } from '@/shared/constants/methodDefinitions'
-
+import { generateAiReportWithFallback } from '@/app/services/geminiReportService'
 // Vuex store
 const store = useStore()
 
 // Vue I18n
-const { t } = useI18n()
-
 // Emits
 const emit = defineEmits(['return-step'])
 
@@ -131,6 +140,8 @@ const isPreviewOpen = ref(false)
 const previewUrl = ref('')
 const previewFileName = ref('informe_heuristica_evaluacion.pdf')
 const previewTitle = ref('Vista previa del informe')
+const previewStatus = ref('Generando vista previa...')
+const previewError = ref('')
 
 // Computed properties
 const testAnswerDocument = computed(() => store.state.Answer.testAnswerDocument)
@@ -167,37 +178,59 @@ const getSeverityLabel = (value) => {
   return 'Crítico'
 }
 
-const getEvaluatorDisplayName = (evaluator, index) => {
-  const cooperators = test.value?.cooperators || []
-  const cooperator = cooperators.find(
-    (item) =>
-      item?.userDocId === evaluator?.userDocId ||
-      item?.uid === evaluator?.userDocId ||
-      item?.id === evaluator?.userDocId ||
-      item?.email === evaluator?.email,
-  )
-
-  return (
-    cooperator?.fullName ||
-    cooperator?.name ||
-    cooperator?.displayName ||
-    cooperator?.email ||
-    evaluator?.fullName ||
-    evaluator?.name ||
-    evaluator?.displayName ||
-    evaluator?.email ||
-    evaluator?.userDocId ||
-    `Ev${index + 1}`
-  )
-}
-
 const evaluatorPercentages = computed(() => {
-  const items = (resultEvaluator.value || []).map((item, index) => {
+  const resultItems = resultEvaluator.value || []
+  const cooperators = test.value?.cooperators || []
+  const matchedCoopIndices = new Set()
+  const evaluatorCooperatorMap = new Map()
+
+  resultItems.forEach((item, index) => {
+    const coopIndex = cooperators.findIndex(
+      (c) =>
+        c?.userDocId === item?.userDocId ||
+        c?.uid === item?.userDocId ||
+        c?.id === item?.userDocId,
+    )
+    if (coopIndex >= 0 && !matchedCoopIndices.has(coopIndex)) {
+      matchedCoopIndices.add(coopIndex)
+      evaluatorCooperatorMap.set(index, cooperators[coopIndex])
+    }
+  })
+
+  let nextCoopIndex = 0
+  resultItems.forEach((item, index) => {
+    if (evaluatorCooperatorMap.has(index)) return
+    while (
+      nextCoopIndex < cooperators.length &&
+      matchedCoopIndices.has(nextCoopIndex)
+    ) {
+      nextCoopIndex++
+    }
+    const coop =
+      nextCoopIndex < cooperators.length ? cooperators[nextCoopIndex] : null
+    if (coop) {
+      matchedCoopIndices.add(nextCoopIndex)
+      evaluatorCooperatorMap.set(index, coop)
+      nextCoopIndex++
+    }
+  })
+
+  const items = resultItems.map((item, index) => {
     const percentage = Number.parseFloat(item?.result || '0')
     const safePercentage = Number.isFinite(percentage) ? percentage : 0
+    const cooperator = evaluatorCooperatorMap.get(index)
+
+    const name =
+      cooperator?.fullName ||
+      cooperator?.name ||
+      cooperator?.displayName ||
+      cooperator?.email ||
+      item?.userDocId ||
+      `Ev${index + 1}`
 
     return {
-      name: getEvaluatorDisplayName(item, index),
+      name,
+      email: cooperator?.email || item?.email || '',
       percentage: safePercentage.toFixed(2),
       severity: getSeverityLabel(safePercentage),
     }
@@ -283,27 +316,70 @@ const timeByHeuristics = computed(() => {
 })
 
 const generateAiFinalReport = async (finalReportItem) => {
-  const ollamaUrl =
-    process.env.VUE_APP_OLLAMA_API_URL || 'http://localhost:11434/api/chat'
-  const body = buildOllamaRequestBody(finalReportItem)
-
-  const response = await fetch(ollamaUrl, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  })
-
-  if (!response.ok) {
-    throw new Error(`Ollama report generation failed: ${response.status}`)
+  try {
+    // Intenta Gemini primero, fallback a Ollama si está disponible
+    const content = await generateAiReportWithFallback(finalReportItem, {
+      ollamaUrl: process.env.VUE_APP_OLLAMA_API_URL || 'http://localhost:11434/api/chat',
+      buildFallback: buildFallbackConclusion
+    })
+    return content
+  } catch (error) {
+    console.error('AI report generation error:', error)
+    // Fallback final: conclusión manual
+    return finalReportItem.finalReport || buildFallbackConclusion()
   }
-
-  const { message } = await response.json()
-  return message?.content || finalReportItem.finalReport || ''
 }
 
 const getCooperatorEmails = () => {
   const cooperators = test.value.cooperators || []
   return cooperators.filter((coop) => coop?.email).map((coop) => coop.email)
+}
+
+const getTestUrl = () =>
+  test.value?.websiteUrl ||
+  test.value?.siteURL ||
+  test.value?.url ||
+  test.value?.testUrl ||
+  ''
+
+const buildFallbackConclusion = () => {
+  const rankingItems = [...(heuristicsStatistics.value?.items || [])]
+    .map((item) => ({
+      ...item,
+      percentage: Number.parseFloat(item.percentage || '0'),
+    }))
+    .sort((left, right) => left.percentage - right.percentage)
+
+  const weakestHeuristics = rankingItems.slice(0, 2)
+
+  if (!rankingItems.length) {
+    return test.value.studyConclusion || ''
+  }
+
+  const globalAverage = Number.parseFloat(
+    statisticsData.value?.average ||
+      evaluatorPercentages.value?.globalAverage ||
+      0,
+  )
+  const normalizedAverage = Number.isFinite(globalAverage)
+    ? globalAverage.toFixed(2)
+    : '0.00'
+  const weakestText = weakestHeuristics
+    .map(
+      (item) =>
+        `${item.name} (${Number.isFinite(item.percentage) ? item.percentage.toFixed(2) : '0.00'}%)`,
+    )
+    .join(' y ')
+
+  return [
+    `El sistema presenta un cumplimiento global del ${normalizedAverage}%, con un nivel de severidad ${getSeverityLabel(normalizedAverage)}.`,
+    weakestText
+      ? `Las principales oportunidades de mejora se concentran en ${weakestText}, por lo que conviene priorizar estas heurísticas en la siguiente iteración de diseño.`
+      : '',
+    'La mejora de estos puntos permitiría reforzar la consistencia, reducir la fricción de uso y consolidar una experiencia más estable para los distintos perfiles de evaluación.',
+  ]
+    .filter(Boolean)
+    .join(' ')
 }
 
 const buildFinalReportItem = () => {
@@ -324,12 +400,13 @@ const buildFinalReportItem = () => {
   return {
     testTitle: test.value.testTitle,
     title: test.value.testTitle,
+    testUrl: getTestUrl(),
     creationDate: test.value.creationDate,
     testDescription: test.value.testDescription,
     cooperatorsEmail: getCooperatorEmails(),
     creatorEmail: test.value.testAdmin?.email || '',
-    finalReport: test.value.studyConclusion,
-    studyConclusion: test.value.studyConclusion,
+    finalReport: test.value.studyConclusion || buildFallbackConclusion(),
+    studyConclusion: test.value.studyConclusion || buildFallbackConclusion(),
     allOptions: test.value.testOptions,
     allAnswers: answers.value,
     finalResult: statisticsData.value,
@@ -343,6 +420,7 @@ const buildFinalReportItem = () => {
     timeByHeuristics: timeByHeuristics.value,
     generalStatistics: statisticsData.value,
     statisticsTable: store.state.Answer.evaluatorStatistics,
+    evaluatorTimeItems: store.state.Answer.evaluatorStatistics?.items || [],
     type: testAnswerDocument.value?.type || STUDY_TYPES.HEURISTIC,
     heuristicComments: props.heuristicComments,
     evaluatorPercentages: evaluatorPercentages.value,
@@ -376,6 +454,19 @@ const revokePreviewUrl = () => {
   }
 }
 
+const startPreview = (title, status) => {
+  revokePreviewUrl()
+  previewTitle.value = title
+  previewStatus.value = status
+  previewError.value = ''
+  isPreviewOpen.value = true
+}
+
+const showPreviewError = (error, fallbackMessage) => {
+  const message = error?.message || fallbackMessage
+  previewError.value = message
+}
+
 const closePreview = () => {
   isPreviewOpen.value = false
   revokePreviewUrl()
@@ -394,27 +485,39 @@ const downloadPreview = () => {
   link.remove()
 }
 
-const openPdfPreview = async (finalReportItem, suffix = '') => {
-  revokePreviewUrl()
+const openPdfPreview = async (
+  finalReportItem,
+  suffix = '',
+  extraOptions = {},
+  generator = generateHeuristicPdf,
+) => {
+  previewStatus.value = 'Construyendo PDF...'
 
-  const previewResult = await generateHeuristicPdf(finalReportItem, {
+  const previewResult = await generator(finalReportItem, {
     mode: 'preview',
+    ...extraOptions,
   })
 
   previewUrl.value = previewResult?.url || ''
   previewFileName.value = suffix
     ? buildPreviewFileName(suffix)
     : previewResult?.fileName || buildPreviewFileName()
-  isPreviewOpen.value = Boolean(previewUrl.value)
+
+  if (!previewUrl.value) {
+    throw new Error('El generador no ha devuelto una URL de previsualizacion.')
+  }
 }
 
 const previewPdf = async () => {
   isLoading.value = true
+  startPreview('Vista previa del informe sin IA', 'Construyendo PDF...')
   try {
-    previewTitle.value = 'Vista previa del informe sin IA'
-    await openPdfPreview(buildFinalReportItem())
+    await openPdfPreview(buildFinalReportItem(), '', {
+      showQuickSummary: false,
+    })
   } catch (error) {
     console.error('PDF preview failed:', error)
+    showPreviewError(error, 'No se pudo generar la vista previa sin IA.')
   } finally {
     isLoading.value = false
   }
@@ -422,14 +525,34 @@ const previewPdf = async () => {
 
 const previewPdfWithAi = async () => {
   isLoading.value = true
+  startPreview(
+    'Vista previa del informe con IA',
+    'Consultando Ollama/Qwen para redactar el informe...',
+  )
   try {
     const finalReportItem = buildFinalReportItem()
     finalReportItem.finalReport = await generateAiFinalReport(finalReportItem)
     finalReportItem.studyConclusion = finalReportItem.finalReport
-    previewTitle.value = 'Vista previa del informe con IA'
-    await openPdfPreview(finalReportItem, '_ai')
+    await openPdfPreview(finalReportItem, '_ai', { showQuickSummary: false }, generateHeuristicPdfWithAi)
   } catch (error) {
     console.error('AI PDF preview failed:', error)
+    previewStatus.value =
+      'Ollama ha fallado. Generando una vista previa de respaldo...'
+
+    try {
+      const fallbackItem = buildFinalReportItem()
+      fallbackItem.finalReport = buildFallbackConclusion()
+      fallbackItem.studyConclusion = fallbackItem.finalReport
+      await openPdfPreview(fallbackItem, '_ai_fallback', {
+        showQuickSummary: false,
+      }, generateHeuristicPdf)
+    } catch (fallbackError) {
+      console.error('AI fallback PDF preview failed:', fallbackError)
+      showPreviewError(
+        fallbackError,
+        'No se pudo generar la vista previa con IA ni la vista previa de respaldo.',
+      )
+    }
   } finally {
     isLoading.value = false
   }

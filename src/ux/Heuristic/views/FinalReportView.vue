@@ -163,7 +163,7 @@ import { instantiateStudyByType } from '@/shared/constants/methodDefinitions'
 import PageWrapper from '@/shared/views/template/PageWrapper.vue'
 import IntroFinalReport from '@/ux/Heuristic/components/IntroFinalReport.vue'
 import TextareaForm from '@/shared/components/TextareaForm.vue'
-
+import { generateAiReportWithFallback } from '@/app/services/geminiReportService'
 const store = useStore()
 const router = useRouter()
 

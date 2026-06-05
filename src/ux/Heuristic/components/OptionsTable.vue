@@ -239,7 +239,8 @@
       v-model:dialog="dialog"
       :option="option"
       :has-value="hasValue"
-      @change-has-value="updateHasValue"
+      :warning="warning"
+      @change-option-flags="updateOptionFlags"
       @add-option="updateOptions"
       @change="emitChange"
     />
@@ -295,12 +296,15 @@ const option = ref({
   text: '',
   description: '',
   value: null,
+  hasValue: true,
+  warning: false,
   timestamp: null,
 })
 
 const dialog = ref(false)
 const editIndex = ref(-1)
 const hasValue = ref(true)
+const warning = ref(false)
 
 const optionsWithFormattedValue = computed(() =>
   (store.state.Tests.Test.testOptions || []).map((opt) => ({
@@ -322,20 +326,29 @@ watch(dialog, (newVal) => {
   }
 })
 
-const updateHasValue = (newValue) => {
-  hasValue.value = newValue
+const updateOptionFlags = ({ hasValue: newHasValue, warning: newWarning }) => {
+  hasValue.value = newHasValue
+  warning.value = newWarning
 }
 
 const updateOptions = (newOption) => {
   if (props.isTemplate) return
+  const normalizedOption = {
+    ...newOption,
+    hasValue:
+      typeof newOption?.hasValue === 'boolean'
+        ? newOption.hasValue
+        : newOption?.value !== null,
+    warning: Boolean(newOption?.warning),
+  }
   if (editIndex.value === -1) {
     store.state.Tests.Test.testOptions.push({
-      ...newOption,
+      ...normalizedOption,
       timestamp: Date.now(),
     })
   } else {
     store.state.Tests.Test.testOptions[editIndex.value] = {
-      ...newOption,
+      ...normalizedOption,
       timestamp: store.state.Tests.Test.testOptions[editIndex.value].timestamp,
     }
     editIndex.value = -1
@@ -361,9 +374,10 @@ const editItem = (item) => {
     (opt) => opt.timestamp === item.timestamp,
   )
   option.value = { ...store.state.Tests.Test.testOptions[editIndex.value] }
-  hasValue.value = typeof option.value.hasValue === 'boolean'
-    ? option.value.hasValue
-    : option.value.value !== null
+  hasValue.value =
+    typeof option.value.hasValue === 'boolean'
+      ? option.value.hasValue
+      : option.value.value !== null
   warning.value = option.value.warning ?? false
   dialog.value = true
 }
@@ -373,8 +387,16 @@ const emitChange = () => {
 }
 
 const resetForm = () => {
-  option.value = { text: '', value: null, description: '', timestamp: null }
+  option.value = {
+    text: '',
+    value: null,
+    description: '',
+    hasValue: true,
+    warning: false,
+    timestamp: null,
+  }
   hasValue.value = true
+  warning.value = false
   editIndex.value = -1
 }
 </script>

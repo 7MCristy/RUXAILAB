@@ -60,7 +60,7 @@
           </p>
           <p class="text-body-1 mt-2">
             La evaluación fue llevada a cabo por
-            {{ participants?.length || 0 }} experto(s) en usabilidad, utilizando
+            {{ participants?.length || 0 }} {{ participants?.length === 1 ? 'experto' : 'expertos' }} en usabilidad, utilizando
             un formulario basado en las heurísticas de usabilidad de Nielsen y
             la norma ISO 9241-110.
           </p>
@@ -230,7 +230,7 @@
               <strong>Imágenes:</strong>
               {{
                 h.totalImages > 0
-                  ? `${h.totalImages} imagen(es) adjunta(s)`
+                  ? `${h.totalImages} ${h.totalImages === 1 ? 'imagen adjunta' : 'imágenes adjuntas'}`
                   : 'Sin imágenes adjuntas'
               }}
             </p>

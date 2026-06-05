@@ -1,7 +1,7 @@
 /* eslint-disable no-console */
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
-import { formatTimeSpentFromMs, finalResultData } from '@/ux/Heuristic/utils/statistics'
+import { formatTimeSpentFromMs } from '@/ux/Heuristic/utils/statistics'
 
 const FONT = 'helvetica'
 const M = 52
@@ -52,7 +52,7 @@ function addFooter(doc, pageNum) {
   doc.setFontSize(8)
   doc.setTextColor(...COLORS.sub)
   doc.text(
-    `INFORME DE EVALUACION HEURISTICA - Pag. ${pageNum}`,
+    `INFORME DE EVALUACIÓN HEURÍSTICA - Pág. ${pageNum}`,
     PAGE_W / 2,
     y,
     { align: 'center' },
@@ -70,6 +70,18 @@ function getSeverityFromPercentage(value) {
 
 function normalizeText(value) {
   return String(value ?? '')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+function pluralize(count, singular, plural) {
+  const n = Number(count)
+  return n === 1 ? singular : plural
+}
+
+function stripHtml(value = '') {
+  return String(value)
+    .replace(/<[^>]*>/g, ' ')
     .replace(/\s+/g, ' ')
     .trim()
 }
@@ -103,13 +115,13 @@ function getNumber(value, fallback = 0) {
 function getHeuristicLabel(heuristic, index) {
   const id = heuristic?.heuristicId || `H${index + 1}`
   const title = normalizeText(heuristic?.heuristicTitle || heuristic?.title)
-  return title ? `${id} - ${title}` : id
+  return title ? `${id} — ${title}` : id
 }
 
 function getHeuristicShortTitle(heuristic, index) {
   return (
     normalizeText(heuristic?.heuristicTitle || heuristic?.title) ||
-    `Heuristica ${index + 1}`
+    `Heurística ${index + 1}`
   )
 }
 
@@ -117,6 +129,7 @@ function getEvaluatorLabel(item, index) {
   return (
     normalizeText(item?.name) ||
     normalizeText(item?.evaluator) ||
+    normalizeText(item?.email) ||
     normalizeText(item?.userDocId) ||
     `Ev${index + 1}`
   )
@@ -125,16 +138,16 @@ function getEvaluatorLabel(item, index) {
 function getQuestionLabel(question, index) {
   const title = normalizeText(question?.title)
   const text = normalizeText(question?.text)
-  if (title && text && title !== text) return `${index + 1}. ${title} - ${text}`
+  if (title && text && title !== text) return `${index + 1}. ${title} — ${text}`
   if (title) return `${index + 1}. ${title}`
   if (text) return `${index + 1}. ${text}`
-  return `${index + 1}. Pregunta sin titulo`
+  return `${index + 1}. Pregunta sin título`
 }
 
 function getHeuristicDomainWeight(title) {
   const normalized = normalizeText(title).toLowerCase()
   if (
-    /(color|legibilidad|estetico|minimalista|visual|apariencia|tipograf|estilo)/i.test(
+    /(color|legibilidad|est[eé]tico|minimalista|visual|apariencia|tipograf|estilo)/i.test(
       normalized,
     )
   ) {
@@ -153,10 +166,10 @@ function getHeuristicDomainWeight(title) {
 function getHeuristicPurposeText(title) {
   const normalized = normalizeText(title).toLowerCase()
   if (/visibilidad|estado/.test(normalized)) {
-    return 'Comprueba si el sistema informa su estado, progreso y resultados de forma continua para evitar incertidumbre durante la ejecucion de tareas.'
+    return 'Comprueba si el sistema informa su estado, progreso y resultados de forma continua para evitar incertidumbre durante la ejecución de tareas.'
   }
   if (/relaci|mundo real|lenguaje/.test(normalized)) {
-    return 'Evalua si la interfaz utiliza lenguaje y conceptos familiares para las personas usuarias, reduciendo interpretaciones ambiguas.'
+    return 'Evalúa si la interfaz utiliza lenguaje y conceptos familiares para las personas usuarias, reduciendo interpretaciones ambiguas.'
   }
   if (/control|libertad|volver|deshacer/.test(normalized)) {
     return 'Analiza si la persona usuaria puede avanzar, retroceder o corregir decisiones con facilidad, sin quedarse bloqueada en el flujo.'
@@ -168,21 +181,21 @@ function getHeuristicPurposeText(title) {
     return 'Revisa la capacidad de prevenir errores y de guiar decisiones seguras antes de que se produzcan incidencias.'
   }
   if (/reconocimiento|memoria/.test(normalized)) {
-    return 'Mide si la interfaz reduce la carga de memoria manteniendo visible la informacion relevante y las opciones disponibles.'
+    return 'Mide si la interfaz reduce la carga de memoria manteniendo visible la información relevante y las opciones disponibles.'
   }
   if (/flexibilidad|eficiencia|atajo/.test(normalized)) {
     return 'Examina la eficiencia operativa para perfiles noveles y expertos, incluyendo recorridos optimizados y acciones frecuentes.'
   }
   if (/est[eé]tico|minimalista|visual|legibilidad|color/.test(normalized)) {
-    return 'Evalua la calidad visual y legibilidad para facilitar comprension rapida, jerarquia clara y reduccion de ruido en pantalla.'
+    return 'Evalúa la calidad visual y legibilidad para facilitar comprensión rápida, jerarquía clara y reducción de ruido en pantalla.'
   }
   if (/recuperaci[oó]n|diagnosticar|mensajes/.test(normalized)) {
-    return 'Analiza la claridad de mensajes de error y la facilidad para recuperar el flujo sin perdida de contexto.'
+    return 'Analiza la claridad de mensajes de error y la facilidad para recuperar el flujo sin pérdida de contexto.'
   }
   if (/ayuda|documentaci[oó]n/.test(normalized)) {
-    return 'Valida la disponibilidad de ayuda util y accesible para resolver dudas puntuales sin interrumpir el trabajo principal.'
+    return 'Valida la disponibilidad de ayuda útil y accesible para resolver dudas puntuales sin interrumpir el trabajo principal.'
   }
-  return 'Evalua la calidad de uso para detectar fricciones, reducir errores y mejorar eficacia, eficiencia y satisfaccion de las personas usuarias.'
+  return 'Evalúa la calidad de uso para detectar fricciones, reducir errores y mejorar eficacia, eficiencia y satisfacción de las personas usuarias.'
 }
 
 // ─── QUALITATIVE HELPERS ────────────────────────────────────────────────────
@@ -363,7 +376,6 @@ function calcStandardDeviation(values) {
 function buildHeuristicEvidence({
   allAnswers = [],
   testStructure = [],
-  finalResultData = {},
   heuristicsStatistics = [],
   heuristicComments = {},
   testOptions = [],
@@ -484,7 +496,7 @@ function buildHeuristicEvidence({
     )
     const impactScore =
       completionGap * warningWeight * evidenceWeight * domainWeight
-    
+
     return {
       id: heuristic?.heuristicId || `H${heuristicIndex + 1}`,
       position: heuristicIndex + 1,
@@ -506,9 +518,11 @@ function buildHeuristicEvidence({
       impactScore,
       severity: getSeverityFromPercentage(percentage),
       comments: normalizeText(
-        heuristicComments?.[
-          heuristic?.heuristicId || `H${heuristicIndex + 1}`
-        ] || '',
+        stripHtml(
+          heuristicComments?.[
+            heuristic?.heuristicId || `H${heuristicIndex + 1}`
+          ] || '',
+        ),
       ),
     }
   })
@@ -549,6 +563,10 @@ export async function generateHeuristicPdf(reportData, options = {}) {
     timeByHeuristics,
   } = reportData
   const mode = options?.mode || 'download'
+  const showQuickSummary = options?.showQuickSummary === true
+  const useWarningTerm = showQuickSummary
+  const cleanTestDescription = stripHtml(testDescription)
+  const cleanStudyConclusion = stripHtml(studyConclusion)
 
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   // DEBUG: finalResultData
@@ -558,10 +576,7 @@ export async function generateHeuristicPdf(reportData, options = {}) {
     '[generateHeuristicPdf] finalResultData keys:',
     finalResultData ? Object.keys(finalResultData) : 'null',
   )
-  console.log(
-    '[generateHeuristicPdf] finalResultData.sd:',
-    finalResultData?.sd,
-  )
+  console.log('[generateHeuristicPdf] finalResultData.sd:', finalResultData?.sd)
   console.log(
     '[generateHeuristicPdf] finalResultData.min:',
     finalResultData?.min,
@@ -617,9 +632,7 @@ export async function generateHeuristicPdf(reportData, options = {}) {
       `${evaluatorPercentages?.globalAverage || '0.00'}%`,
   )
   const globalSeverity = getSeverityFromPercentage(globalPct)
-  const averageTime = formatTimeSpentFromMs(
-    finalResultData?.averageTimeMs || 0,
-  )
+  const averageTime = formatTimeSpentFromMs(finalResultData?.averageTimeMs || 0)
   const totalComments = getNumber(finalResultData?.totalComments || 0)
   const totalImages = getNumber(finalResultData?.totalImages || 0)
   const totalWarnings = evidence.heuristics.reduce(
@@ -658,6 +671,8 @@ export async function generateHeuristicPdf(reportData, options = {}) {
 
   const startSection = (title, size = 18) => {
     const lh = size + 4
+    ensureSpace(40)
+    y += 8
     doc.setFont(FONT, 'bold')
     doc.setFontSize(size)
     doc.setTextColor(...COLORS.accent)
@@ -670,7 +685,7 @@ export async function generateHeuristicPdf(reportData, options = {}) {
     doc.setLineWidth(0.4)
     const lineLen = Math.min(size * 3.5, CONTENT_W * 0.4)
     doc.line(M, y, M + lineLen, y)
-    y += size === 18 ? 22 : 18
+    y += size === 18 ? 28 : 22
     doc.setFont(FONT, 'normal')
     doc.setFontSize(11)
     doc.setTextColor(...COLORS.text)
@@ -692,30 +707,22 @@ export async function generateHeuristicPdf(reportData, options = {}) {
     for (let i = 0; i < lines.length; i++) {
       ensureSpace(lh + 4)
       const line = lines[i]
-      const isLastLine = i === lines.length - 1
-
-      if (isLastLine) {
-        // Last line of paragraph: always left-aligned
+      const words = line.split(' ').filter(Boolean)
+      if (words.length <= 1) {
         doc.text(line, x, y, { align: 'left' })
       } else {
-        // Every other line: justify by distributing space between words
-        const words = line.split(' ').filter(Boolean)
-        if (words.length <= 1) {
+        const wordsWidth = words.reduce((sum, w) => sum + getTextWidth(w), 0)
+        const availableSpace = width - wordsWidth
+        const spaceWidth = availableSpace / (words.length - 1)
+        // Skip justification if gaps would be too wide; otherwise keep the same visual style.
+        if (spaceWidth > 18 || words.length < 4) {
           doc.text(line, x, y, { align: 'left' })
         } else {
-          const wordsWidth = words.reduce((sum, w) => sum + getTextWidth(w), 0)
-          const availableSpace = width - wordsWidth
-          const spaceWidth = availableSpace / (words.length - 1)
-          // Skip justification if gaps would be too wide (short last-ish lines)
-          if (spaceWidth > 18 || words.length < 4) {
-            doc.text(line, x, y, { align: 'left' })
-          } else {
-            let cx = x
-            words.forEach((word) => {
-              doc.text(word, cx, y)
-              cx += getTextWidth(word) + spaceWidth
-            })
-          }
+          let cx = x
+          words.forEach((word) => {
+            doc.text(word, cx, y)
+            cx += getTextWidth(word) + spaceWidth
+          })
         }
       }
       y += lh
@@ -748,9 +755,9 @@ export async function generateHeuristicPdf(reportData, options = {}) {
   doc.setFont(FONT, 'bold')
   doc.setFontSize(28)
   doc.setTextColor(...COLORS.accent)
-  doc.text('INFORME DE EVALUACION', PAGE_W / 2, y, { align: 'center' })
+  doc.text('INFORME DE EVALUACIÓN', PAGE_W / 2, y, { align: 'center' })
   y += 22
-  doc.text('HEURISTICA', PAGE_W / 2, y, { align: 'center' })
+  doc.text('HEURÍSTICA', PAGE_W / 2, y, { align: 'center' })
   y += 36
 
   doc.setDrawColor(...COLORS.border)
@@ -791,16 +798,45 @@ export async function generateHeuristicPdf(reportData, options = {}) {
     y += evalLines.length * 16 + 6
   }
   doc.text(
-    'Metodologia: 15 Heuristicas de Usabilidad - Nielsen + ISO 9241-110',
+    'Metodología: 15 Heurísticas de Usabilidad - Nielsen + ISO 9241-110',
     PAGE_W / 2,
     y,
     { align: 'center' },
   )
 
+  if (showQuickSummary) {
+    const coverMetricsY = y + 22
+    const coverMetricsH = 80
+    doc.setDrawColor(...COLORS.border)
+    doc.setFillColor(250, 252, 255)
+    doc.roundedRect(M, coverMetricsY, CONTENT_W, coverMetricsH, 8, 8, 'FD')
+    doc.setFont(FONT, 'bold')
+    doc.setFontSize(10)
+    doc.setTextColor(...COLORS.accent)
+    doc.text('Resumen rápido', M + 14, coverMetricsY + 18)
+    doc.setFont(FONT, 'normal')
+    doc.setFontSize(10)
+    doc.setTextColor(...COLORS.text)
+    const evaluatorCount =
+      evaluatorSummaryItems.length || evaluatorTimeItems.length || 0
+    const coverMetricLines = [
+      `Cumplimiento global: ${globalPct}`,
+      `Severidad: ${globalSeverity}`,
+      `Evaluadores: ${evaluatorCount}`,
+    ]
+    if (testUrl) {
+      coverMetricLines.push(`URL evaluada: ${testUrl}`)
+    }
+    coverMetricLines.forEach((line, index) => {
+      const rowY = coverMetricsY + 36 + index * 12
+      doc.text(line, M + 14, rowY)
+    })
+  }
+
   y = PAGE_H - M
   doc.setFontSize(8)
   doc.setTextColor(...COLORS.sub)
-  doc.text('RUXAILAB - Informe generado automaticamente', PAGE_W / 2, y, {
+  doc.text('RUXAILAB - Informe generado automáticamente', PAGE_W / 2, y, {
     align: 'center',
   })
 
@@ -812,30 +848,32 @@ export async function generateHeuristicPdf(reportData, options = {}) {
   doc.setFont(FONT, 'bold')
   doc.setFontSize(22)
   doc.setTextColor(...COLORS.accent)
-  doc.text('INDICE', M, y)
+  doc.text('ÍNDICE', M, y)
   doc.setDrawColor(...COLORS.accent)
   doc.setLineWidth(0.5)
   doc.line(M, y + 4, M + 60, y + 4)
-  y += 28
+  y += 30
 
   // ─── 1. INTRODUCCION ─────────────────────────────────────────────────────
   doc.addPage()
   pageNum += 1
   y = M
   addPageHeader()
-  startSection('1. Introduccion')
+  startSection('1. Introducción')
 
   writeParagraph(
-    `Este informe recoge los resultados de la evaluacion heuristica realizada al sistema "${testTitle || 'Sistema evaluado'}".`,
+    `Este informe recoge los resultados de la evaluación heurística realizada al sistema "${testTitle || 'Sistema evaluado'}".`,
   )
-  if (testDescription) {
-    writeParagraph(testDescription)
+  if (cleanTestDescription) {
+    writeParagraph(cleanTestDescription)
   }
+  const evaluatorCount =
+    evaluatorTimeItems.length || evaluatorSummaryItems.length || 0
   writeParagraph(
-    `La evaluacion ha sido completada por ${evaluatorTimeItems.length || evaluatorSummaryItems.length || 0} evaluador(es) y se apoya en el promedio de respuestas, los avisos de warning, los comentarios y las evidencias visuales recogidas durante el test.`,
+    `La evaluación ha sido completada por ${evaluatorCount} ${pluralize(evaluatorCount, 'evaluador', 'evaluadores')} y se apoya en el promedio de respuestas, los avisos de warning, los comentarios y las evidencias visuales recogidas durante el test.`,
   )
   writeParagraph(
-    `El resultado global de la evaluacion se interpreta como ${globalSeverity}, con un promedio de cumplimiento entre evaluadores del ${Number(getNumber(evaluatorPercentages?.globalAverage || 0)).toFixed(2)}%. Este dato se calcula sumando los porcentajes individuales de cumplimiento y dividiendo entre el numero total de evaluadores.`,
+    `El resultado global de la evaluación se interpreta con un margen de mejora ${globalSeverity}, con un promedio de cumplimiento entre evaluadores del ${Number(getNumber(evaluatorPercentages?.globalAverage || 0)).toFixed(2)}%. Este dato se calcula sumando los porcentajes individuales de cumplimiento y dividiendo entre el número total de evaluadores.`,
   )
   // SD global — shown here, "escenarios de warning maximo/minimo" removed
   console.log(
@@ -843,23 +881,45 @@ export async function generateHeuristicPdf(reportData, options = {}) {
     { globalSd, globalMax, globalMin },
   )
   writeParagraph(
-    `La desviacion estandar global de las puntuaciones es ${globalSd}, lo que refleja el grado de consenso entre los evaluadores: valores bajos indican alta coincidencia y valores altos señalan mayor divergencia en la percepcion de la usabilidad del sistema. El valor maximo (${globalMax}) corresponde al mayor porcentaje de cumplimiento obtenido por un evaluador, mientras que el valor minimo (${globalMin}) corresponde al menor porcentaje de cumplimiento obtenido por otro evaluador.`,
+    `La desviación estándar global de las puntuaciones es ${globalSd}, lo que refleja el grado de consenso entre los evaluadores: valores bajos indican alta coincidencia y valores altos señalan mayor divergencia en la percepción de la usabilidad del sistema. El valor máximo (${globalMax}) corresponde al mayor porcentaje de cumplimiento obtenido por un evaluador, mientras que el valor mínimo (${globalMin}) corresponde al menor porcentaje de cumplimiento obtenido por otro evaluador.`,
   )
   if (totalWarnings > 0 || totalComments > 0 || totalImages > 0) {
     const metadataBits = []
-    if (totalWarnings > 0)
-      metadataBits.push(`${totalWarnings} respuesta(s) con warning`)
-    if (totalComments > 0) metadataBits.push(`${totalComments} comentario(s)`)
-    if (totalImages > 0) metadataBits.push(`${totalImages} imagen(es)`)
-    writeParagraph(
-      `La evaluacion general incorpora ${metadataBits.join(', ')}.`,
-    )
+    if (totalWarnings > 0) {
+      const w = totalWarnings
+      if (useWarningTerm) {
+        metadataBits.push(
+          `${w} ${pluralize(w, 'respuesta con warning', 'respuestas con warning')}`,
+        )
+      } else {
+        metadataBits.push(
+          `${w} ${pluralize(w, 'pregunta que requiere un análisis más profundo', 'preguntas que requieren un análisis más profundo')}`,
+        )
+      }
+    }
+    if (totalComments > 0) {
+      const c = totalComments
+      metadataBits.push(`${c} ${pluralize(c, 'comentario', 'comentarios')}`)
+    }
+    if (totalImages > 0) {
+      const i = totalImages
+      metadataBits.push(`${i} ${pluralize(i, 'imagen', 'imágenes')}`)
+    }
+    if (useWarningTerm) {
+      writeParagraph(
+        `La evaluación general incorpora ${metadataBits.join(', y ')}. Los warnings son indicadores de posibles mejoras internas pero que no afectan directamente al porcentaje de cumplimiento. En cambio, los comentarios y las evidencias visuales aportan contexto cualitativo que ayuda a interpretar los resultados cuantitativos y a priorizar las áreas de mejora identificadas.`,
+      )
+    } else {
+      writeParagraph(
+        `La evaluación general incorpora ${metadataBits.join(', y ')}. Estas preguntas señalan aspectos que no pueden verificarse únicamente con la navegación superficial de la web, sino que requieren una revisión más profunda del sistema. Los comentarios y las evidencias visuales aportan contexto cualitativo que ayuda a interpretar los resultados cuantitativos y a priorizar las áreas de mejora identificadas.`,
+      )
+    }
   }
 
   // ─── 2. RESUMEN EJECUTIVO ─────────────────────────────────────────────────
   startSection('2. Resumen ejecutivo')
   writeParagraph(
-    'La tabla siguiente muestra el porcentaje global de cumplimiento obtenido por cada evaluador. El valor se calcula a partir de las respuestas aplicables y permite comparar la percepcion general de usabilidad entre participantes.',
+    'La tabla siguiente muestra el porcentaje global de cumplimiento obtenido por cada evaluador. El valor se calcula a partir de las respuestas aplicables y permite comparar la percepción general de usabilidad entre participantes.',
   )
 
   const evaluatorRows = evaluatorSummaryItems.map((item, index) => {
@@ -897,16 +957,18 @@ export async function generateHeuristicPdf(reportData, options = {}) {
         }
       },
     })
-    y = doc.lastAutoTable.finalY + 18
+    y = doc.lastAutoTable.finalY + 20
   }
 
   // ─── 3. PRIORIDAD DE MEJORA ───────────────────────────────────────────────
   startSection('3. Prioridad de mejora por impacto negativo')
   writeParagraph(
-    'La priorizacion combina el porcentaje de cumplimiento con las senales de riesgo recogidas durante la evaluacion, como warnings, comentarios y evidencias visuales.',
+    useWarningTerm
+      ? 'La priorización combina el porcentaje de cumplimiento con las señales de riesgo recogidas durante la evaluación, como warnings, comentarios y evidencias visuales.'
+      : 'La priorización combina el porcentaje de cumplimiento con las señales de riesgo recogidas durante la evaluación, como las preguntas que requieren un análisis más profundo, los comentarios y las evidencias visuales.',
   )
   writeParagraph(
-    'La tabla siguiente presenta el cumplimiento calculado por heuristica. Para cada evaluador se suman las puntuaciones de las preguntas aplicables, se multiplican por 100 y se dividen entre el numero de preguntas aplicables multiplicado por la puntuacion maxima. Despues se promedian esos porcentajes entre evaluadores.',
+    'La tabla siguiente presenta el cumplimiento calculado por heurística. Para cada evaluador se suman las puntuaciones de las preguntas aplicables, se multiplican por 100 y se dividen entre el número de preguntas aplicables multiplicado por la puntuación máxima. Después se promedian esos porcentajes entre evaluadores.',
   )
 
   const summaryRows = evidence.orderedByPercentage.map((item) => [
@@ -918,7 +980,7 @@ export async function generateHeuristicPdf(reportData, options = {}) {
 
   autoTable(doc, {
     startY: y,
-    head: [['#', 'Heuristica', '% Cumplimiento', 'Severidad']],
+    head: [['#', 'Heurística', '% Cumplimiento', 'Severidad']],
     body: summaryRows,
     styles: { fontSize: 9, cellPadding: 5 },
     headStyles: { fillColor: COLORS.tableHead, textColor: COLORS.white },
@@ -942,14 +1004,14 @@ export async function generateHeuristicPdf(reportData, options = {}) {
       }
     },
   })
-  y = doc.lastAutoTable.finalY + 18
+  y = doc.lastAutoTable.finalY + 20
 
   // ─── 4. ANALISIS DETALLADO ────────────────────────────────────────────────
   doc.addPage()
   pageNum += 1
   y = M
   addPageHeader()
-  startSection('4. Analisis detallado por heuristica')
+  startSection('4. Análisis detallado por heurística')
 
   evidence.orderedByImpact.forEach((item) => {
     ensureSpace(110)
@@ -957,7 +1019,7 @@ export async function generateHeuristicPdf(reportData, options = {}) {
     // Title + severity badge (keep percentage here as it's the section identifier)
     writeParagraph(item.label, { bold: true, size: 13, spacing: 2 })
     writeParagraph(
-      `Nivel: ${item.severity}  |  Desviacion tipica: ${formatDecimal(item.sd)}`,
+      `Nivel: ${item.severity}  |  Desviación típica: ${formatDecimal(item.sd)}`,
       {
         bold: false,
         size: 10,
@@ -972,48 +1034,61 @@ export async function generateHeuristicPdf(reportData, options = {}) {
     )
     const purposeText = getHeuristicPurposeText(heuristicTitle)
 
-    writeParagraph(`Esta heuristica evalua: ${purposeText}`, {
+    writeParagraph(`Esta heurística evalúa: ${purposeText}`, {
       size: 10,
       spacing: 6,
     })
 
-    // ── Criterio a criterio ──────────────────────────────────────────────
+    // ── Tabla de criterios evaluados ─────────────────────────────────────
     if (item.questionSummaries.length > 0) {
-      writeParagraph('Analisis por criterio evaluado:', {
+      writeParagraph('Criterios evaluados:', {
         bold: true,
         size: 10,
         spacing: 3,
       })
+      writeParagraph(
+        'La tabla siguiente presenta cada pregunta y la media de las puntuaciones dadas por los evaluadores, expresada sobre la escala máxima disponible.',
+        { size: 11, spacing: 5 },
+      )
 
-      item.questionSummaries.forEach((q) => {
-        ensureSpace(36)
-        writeParagraph(`• ${q.title}`, {
-          bold: true,
-          size: 9,
-          spacing: 1,
-          x: M + 6,
-          width: CONTENT_W - 6,
-        })
-        writeParagraph(getQuestionQualitativeLabel(q.average), {
-          size: 9,
-          spacing: 5,
-          x: M + 14,
-          width: CONTENT_W - 14,
-          color: COLORS.sub,
-        })
+      const maxQuestionScore = getMaxQuestionScore(allOptions)
+      const questionRows = item.questionSummaries.map((q) => {
+        const avg = q.average
+        const maxVal = maxQuestionScore || 1
+        const formattedAvg =
+          typeof avg === 'number'
+            ? ((avg / maxVal) * 100).toFixed(2).replace('.', ',') + '%'
+            : '—'
+        return [q.title, formattedAvg]
       })
+
+      ensureSpace(questionRows.length * 14 + 30)
+      autoTable(doc, {
+        startY: y,
+        head: [['Pregunta', 'Media de puntuación']],
+        body: questionRows,
+        styles: { fontSize: 8, cellPadding: 3 },
+        headStyles: { fillColor: COLORS.accent, textColor: COLORS.white },
+        alternateRowStyles: { fillColor: COLORS.zebra },
+        margin: { left: M + 6, right: M },
+        theme: 'grid',
+        columnStyles: {
+          0: { cellWidth: CONTENT_W - 60, overflow: 'linebreak' },
+          1: { halign: 'center', cellWidth: 40 },
+        },
+      })
+      y = doc.lastAutoTable.finalY + 20
     }
 
-    // ── Desviacion tipica por heuristica ─────────────────────────────────
-    // SD interpretation
+    // ── Desviación típica por heurística ─────────────────────────────────
     const sdValue = item.sd
     let sdInterpretation = ''
     if (sdValue < 0.2) {
-      sdInterpretation = `La desviacion tipica de las respuestas en esta heuristica es baja (${formatDecimal(sdValue)}), lo que indica que los evaluadores coincidieron ampliamente en sus valoraciones.`
+      sdInterpretation = `La desviación típica de las respuestas en esta heurística es baja (${formatDecimal(sdValue)}), lo que indica que los evaluadores coincidieron ampliamente en sus valoraciones.`
     } else if (sdValue < 0.5) {
-      sdInterpretation = `La desviacion tipica es moderada (${formatDecimal(sdValue)}), lo que refleja cierta divergencia entre evaluadores en algunos criterios, aunque sin llegar a ser contradictoria.`
+      sdInterpretation = `La desviación típica es moderada (${formatDecimal(sdValue)}), lo que refleja cierta divergencia entre evaluadores en algunos criterios, aunque sin llegar a ser contradictoria.`
     } else {
-      sdInterpretation = `La desviacion tipica es alta (${formatDecimal(sdValue)}), lo que señala una percepcion muy dispar entre evaluadores. Esto puede indicar que la experiencia varía notablemente según el perfil del usuario o el contexto de uso.`
+      sdInterpretation = `La desviación típica es alta (${formatDecimal(sdValue)}), lo que señala una percepción muy dispar entre evaluadores. Esto puede indicar que la experiencia varía notablemente según el perfil del usuario o el contexto de uso.`
     }
     writeParagraph(sdInterpretation, { size: 10, spacing: 5 })
 
@@ -1026,15 +1101,15 @@ export async function generateHeuristicPdf(reportData, options = {}) {
     let globalDiagnosis = ''
     if (weakQuestions.length > item.questionSummaries.length / 2) {
       globalDiagnosis =
-        'El diagnostico global de esta heuristica es desfavorable. La mayoria de los criterios evaluados presentan cumplimiento bajo o nulo, lo que indica que esta area representa una friccion real y consistente para el usuario. Se recomienda priorizar su revision en el siguiente ciclo de diseno.'
+        'El diagnóstico global de esta heurística es desfavorable. La mayoría de los criterios evaluados presentan cumplimiento bajo o nulo, lo que indica que esta área representa una fricción real y consistente para el usuario. Se recomienda priorizar su revisión en el siguiente ciclo de diseño.'
     } else if (strongQuestions.length > item.questionSummaries.length / 2) {
       globalDiagnosis =
-        'El diagnostico global de esta heuristica es favorable. La mayoria de criterios evaluados obtienen confirmacion positiva por parte de los evaluadores, lo que indica que el sistema resuelve bien esta dimension de uso.'
+        'El diagnóstico global de esta heurística es favorable. La mayoría de criterios evaluados obtienen confirmación positiva por parte de los evaluadores, lo que indica que el sistema resuelve bien esta dimensión de uso.'
     } else {
       globalDiagnosis =
-        'El diagnostico global de esta heuristica es mixto. Conviven criterios bien resueltos con otros que presentan margen claro de mejora, lo que sugiere una implementacion parcial o inconsistente dentro del flujo.'
+        'El diagnóstico global de esta heurística es mixto. Conviven criterios bien resueltos con otros que presentan margen claro de mejora, lo que sugiere una implementación parcial o inconsistente dentro del flujo.'
     }
-    writeParagraph(globalDiagnosis, { size: 10, spacing: 5 })
+    writeParagraph(globalDiagnosis, { size: 10, spacing: 4 })
 
     // ── Impacto negativo ─────────────────────────────────────────────────
     writeParagraph('Impacto negativo actual:', {
@@ -1042,7 +1117,7 @@ export async function generateHeuristicPdf(reportData, options = {}) {
       size: 10,
       spacing: 2,
     })
-    writeParagraph(buildNegativeImpact(item), { size: 10, spacing: 5 })
+    writeParagraph(buildNegativeImpact(item), { size: 10, spacing: 4 })
 
     // ── Beneficio si mejora ──────────────────────────────────────────────
     writeParagraph('Beneficio esperado si se mejora:', {
@@ -1050,30 +1125,42 @@ export async function generateHeuristicPdf(reportData, options = {}) {
       size: 10,
       spacing: 2,
     })
-    writeParagraph(buildPositiveImpact(item), { size: 10, spacing: 5 })
+    writeParagraph(buildPositiveImpact(item), { size: 10, spacing: 4 })
 
     // ── Metadata (warnings / images / comments) ──────────────────────────
     if (item.totalWarnings > 0) {
-      writeParagraph(
-        `Durante la evaluacion, ${item.totalWarnings} respuesta(s) fueron marcadas con warning, lo que refuerza la necesidad de revision especifica en los criterios senalados.`,
-        { size: 9, color: COLORS.sub, spacing: 3 },
-      )
+      const w = item.totalWarnings
+      if (useWarningTerm) {
+        writeParagraph(
+          `Durante la evaluación, ${w} ${pluralize(w, 'respuesta fue marcada', 'respuestas fueron marcadas')} con warning, lo que refuerza la necesidad de revisión específica en los criterios señalados.`,
+          { size: 10, color: COLORS.sub, spacing: 4 },
+        )
+      } else {
+        writeParagraph(
+          `Durante la evaluación, ${w} ${pluralize(w, 'pregunta requiere un análisis más profundo al no poder verificarse solo con la navegación superficial', 'preguntas requieren un análisis más profundo al no poder verificarse solo con la navegación superficial')}, lo que refuerza la necesidad de revisión específica en los criterios señalados.`,
+          { size: 10, color: COLORS.sub, spacing: 4 },
+        )
+      }
     }
     if (item.totalImages > 0) {
+      const img = item.totalImages
       writeParagraph(
-        `Se adjuntaron ${item.totalImages} evidencia(s) visual(es) que documentan los hallazgos de esta heuristica.`,
-        { size: 9, color: COLORS.sub, spacing: 3 },
+        `Se ${pluralize(img, 'adjuntó', 'adjuntaron')} ${img} ${pluralize(img, 'evidencia visual', 'evidencias visuales')} que documentan los hallazgos de esta heurística.`,
+        { size: 10, spacing: 4 },
       )
     }
     if (normalizeText(item.comments)) {
-      writeParagraph(`Comentarios de los evaluadores: ${item.comments}`, {
-        size: 9,
-        color: COLORS.sub,
-        spacing: 3,
-      })
+      writeParagraph(
+        `Comentarios de los evaluadores: ${stripHtml(item.comments)}`,
+        {
+          size: 10,
+          color: COLORS.sub,
+          spacing: 4,
+        },
+      )
     }
 
-    y += 12
+    y += 14
   })
 
   // ─── 5. COMPARATIVA POR EVALUADOR ────────────────────────────────────────
@@ -1083,7 +1170,7 @@ export async function generateHeuristicPdf(reportData, options = {}) {
   addPageHeader()
   startSection('5. Comparativa de puntuaciones por evaluador')
   writeParagraph(
-    'La matriz siguiente muestra los valores medios de respuesta por heuristica y evaluador. Los colores facilitan detectar respuestas bajas, medias y altas de forma visual.',
+    'La matriz siguiente muestra los valores medios de respuesta por heurística y evaluador. Los colores facilitan detectar respuestas bajas, medias y altas de forma visual.',
   )
 
   const matrixHeaders = Array.isArray(heuristicsEvaluator?.header)
@@ -1168,11 +1255,11 @@ export async function generateHeuristicPdf(reportData, options = {}) {
         data.cell.styles.fontStyle = 'bold'
       },
     })
-    y = doc.lastAutoTable.finalY + 18
+    y = doc.lastAutoTable.finalY + 20
   }
 
   writeParagraph(
-    'La tabla siguiente muestra tiempos por heuristica, total y promedio por evaluador.',
+    'La tabla siguiente muestra tiempos por heurística, total y promedio por evaluador.',
   )
 
   const timeByHeuristicsHeader = Array.isArray(timeByHeuristics?.header)
@@ -1230,21 +1317,30 @@ export async function generateHeuristicPdf(reportData, options = {}) {
         }
       },
     })
-    y = doc.lastAutoTable.finalY + 16
+    y = doc.lastAutoTable.finalY + 20
   }
 
-  writeParagraph(`Tiempo medio de ejecucion global: ${averageTime}.`)
+  writeParagraph(`Tiempo medio de ejecución global: ${averageTime}.`)
 
   // ─── 6. CONCLUSION ────────────────────────────────────────────────────────
-  startSection('6. Conclusion')
-  if (studyConclusion) {
-    writeParagraph(studyConclusion)
+  startSection('6. Conclusión')
+  if (cleanStudyConclusion) {
+    writeParagraph(cleanStudyConclusion)
   }
+  const warningText = useWarningTerm
+    ? pluralize(totalWarnings, 'warning', 'warnings')
+    : pluralize(
+        totalWarnings,
+        'pregunta que requiere un análisis más profundo',
+        'preguntas que requieren un análisis más profundo',
+      )
+  const commentText = pluralize(totalComments, 'comentario', 'comentarios')
+  const imageText = pluralize(totalImages, 'imagen', 'imágenes')
   writeParagraph(
-    `En conjunto, el informe muestra un cumplimiento global de ${globalPct}, con ${totalWarnings} warning(s), ${totalComments} comentario(s) y ${totalImages} imagen(es) registradas como evidencias.`,
+    `En conjunto, el informe muestra un cumplimiento global de ${globalPct}, con ${totalWarnings} ${warningText}, ${totalComments} ${commentText} y ${totalImages} ${imageText} registradas como evidencias.`,
   )
   writeParagraph(
-    'Las heuristicas con peor posicion en el ranking de impacto son las que combinan bajo cumplimiento y senales de riesgo operativo, por lo que deben priorizarse en la hoja de ruta de mejora.',
+    'Las heurísticas con peor posición en el ranking de impacto son las que combinan bajo cumplimiento y señales de riesgo operativo, por lo que deben priorizarse en la hoja de ruta de mejora.',
   )
 
   // ─── INDICE (completar páginas reales) ───────────────────────────────────
@@ -1279,8 +1375,8 @@ export async function generateHeuristicPdf(reportData, options = {}) {
     tocY += 20
   })
 
-  const fileName = `informe_heuristica_${
-    testTitle ? testTitle.replace(/\s+/g, '_').toLowerCase() : 'evaluacion'
+  const fileName = `informe_heurística_${
+    testTitle ? testTitle.replace(/\s+/g, '_').toLowerCase() : 'evaluación'
   }.pdf`
 
   if (mode === 'download') {
@@ -1296,4 +1392,41 @@ export async function generateHeuristicPdf(reportData, options = {}) {
 
   const blob = doc.output('blob')
   return { fileName, blob }
+}
+
+export {
+  loadLogo,
+  addFooter,
+  getSeverityFromPercentage,
+  normalizeText,
+  pluralize,
+  stripHtml,
+  extractCommentTexts,
+  getNumber,
+  getHeuristicLabel,
+  getHeuristicShortTitle,
+  getEvaluatorLabel,
+  getQuestionLabel,
+  getHeuristicDomainWeight,
+  getHeuristicPurposeText,
+  getQuestionQualitativeLabel,
+  buildNegativeImpact,
+  buildPositiveImpact,
+  formatDecimal,
+  getHeuristicsCellColor,
+  getContrastingTextColor,
+  parseMmSsToMs,
+  getTimeColor,
+  getMaxQuestionScore,
+  calculateHeuristicCompliance,
+  calcStandardDeviation,
+  buildHeuristicEvidence,
+  FONT,
+  M,
+  PAGE_W,
+  PAGE_H,
+  CONTENT_W,
+  LH,
+  COLORS,
+  SEVERITY_COLORS,
 }

@@ -60,6 +60,10 @@ const SECTION_NAMES = [
 const SECTION_PATTERNS = [
   /^SECCI[OÓ]N\s+\d+\s*[-–—]\s*(.+)/im,
   /^\d+[\.\)]\s*(Introducción|Resumen ejecutivo|Prioridad|Análisis detallado|Comparativa|Conclusión)/im,
+  /^##+\s*(.+)/im,
+  /^\*{1,2}(SECCI[OÓ]N\s+\d+\s*[-–—]\s*.+)\*{1,2}/im,
+  /^\*{1,2}(\d+[\.\)]\s*.+)\*{1,2}/im,
+  /^(?:SECCI[OÓ]N\s+\d+\s*:?\s*)?(Introducción|Resumen ejecutivo|Prioridad(?: de mejora)?|Análisis detallado|Comparativa|Conclusión)\s*:?\s*$/im,
 ]
 
 function parseAiSections(aiText) {
@@ -403,8 +407,23 @@ export async function generateHeuristicPdfWithAi(reportData, options = {}) {
     '6. Conclusión',
   ]
 
+  function getSectionContent(sectionIndex) {
+    if (aiSections[sectionIndex] && aiSections[sectionIndex].content) {
+      return aiSections[sectionIndex].content
+    }
+    if (aiSections.length === 1 && aiSections[0].content) {
+      const paras = aiSections[0].content.split('\n').filter((p) => p.trim())
+      const chunkSize = Math.max(1, Math.floor(paras.length / sectionTitles.length))
+      const start = sectionIndex * chunkSize
+      if (start < paras.length) {
+        return paras.slice(start, start + chunkSize).join('\n')
+      }
+    }
+    return ''
+  }
+
   // ─── RENDER SECTIONS ────────────────────────────────────────────────────
-  for (let i = 0; i < Math.max(aiSections.length, sectionTitles.length); i++) {
+  for (let i = 0; i < sectionTitles.length; i++) {
     doc.addPage()
     pageNum += 1
     y = M + 6
@@ -413,8 +432,9 @@ export async function generateHeuristicPdfWithAi(reportData, options = {}) {
     const title = sectionTitles[i] || `Sección ${i + 1}`
     startSection(title)
 
-    if (aiSections[i] && aiSections[i].content) {
-      const paragraphs = aiSections[i].content
+    const sectionContent = getSectionContent(i)
+    if (sectionContent) {
+      const paragraphs = sectionContent
         .split('\n')
         .filter((p) => p.trim())
         .map((p) => p.trim())

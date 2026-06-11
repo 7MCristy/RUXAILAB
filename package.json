@@ -18,6 +18,7 @@
     "deploy-prod": "firebase use prod && firebase deploy --only hosting:ruxailab-prod"
   },
   "dependencies": {
+    "@google/genai": "^2.8.0",
     "@mediapipe/face_mesh": "^0.4.1633559619",
     "@tensorflow-models/face-landmarks-detection": "^1.0.6",
     "@tensorflow/tfjs": "^4.22.0",

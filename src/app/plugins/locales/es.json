@@ -284,6 +284,15 @@
       "exploreCommunityStudies": "Explora estudios compartidos por la comunidad RUXAI",
       "browseCommunityTemplates": "Explora plantillas contribuidas por la comunidad RUXAI"
     },
+    "appName": "RUXAILAB",
+    "tagline": "Plataforma de investigación UX",
+    "appNavigation": "Navegación de la aplicación",
+    "createNewStudy": "Crear nuevo estudio",
+    "exitTest": "Salir de la prueba",
+    "signOut": "Cerrar sesión",
+    "previousStep": "Paso anterior",
+    "nextStep": "Siguiente paso",
+    "finishTest": "Finalizar prueba",
     "helpButton": "Botón de ayuda"
   },
   "profile": {
@@ -712,11 +721,14 @@
     "titles": {
       "settings": "Configuración",
       "confirmUpload": "Confirmar carga",
+      "timeTracking": "Seguimiento de tiempo",
       "enableWeights": "Habilitar función de pesos"
     },
     "messages": {
       "acceptCsv": "Si aceptas, todas tus heurísticas actuales serán reemplazadas por las del archivo CSV.",
       "noCsvFileSelected": "No se ha seleccionado ningún archivo CSV. Por favor, selecciona uno antes de continuar.",
+      "timeTrackingDescription": "Registra el tiempo que cada evaluador dedica por heurística durante la evaluación.",
+      "settingsSaved": "Configuración guardada correctamente.",
       "enableWeightsDescription": "Permitir que los evaluadores asignen pesos a las heurísticas en este estudio"
     },
     "placeHolders": {
@@ -725,6 +737,10 @@
     "actions": {
       "downloadCsvTemplate": "Descargar plantilla CSV",
       "update": "Actualizar"
+    },
+    "labels": {
+      "timeTrackingOn": "Seguimiento de tiempo activado",
+      "timeTrackingOff": "Seguimiento de tiempo desactivado"
     }
   },
   "HeuristicsTestView": {
@@ -1018,10 +1034,10 @@
     },
     "answerTypePreview": {
       "postTest": {
-      "title": "Comentarios posteriores a la prueba",
-      "q1": "Califica tu experiencia",
-      "q2": "¿Cómo encontraste el producto durante las pruebas beta?",
-      "feedbackPlaceholder": "El producto tenía una interfaz fluida, pero presentaba retrasos en algunas partes."
+        "title": "Comentarios posteriores a la prueba",
+        "q1": "Califica tu experiencia",
+        "q2": "¿Cómo encontraste el producto durante las pruebas beta?",
+        "feedbackPlaceholder": "El producto tenía una interfaz fluida, pero presentaba retrasos en algunas partes."
       },
       "taskCompleted": "¡Tarea completada! No se requiere retroalimentación adicional.",
       "participantsFeedbackHere": "Los participantes proporcionarán su retroalimentación aquí...",
@@ -1224,6 +1240,7 @@
       "noTasks": "Esta prueba no tiene ninguna tarea.",
       "answerSaved": "Respuesta guardada con éxito.",
       "taskCompletedSuccess": "¡Tarea \"{taskName}\" completada exitosamente!",
+      "taskNotCompleted": "No se pudo completar la tarea \"{taskName}\".",
       "useSessionLinkModerated": "Usa un enlace de sesión para acceder a tu prueba moderada.",
       "useSessionLink": "Usa un enlace de sesión para acceder a la prueba"
     },
@@ -1235,7 +1252,9 @@
       "noTestDataMessage": "No se pudo cargar la información de la prueba. Por favor, inténtalo de nuevo más tarde.",
       "failedToCompleteStep": "Error al completar el paso. Por favor, inténtalo de nuevo.",
       "failedToInitializeTestData": "Error al inicializar los datos de la prueba. Por favor, inténtalo de nuevo.",
-      "loginRequired": "Inicia sesión primero en tu cuenta de RUXAILAB para acceder a la prueba."
+      "loginRequired": "Inicia sesión primero en tu cuenta de RUXAILAB para acceder a la prueba.",
+      "timerIndexNotFound": "An error occurred while saving the task time.",
+      "taskNotFound": "Task not found. Please try again."
     },
     "CalibrationInProgressModal": {
       "completed": "¡Calibración completada!",
@@ -1335,7 +1354,8 @@
       "process": "La calibración consiste en seguir con la mirada unos puntos que aparecerán en la pantalla. Es importante que te sitúes en un lugar bien iluminado, te sientes cómodamente y mantengas la cabeza estable.",
       "instruction": "Cuando estés listo o lista, pulsa el botón para empezar la calibración.",
       "startButton": "Comenzar calibración",
-      "inProgress": "En progreso..."
+      "inProgress": "En progreso...",
+      "reuseSkipButton": "Reutilizar/Saltar calibración"
     },
     "warnings": {
       "sessionNotScheduled": "Esta sesión aún no tiene una fecha programada"

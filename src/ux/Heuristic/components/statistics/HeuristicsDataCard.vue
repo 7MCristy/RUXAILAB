@@ -54,6 +54,7 @@
           {{ $t('HeuristicsTestAnswer.heuristics.headers.weights') }}
         </v-tab>
         <v-tab
+          v-if="trackTime"
           class="tab-text"
           style="text-transform: none !important"
           @click="localInd = 4"
@@ -210,7 +211,7 @@
             </v-col>
 
             <!-- Sub-tab 4: Time by Heuristics -->
-            <v-col v-if="localInd == 4" cols="12">
+            <v-col v-if="localInd == 4 && trackTime" cols="12">
               <v-data-table
                 :headers="timeByHeuristics.header"
                 :items="timeByHeuristics.items"
@@ -266,6 +267,10 @@ defineProps({
     type: Object,
     required: true,
     default: () => ({ header: [], items: [] }),
+  },
+  trackTime: {
+    type: Boolean,
+    default: true,
   },
   weightsStatistics: {
     type: Object,

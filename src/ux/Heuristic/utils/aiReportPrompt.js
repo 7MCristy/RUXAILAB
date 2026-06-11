@@ -1,4 +1,4 @@
-const DEFAULT_MODEL = 'qwen3'
+const DEFAULT_MODEL = 'qwen2.5:latest'
 
 export const SYSTEM_PROMPT = `
 Eres un consultor senior especializado en UX Research y evaluación heurística, con más de 10 años de experiencia realizando auditorías de usabilidad para productos digitales.

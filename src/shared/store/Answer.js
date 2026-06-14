@@ -44,18 +44,32 @@ export default {
             heuristicQuestions: value.heuristicQuestions.map((heuristic) => ({
               ...heuristic,
               heuristicQuestions: heuristic.heuristicQuestions.map(
-                (question) => ({
-                  ...question,
-                  heuristicAnswer: question.heuristicAnswer?.text
-                    ? question.heuristicAnswer
-                    : {
-                        text:
-                          testOptions?.find(
-                            (op) => op.value === question.heuristicAnswer,
-                          )?.text ?? '',
-                        value: question.heuristicAnswer,
-                      },
-                }),
+                (question) => {
+                  const heuristicAnswer = question.heuristicAnswer
+
+                  return {
+                    ...question,
+                    heuristicAnswer: heuristicAnswer?.text
+                      ? heuristicAnswer
+                      : typeof heuristicAnswer === 'object' &&
+                          heuristicAnswer !== null
+                        ? {
+                            ...heuristicAnswer,
+                            text:
+                              testOptions?.find(
+                                (op) => op.value === heuristicAnswer.value,
+                              )?.text ?? '',
+                            value: heuristicAnswer.value,
+                          }
+                        : {
+                            text:
+                              testOptions?.find(
+                                (op) => op.value === heuristicAnswer,
+                              )?.text ?? '',
+                            value: heuristicAnswer,
+                          },
+                  }
+                },
               ),
             })),
           }
@@ -265,7 +279,7 @@ export default {
         await answerController.updateUserAnswer(payload)
       } catch (error) {
         console.error('[Answer Store] Failed to update user answer:', error)
-        throw error
+        showError('errors.failedToUpdateAnswer')
       } finally {
         commit('setLoading', false)
       }
@@ -384,24 +398,24 @@ export default {
           evaluator.id = `Ev${evaluatorIndex}`
           let totalNoAplication = 0
           let totalNoReply = 0
-          let totalQuestionsValues = 0
+          let totalQuestions = 0
           let totalTimeMs = 0
 
           evaluator.heuristics.forEach((heuristic) => {
             totalNoAplication += heuristic.totalNoAplication
             totalNoReply += heuristic.totalNoReply
-            totalQuestionsValues += heuristic.totalQuestionsValues
+            totalQuestions += heuristic.totalQuestions
             totalTimeMs += Number(heuristic.timeSpentMs || 0)
           })
 
           table.items.push({
             evaluator: evaluator.id,
             result: evaluator.result,
-            aplication: totalQuestionsValues - totalNoAplication,
+            aplication: totalQuestions - totalNoAplication,
             noAplication: totalNoAplication,
             answered: percentage(
-              totalQuestionsValues - totalNoReply,
-              totalQuestionsValues,
+              totalQuestions - totalNoReply,
+              totalQuestions,
             ).toFixed(2),
             totalTime: formatTimeSpentFromMs(totalTimeMs),
             lastUpdate: new Date(evaluator.lastUpdate).toLocaleString(),

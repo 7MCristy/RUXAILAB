@@ -1,11 +1,15 @@
 <template>
   <div v-if="answers">
+    <p>{{ showFinalResult }}</p>
+    <p>imageTotalsByHeuristic: {{ imageTotalsByHeuristic }}</p>
+    <p>optionResponseTotals: {{ optionResponseTotals }}</p>
+
     <v-overlay :model-value="loading">
       <v-progress-circular indeterminate size="64" />
     </v-overlay>
     <IntroAnswer
       v-if="answers != null && intro == true"
-      @go-to-coops="goToCoops"
+      @go-to-coops="goToCoops"  
     />
     <v-row
       v-else-if="answers != null || intro == false"
@@ -64,7 +68,6 @@
               :heuristics-evaluator="heuristicsEvaluator"
               :heuristics-statistics="heuristicsStatistics"
               :time-by-heuristics="timeByHeuristics"
-              :track-time="trackTime"
               :weights-statistics="weightsStatistics"
               :relative="relative"
               :usability-total-fix="usabilityTotalFix"
@@ -101,10 +104,10 @@ import {
   standardDeviation,
   finalResult,
   statistics,
+  FinalResultWarnings,
   calcFinalResult,
+  calcResultsWarnings,
   formatTimeSpentFromMs,
-  buildHeuristicTestBundlePayload,
-  downloadHeuristicTestBundlePayload,
 } from '@/ux/Heuristic/utils/statistics'
 import {
   heuristicsStatisticsHeaders,
@@ -171,7 +174,6 @@ const optionResponseTotals = computed(() => {
   options.forEach((option) => {
     const key = String(option.value)
     totalsMap.set(key, {
-      value: option.value,
       text: option.text || String(option.value),
       total: 0,
     })
@@ -231,21 +233,16 @@ const heuristicsEvaluator = computed(() => {
     let evaluatorIndex = 1
     resultEvaluator.value.forEach((evaluator) => {
       evaluator.id = `Ev${evaluatorIndex}`
-      const header = table.header.find((h) => h.value === evaluator.id)
+      const header = table.header.find((h) => h.text === evaluator.id)
       if (!header) {
         table.header.push({
-          title: t('HeuristicsTestAnswer.titles.evaluatorNumber', {
-            n: evaluatorIndex,
-          }),
+          text: evaluator.id,
           align: 'center',
           value: evaluator.id,
         })
       }
       if (evaluator.heuristics && Array.isArray(evaluator.heuristics)) {
         evaluator.heuristics.forEach((heuristic) => {
-          const totalQuestions = Number(
-            heuristic.totalQuestionsValues ?? heuristic.totalQuestions ?? 0,
-          )
           const item = table.items.find((i) => i.heuristic === heuristic.id)
           if (item) {
             Object.assign(item, {
@@ -254,8 +251,8 @@ const heuristicsEvaluator = computed(() => {
           } else {
             table.items.push({
               heuristic: heuristic.id,
-              max: max * totalQuestions,
-              min: min * totalQuestions,
+              max: max * (heuristic.totalQuestions || 0),
+              min: min * (heuristic.totalQuestions || 0),
               [evaluator.id]: heuristic.result,
             })
           }
@@ -283,9 +280,7 @@ const timeByHeuristics = computed(() => {
   resultEvaluator.value.forEach((evaluator, evaluatorPosition) => {
     const evaluatorKey = `Ev${evaluatorPosition + 1}`
     table.header.push({
-      title: t('HeuristicsTestAnswer.titles.evaluatorNumber', {
-        n: evaluatorPosition + 1,
-      }),
+      title: evaluatorKey,
       value: evaluatorKey,
       align: 'center',
     })
@@ -307,17 +302,17 @@ const timeByHeuristics = computed(() => {
   })
 
   table.header.push({
-    title: t('HeuristicsTestAnswer.titles.totalTime'),
+    title: 'Total',
     value: 'totalTime',
     align: 'center',
   })
   table.header.push({
-    title: t('HeuristicsTestAnswer.titles.averageTime'),
+    title: 'Average Time',
     value: 'averageTime',
     align: 'center',
   })
   table.header.push({
-    title: t('HeuristicsTestAnswer.titles.timeStdDev'),
+    title: 'Standard deviation',
     value: 'timeSd',
     align: 'center',
   })
@@ -360,9 +355,7 @@ const heuristicsStatistics = computed(() => {
           .toFixed(2)
       : '0.00'
     const convertedValue =
-      item.max !== undefined &&
-      item.min !== undefined &&
-      Number(item.max) !== Number(item.min)
+      item.max && item.min && item.max !== item.min
         ? ((valueToConvert - item.min) / (item.max - item.min)) * 100
         : 0
     table.items.push({
@@ -425,8 +418,6 @@ const maxValue = computed(() => {
 
 const testAnswerDocument = computed(() => store.state.Answer.testAnswerDocument)
 
-const trackTime = computed(() => store.getters.test?.trackTime !== false)
-
 const answers = computed(() => {
   if (testAnswerDocument.value && testAnswerDocument.value.heuristicAnswers) {
     return Object.values(testAnswerDocument.value.heuristicAnswers)
@@ -450,14 +441,6 @@ const testTitle = computed(
   () => test.value?.testTitle || test.value?.title || test.value?.name || '',
 )
 
-const testBundlePayload = computed(() =>
-  buildHeuristicTestBundlePayload({
-    test: test.value,
-    testAnswerDocument: testAnswerDocument.value,
-    evaluatorItems: evaluatorStatistics.value?.items || [],
-  }),
-)
-
 const singleEvaluatorIdentity = computed(() => {
   if (Number(showFinalResult.value?.evaluators) !== 1) return ''
 
@@ -466,13 +449,8 @@ const singleEvaluatorIdentity = computed(() => {
 
   if (!evaluatorUserDocId) return ''
 
-  const participants = [
-    test.value?.testAdmin,
-    ...(test.value?.cooperators || []),
-  ]
-  const evaluator = participants.find(
-    (item) => item?.userDocId === evaluatorUserDocId,
-  )
+  const participants = [test.value?.testAdmin, ...(test.value?.cooperators || [])]
+  const evaluator = participants.find((item) => item?.userDocId === evaluatorUserDocId)
 
   return (
     evaluator?.fullName ||
@@ -629,15 +607,13 @@ watch(
 onBeforeMount(async () => {
   const studyId = props.id || route.params.id
   if (studyId && !store.getters.test?.id) {
-    await store.dispatch('getStudy', { id: studyId })
+    await store.dispatch('getStudy', studyId)
   }
   await store.dispatch('getCurrentTestAnswerDoc')
 })
 
 onMounted(() => {
   pythonFunction()
-
-  // Debug API removed for production
 })
 </script>
 

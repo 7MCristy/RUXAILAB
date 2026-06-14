@@ -11,7 +11,6 @@
     <v-divider class="summary-divider" />
 
     <v-row class="ma-0 pa-4 summary-grid" dense>
-      <p>{{ result }}</p>
       <v-col cols="12" md="12">
         <v-card flat rounded="lg" class="stat-tile stat-tile--hero pa-5 h-100">
           <div class="d-flex align-center justify-space-between mb-2">
@@ -19,7 +18,7 @@
               <div class="stat-icon stat-icon--blue">%</div>
               <div>
                 <div class="text-subtitle-2 text-medium-emphasis">
-                  {{ t('HeuristicsTestAnswer.summary.stats.average') }}
+                  {{ t('HeuristicsTestAnswer.summary.average') }}
                 </div>
                 <div
                   class="hero-value"
@@ -31,9 +30,10 @@
             </div>
             <div class="summary-evaluator-meta">
               <v-chip
+                size="small"
                 color="#E9EEF5"
                 variant="flat"
-                class="text-slate-700 evaluator-count-chip"
+                class="text-slate-700"
               >
                 {{ evaluatorsLabel }}
               </v-chip>
@@ -58,41 +58,35 @@
           <v-row v-if="!isSingleEvaluator" class="mt-4 metrics-mini" dense>
             <v-col cols="4">
               <div class="mini-label">
-                {{ t('HeuristicsTestAnswer.summary.stats.max') }}
+                {{ t('HeuristicsTestAnswer.summary.max') }}
               </div>
               <div class="mini-value">{{ result.max || '0.00%' }}</div>
             </v-col>
             <v-col cols="4">
               <div class="mini-label">
-                {{ t('HeuristicsTestAnswer.summary.stats.min') }}
+                {{ t('HeuristicsTestAnswer.summary.min') }}
               </div>
               <div class="mini-value">{{ result.min || '0.00%' }}</div>
             </v-col>
             <v-col cols="4">
               <div class="mini-label">
-                {{ t('HeuristicsTestAnswer.summary.stats.stdDev') }}
+                {{ t('HeuristicsTestAnswer.summary.std') }}
               </div>
               <div class="mini-value">{{ result.sd || '0.00%' }}</div>
             </v-col>
           </v-row>
 
-          <div class="single-evaluator-caption warning-summary-inline mt-6">
+          <div v-else class="single-evaluator-caption mt-4">
             <div class="single-evaluator-title">
-              {{ t('HeuristicsTestAnswer.summary.warnings.title') }}
-            </div>
-            <div class="warning-summary-hint">
-              {{ t('HeuristicsTestAnswer.summary.warnings.hint') }}
-            </div>
-            <div class="warning-summary-description">
-              {{ `${t('HeuristicsTestAnswer.summary.warnings.description')} ` }}
+              {{ t('HeuristicsTestAnswer.summary.warningSummary') }}
             </div>
             <div class="single-evaluator-row mt-2">
               <div class="single-evaluator-item">
                 <div class="mini-label">
-                  {{ t('HeuristicsTestAnswer.summary.warnings.scenarios.max') }}
+                  {{ t('HeuristicsTestAnswer.summary.averageMaxWarning') }}
                 </div>
                 <div
-                  class="mini-value warning-summary-value"
+                  class="mini-value"
                   :style="metricColor(result.avrgmaxWarning, 'average')"
                 >
                   {{ result.avrgmaxWarning || '0.00%' }}
@@ -100,10 +94,10 @@
               </div>
               <div class="single-evaluator-item">
                 <div class="mini-label">
-                  {{ t('HeuristicsTestAnswer.summary.warnings.scenarios.min') }}
+                  {{ t('HeuristicsTestAnswer.summary.averageMinWarning') }}
                 </div>
                 <div
-                  class="mini-value warning-summary-value"
+                  class="mini-value"
                   :style="metricColor(result.avrgminWarning, 'average')"
                 >
                   {{ result.avrgminWarning || '0.00%' }}
@@ -112,6 +106,83 @@
             </div>
           </div>
         </v-card>
+
+        <v-card
+          v-if="!isSingleEvaluator"
+          flat
+          rounded="lg"
+          class="summary-panel pa-5 mt-4"
+        >
+          <div
+            class="d-flex align-start justify-space-between mb-5 warning-header"
+          >
+            <div>
+              <div class="text-subtitle-1 font-weight-bold">
+                {{ t('HeuristicsTestAnswer.summary.warningSummary') }}
+              </div>
+              <div
+                class="text-caption text-medium-emphasis warning-subtitle mt-1"
+              >
+                {{ t('HeuristicsTestAnswer.summary.warningSubtitle') }}
+              </div>
+            </div>
+            <v-chip
+              size="small"
+              color="#F3E5C7"
+              variant="flat"
+              class="text-amber-900 warning-metrics-chip"
+            >
+              2 {{ t('HeuristicsTestAnswer.summary.metrics') }}
+            </v-chip>
+          </div>
+
+          <v-row dense>
+            <v-col cols="12" md="6">
+              <v-card flat rounded="lg" class="warning-kpi pa-4 h-100">
+                <div
+                  class="text-caption text-medium-emphasis card-metric-title"
+                >
+                  {{ t('HeuristicsTestAnswer.summary.averageMaxWarning') }}
+                </div>
+                <div class="warning-kpi-inline mt-2">
+                  <div
+                    class="text-caption text-medium-emphasis warning-kpi-hint"
+                  >
+                    {{ maxWarningHint }}
+                  </div>
+                  <div
+                    class="warning-kpi-value warning-kpi-value--inline"
+                    :style="metricColor(result.avrgmaxWarning, 'average')"
+                  >
+                    {{ result.avrgmaxWarning || '0.00%' }}
+                  </div>
+                </div>
+              </v-card>
+            </v-col>
+            <v-col cols="12" md="6">
+              <v-card flat rounded="lg" class="warning-kpi pa-4 h-100">
+                <div
+                  class="text-caption text-medium-emphasis card-metric-title"
+                >
+                  {{ t('HeuristicsTestAnswer.summary.averageMinWarning') }}
+                </div>
+                <div class="warning-kpi-inline mt-2">
+                  <div
+                    class="text-caption text-medium-emphasis warning-kpi-hint"
+                  >
+                    {{ minWarningHint }}
+                  </div>
+                  <div
+                    class="warning-kpi-value warning-kpi-value--inline"
+                    :style="metricColor(result.avrgminWarning, 'average')"
+                  >
+                    {{ result.avrgminWarning || '0.00%' }}
+                  </div>
+                </div>
+              </v-card>
+            </v-col>
+          </v-row>
+        </v-card>
       </v-col>
 
       <v-col cols="12" lg="7">
@@ -119,44 +190,21 @@
           <div class="d-flex align-center justify-space-between mb-4">
             <div>
               <div class="text-subtitle-1 font-weight-bold">
-                {{
-                  t(
-                    'HeuristicsTestAnswer.summary.charts.imagesByHeuristic.title',
-                  )
-                }}
+                {{ t('HeuristicsTestAnswer.summary.imagesByHeuristic') }}
               </div>
               <div class="text-caption text-medium-emphasis">
-                {{
-                  t(
-                    'HeuristicsTestAnswer.summary.charts.imagesByHeuristic.subtitle',
-                  )
-                }}
+                {{ t('HeuristicsTestAnswer.summary.imagesSubtitle') }}
               </div>
             </div>
-            <div class="summary-header-chips">
-              <v-chip
-                color="#EDF7F2"
-                variant="flat"
-                class="text-slate-700 comments-count-chip"
-              >
-                {{ commentsLabel }}
-              </v-chip>
-              <v-chip
-                color="#EEF3FA"
-                variant="flat"
-                class="text-slate-700 comments-count-chip"
-              >
-                {{ imagesLabel }}
-              </v-chip>
-              <v-chip
-                color="#E9EEF5"
-                variant="flat"
-                class="text-slate-700 heuristic-count-chip"
-              >
-                {{ imageTotalsByHeuristic.length }}
-                {{ t('HeuristicsTestAnswer.titles.heuristics') }}
-              </v-chip>
-            </div>
+            <v-chip
+              size="small"
+              color="#E9EEF5"
+              variant="flat"
+              class="text-slate-700"
+            >
+              {{ imageTotalsByHeuristic.length }}
+              {{ t('HeuristicsTestAnswer.titles.heuristics') }}
+            </v-chip>
           </div>
 
           <div v-if="imageTotalsByHeuristic.length" class="images-chart-center">
@@ -183,9 +231,7 @@
           </div>
 
           <div v-else class="text-body-2 text-medium-emphasis">
-            {{
-              t('HeuristicsTestAnswer.summary.charts.imagesByHeuristic.empty')
-            }}
+            {{ t('HeuristicsTestAnswer.summary.noImageData') }}
           </div>
         </v-card>
       </v-col>
@@ -195,18 +241,10 @@
           <div class="d-flex align-center justify-space-between mb-4">
             <div>
               <div class="text-subtitle-1 font-weight-bold">
-                {{
-                  t(
-                    'HeuristicsTestAnswer.summary.charts.responsesByOption.title',
-                  )
-                }}
+                {{ t('HeuristicsTestAnswer.summary.responsesByOption') }}
               </div>
               <div class="text-caption text-medium-emphasis">
-                {{
-                  t(
-                    'HeuristicsTestAnswer.summary.charts.responsesByOption.subtitle',
-                  )
-                }}
+                {{ t('HeuristicsTestAnswer.summary.responsesSubtitle') }}
               </div>
             </div>
           </div>
@@ -222,9 +260,7 @@
           />
 
           <div v-else class="text-body-2 text-medium-emphasis">
-            {{
-              t('HeuristicsTestAnswer.summary.charts.responsesByOption.empty')
-            }}
+            {{ t('HeuristicsTestAnswer.summary.noOptionData') }}
           </div>
         </v-card>
       </v-col>
@@ -238,6 +274,8 @@ import SelectionPieChart from '@/shared/components/charts/SelectionPieChart.vue'
 import { useI18n } from 'vue-i18n'
 
 const { t } = useI18n()
+const maxWarningHint = 'Total as if the warnings are fixed'
+const minWarningHint = "Total as if the warnings aren't solved"
 
 const props = defineProps({
   result: {
@@ -293,23 +331,8 @@ const evaluatorsCount = computed(() => Number(props.result?.evaluators) || 0)
 const isSingleEvaluator = computed(() => evaluatorsCount.value === 1)
 
 const evaluatorsLabel = computed(() => {
-  const key =
-    evaluatorsCount.value === 1 ? 'common.evaluator' : 'common.evaluators'
-  return `${evaluatorsCount.value} ${t(key)}`
-})
-
-const totalComments = computed(() => Number(props.result?.totalComments) || 0)
-
-const commentsLabel = computed(() => {
-  const key = totalComments.value === 1 ? 'common.comment' : 'common.comments'
-  return `${totalComments.value} ${t(key)}`
-})
-
-const totalImages = computed(() => Number(props.result?.totalImages) || 0)
-
-const imagesLabel = computed(() => {
-  const key = totalImages.value === 1 ? 'common.image' : 'common.images'
-  return `${totalImages.value} ${t(key)}`
+  const suffix = evaluatorsCount.value === 1 ? 'Evaluator' : 'Evaluators'
+  return `${evaluatorsCount.value} ${suffix}`
 })
 
 const evaluatorIdentityLabel = computed(() =>
@@ -358,8 +381,7 @@ const optionCounts = computed(() =>
 )
 
 const summaryTitle = computed(
-  () =>
-    `${t('HeuristicsTestAnswer.summary.title')} : ${props.testTitle || '-'}`,
+  () => `Evaluation Test : ${props.testTitle || '-'}`,
 )
 </script>
 
@@ -465,11 +487,6 @@ const summaryTitle = computed(
   background: rgba(248, 250, 252, 0.9);
 }
 
-.warning-summary-inline {
-  margin-inline: -2px;
-  padding: 16px;
-}
-
 .single-evaluator-title {
   font-size: 0.82rem;
   color: #64748b;
@@ -477,39 +494,17 @@ const summaryTitle = computed(
   letter-spacing: 0.02em;
 }
 
-.warning-summary-description {
-  margin-top: 6px;
-  width: 100%;
-  color: #64748b;
-  font-size: 0.82rem;
-  line-height: 1.45;
-}
-
-.warning-summary-hint {
-  margin-top: 4px;
-  width: 100%;
-  color: #475569;
-  font-size: 0.78rem;
-  line-height: 1.4;
-}
-
 .single-evaluator-row {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 14px;
+  gap: 12px;
 }
 
 .single-evaluator-item {
   background: #ffffff;
   border: 1px solid rgba(148, 163, 184, 0.2);
   border-radius: 10px;
-  padding: 14px 16px;
-  min-height: 84px;
-}
-
-.warning-summary-value {
-  font-size: 1.75rem;
-  line-height: 1.05;
+  padding: 10px;
 }
 
 .images-chart-center {
@@ -573,6 +568,76 @@ const summaryTitle = computed(
   background: linear-gradient(90deg, #6d8fb3 0%, #adc4da 100%);
 }
 
+.warning-kpi {
+  background: linear-gradient(180deg, #ffffff 0%, #fcfcfd 100%);
+  border: 1px solid rgba(148, 163, 184, 0.12);
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.04);
+}
+
+.warning-kpi-value {
+  margin-top: 0.35rem;
+  font-size: 1.75rem;
+  font-weight: 700;
+  line-height: 1.05;
+}
+
+.warning-kpi-value--inline {
+  margin-top: 0;
+  white-space: nowrap;
+}
+
+.warning-kpi-inline {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.warning-kpi-hint {
+  line-height: 1.35;
+  max-width: 72%;
+}
+
+.card-metric-title {
+  font-weight: 700;
+  color: #475569;
+  letter-spacing: 0.01em;
+}
+
+.warning-kpi-value--green {
+  color: #5e8d74;
+}
+
+.warning-kpi-value--amber {
+  color: #c08a43;
+}
+
+.warning-kpi-value--orange {
+  color: #cb744d;
+}
+
+.warning-header {
+  gap: 14px;
+}
+
+.warning-subtitle {
+  max-width: 880px;
+  line-height: 1.45;
+  font-size: 0.78rem;
+}
+
+.warning-metrics-chip {
+  margin-top: 2px;
+  flex-shrink: 0;
+  min-width: 92px;
+  justify-content: center;
+  padding-inline: 10px;
+  height: 30px;
+  font-size: 0.76rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
 .text-slate-700 {
   color: #334155;
 }
@@ -581,37 +646,8 @@ const summaryTitle = computed(
   display: flex;
   flex-direction: column;
   align-items: flex-end;
-  gap: 8px;
+  gap: 6px;
   max-width: 48%;
-}
-
-.evaluator-count-chip {
-  min-height: 32px;
-  padding-inline: 12px;
-  font-size: 0.84rem;
-  font-weight: 700;
-}
-
-.summary-header-chips {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 8px;
-  flex-shrink: 0;
-}
-
-.comments-count-chip {
-  min-height: 32px;
-  padding-inline: 12px;
-  font-size: 0.82rem;
-  font-weight: 700;
-}
-
-.heuristic-count-chip {
-  min-height: 36px;
-  padding-inline: 14px;
-  font-size: 0.9rem;
-  font-weight: 800;
 }
 
 .single-evaluator-identity {
@@ -646,17 +682,26 @@ const summaryTitle = computed(
     grid-template-columns: 1fr;
   }
 
-  .summary-header-chips {
+  .warning-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .warning-metrics-chip {
+    margin-top: 2px;
+  }
+
+  .warning-kpi-inline {
     align-items: flex-start;
     flex-direction: column;
   }
 
-  .single-evaluator-row {
-    grid-template-columns: 1fr;
+  .warning-kpi-hint {
+    max-width: 100%;
   }
 
-  .warning-summary-value {
-    font-size: 1.45rem;
+  .single-evaluator-row {
+    grid-template-columns: 1fr;
   }
 
   .summary-evaluator-meta {

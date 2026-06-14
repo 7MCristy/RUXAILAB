@@ -61,8 +61,7 @@ const props = defineProps({
   },
 })
 
-const getTotal = () =>
-  Object.values(props.counts || {}).reduce((a, b) => a + b, 0)
+const getTotal = () => Object.values(props.counts || {}).reduce((a, b) => a + b, 0)
 
 const optionPercent = (option) => {
   const total = getTotal()

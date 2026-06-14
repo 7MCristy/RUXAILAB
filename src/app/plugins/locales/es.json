@@ -109,7 +109,6 @@
     "markAllAsRead": "Marcar todo como leído",
     "caughtUp": "Estás al día",
     "noNewNotifications": "No hay notificaciones nuevas",
-    "notificationBell": "Campana de notificaciones",
     "unread": "No leído",
     "inbox": "Bandeja de entrada",
     "timeAgo": {
@@ -283,17 +282,7 @@
       "viewEditProfile": "Ver y editar tu información de perfil",
       "exploreCommunityStudies": "Explora estudios compartidos por la comunidad RUXAI",
       "browseCommunityTemplates": "Explora plantillas contribuidas por la comunidad RUXAI"
-    },
-    "appName": "RUXAILAB",
-    "tagline": "Plataforma de investigación UX",
-    "appNavigation": "Navegación de la aplicación",
-    "createNewStudy": "Crear nuevo estudio",
-    "exitTest": "Salir de la prueba",
-    "signOut": "Cerrar sesión",
-    "previousStep": "Paso anterior",
-    "nextStep": "Siguiente paso",
-    "finishTest": "Finalizar prueba",
-    "helpButton": "Botón de ayuda"
+    }
   },
   "profile": {
     "superAdmin": "Súper Administrador",
@@ -387,8 +376,7 @@
       "Settings": "Configuración",
       "name": "Nombre",
       "studiesCount": "Recuento de Estudios",
-      "mediaSize": "Tamaño de Medios",
-      "toggleMiniMode": "Alternar modo mini"
+      "mediaSize": "Tamaño de Medios"
     },
     "heuristic": "Evaluación heurística de usabilidad"
   },
@@ -586,10 +574,7 @@
       "updatedProgress": "actualizó su progreso",
       "invitationSentTitle": "Invitación enviada",
       "invitationPendingDesc": "Invitación pendiente para",
-      "pendingStatus": "Pendiente",
-      "evaluatorInfo": "Info para Evaluadores",
-      "evaluatorInfoEmpty": "Sin secciones de información. Agrega algunas para guiar a tus evaluadores.",
-      "evaluatorInfoSeeAll": "Ver las {count} secciones"
+      "pendingStatus": "Pendiente"
     },
     "managerView": {
       "heuristicStudy": "Estudio Heurístico",
@@ -720,16 +705,11 @@
   "HeuristicsSettings": {
     "titles": {
       "settings": "Configuración",
-      "confirmUpload": "Confirmar carga",
-      "timeTracking": "Seguimiento de tiempo",
-      "enableWeights": "Habilitar función de pesos"
+      "confirmUpload": "Confirmar carga"
     },
     "messages": {
       "acceptCsv": "Si aceptas, todas tus heurísticas actuales serán reemplazadas por las del archivo CSV.",
-      "noCsvFileSelected": "No se ha seleccionado ningún archivo CSV. Por favor, selecciona uno antes de continuar.",
-      "timeTrackingDescription": "Registra el tiempo que cada evaluador dedica por heurística durante la evaluación.",
-      "settingsSaved": "Configuración guardada correctamente.",
-      "enableWeightsDescription": "Permitir que los evaluadores asignen pesos a las heurísticas en este estudio"
+      "noCsvFileSelected": "No se ha seleccionado ningún archivo CSV. Por favor, selecciona uno antes de continuar."
     },
     "placeHolders": {
       "importCsv": "Importa tu archivo CSV de prueba aquí."
@@ -737,10 +717,6 @@
     "actions": {
       "downloadCsvTemplate": "Descargar plantilla CSV",
       "update": "Actualizar"
-    },
-    "labels": {
-      "timeTrackingOn": "Seguimiento de tiempo activado",
-      "timeTrackingOff": "Seguimiento de tiempo desactivado"
     }
   },
   "HeuristicsTestView": {
@@ -798,6 +774,30 @@
       "max": "Máximo",
       "min": "Mínimo",
       "std": "Desviación estándar"
+    },
+    "summary": {
+      "title": "Resumen de Evaluación",
+      "average": "Promedio",
+      "max": "Máx.",
+      "min": "Mín.",
+      "std": "Desv. Est.",
+      "evaluators": "Evaluadores",
+      "evaluatorsHint": "Se muestra como contexto, pero sin protagonismo en el diseño",
+      "impact": "Impacto de las alertas",
+      "impactHint": "Cuánto cambia la evaluación al tener en cuenta las alertas",
+      "warningSummary": "Implicación de las alertas",
+      "warningSubtitle": "Casos que no se pueden comprobar como evaluador, y qué porcentaje tendríamos si estuvieran resueltos todos (avrgMaxWarning) o teniendo en cuenta los campos que no cumplen (avrgMinWarning)",
+      "imagesByHeuristic": "Total de Imágenes por Heurística",
+      "imagesSubtitle": "Distribución horizontal por heurística",
+      "responsesByOption": "Tipo de Respuesta",
+      "responsesSubtitle": "Distribución circular de las opciones seleccionadas",
+      "noImageData": "Sin datos de imágenes",
+      "noOptionData": "Sin datos de opciones",
+      "averageWarning": "Umbral medio de alertas",
+      "averageMaxWarning": "Umbral medio máximo de alertas",
+      "averageMinWarning": "Umbral medio mínimo de alertas",
+      "groups": "grupos",
+      "metrics": "métricas"
     },
     "evaluators": {
       "headers": {
@@ -988,8 +988,7 @@
     "validation": {
       "fieldRequired": "Campo Requerido",
       "validUrl": "Debe ser una URL válida que comience con http:// o https://",
-      "positiveNumber": "Debe ser un número positivo",
-      "minOne": "El valor debe ser al menos 1"
+      "positiveNumber": "Debe ser un número positivo"
     },
     "basicInfo": {
       "stepTitle": "Paso 1: Información Básica de la Tarea",
@@ -1033,12 +1032,6 @@
       "sart": "Técnica de Calificación de Conciencia Situacional - mide la conciencia situacional"
     },
     "answerTypePreview": {
-      "postTest": {
-        "title": "Comentarios posteriores a la prueba",
-        "q1": "Califica tu experiencia",
-        "q2": "¿Cómo encontraste el producto durante las pruebas beta?",
-        "feedbackPlaceholder": "El producto tenía una interfaz fluida, pero presentaba retrasos en algunas partes."
-      },
       "taskCompleted": "¡Tarea completada! No se requiere retroalimentación adicional.",
       "participantsFeedbackHere": "Los participantes proporcionarán su retroalimentación aquí...",
       "submitFeedback": "Enviar Retroalimentación",
@@ -1240,7 +1233,6 @@
       "noTasks": "Esta prueba no tiene ninguna tarea.",
       "answerSaved": "Respuesta guardada con éxito.",
       "taskCompletedSuccess": "¡Tarea \"{taskName}\" completada exitosamente!",
-      "taskNotCompleted": "No se pudo completar la tarea \"{taskName}\".",
       "useSessionLinkModerated": "Usa un enlace de sesión para acceder a tu prueba moderada.",
       "useSessionLink": "Usa un enlace de sesión para acceder a la prueba"
     },
@@ -1252,9 +1244,7 @@
       "noTestDataMessage": "No se pudo cargar la información de la prueba. Por favor, inténtalo de nuevo más tarde.",
       "failedToCompleteStep": "Error al completar el paso. Por favor, inténtalo de nuevo.",
       "failedToInitializeTestData": "Error al inicializar los datos de la prueba. Por favor, inténtalo de nuevo.",
-      "loginRequired": "Inicia sesión primero en tu cuenta de RUXAILAB para acceder a la prueba.",
-      "timerIndexNotFound": "An error occurred while saving the task time.",
-      "taskNotFound": "Task not found. Please try again."
+      "loginRequired": "Inicia sesión primero en tu cuenta de RUXAILAB para acceder a la prueba."
     },
     "CalibrationInProgressModal": {
       "completed": "¡Calibración completada!",
@@ -1354,8 +1344,7 @@
       "process": "La calibración consiste en seguir con la mirada unos puntos que aparecerán en la pantalla. Es importante que te sitúes en un lugar bien iluminado, te sientes cómodamente y mantengas la cabeza estable.",
       "instruction": "Cuando estés listo o lista, pulsa el botón para empezar la calibración.",
       "startButton": "Comenzar calibración",
-      "inProgress": "En progreso...",
-      "reuseSkipButton": "Reutilizar/Saltar calibración"
+      "inProgress": "En progreso..."
     },
     "warnings": {
       "sessionNotScheduled": "Esta sesión aún no tiene una fecha programada"
@@ -2423,32 +2412,5 @@
       }
     },
     "title": "Política de Privacidad"
-  },
-  "EvaluatorInfoView": {
-    "pageTitle": "Información para Evaluadores",
-    "pageSubtitle": "Crea secciones de información que los evaluadores verán antes de comenzar el test"
-  },
-  "EvaluatorInfoEditor": {
-    "title": "Información para Evaluadores",
-    "subtitle": "Crea secciones de información que los evaluadores verán antes de comenzar el test",
-    "noSections": "Sin secciones. Agrega una para comenzar.",
-    "untitledSection": "Sección sin título",
-    "addSection": "Agregar sección",
-    "sectionTitle": "Título de la sección",
-    "sectionContent": "Contenido",
-    "sectionType": "Tipo",
-    "types": {
-      "info": "Información",
-      "warning": "Advertencia",
-      "tip": "Consejo"
-    },
-    "save": "Guardar",
-    "cancel": "Cancelar"
-  },
-  "EvaluatorInfoDisplay": {
-    "title": "Antes de comenzar",
-    "subtitle": "Por favor lee la siguiente información antes de iniciar la evaluación",
-    "startButton": "Iniciar Evaluación",
-    "noContent": "No hay información adicional."
   }
 }

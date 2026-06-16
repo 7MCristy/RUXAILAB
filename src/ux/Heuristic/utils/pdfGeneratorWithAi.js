@@ -51,8 +51,7 @@ const SEVERITY_COLORS = {
 const SECTION_NAMES = [
   'introducción',
   'resumen ejecutivo',
-  'prioridad de mejora',
-  'análisis detallado',
+  'prioridad',
   'comparativa de puntuaciones',
   'conclusión',
 ]
@@ -63,7 +62,7 @@ const SECTION_PATTERNS = [
   /^##+\s*(.+)/im,
   /^\*{1,2}(SECCI[OÓ]N\s+\d+\s*[-–—]\s*.+)\*{1,2}/im,
   /^\*{1,2}(\d+[\.\)]\s*.+)\*{1,2}/im,
-  /^(?:SECCI[OÓ]N\s+\d+\s*:?\s*)?(Introducción|Resumen ejecutivo|Prioridad(?: de mejora)?|Análisis detallado|Comparativa|Conclusión)\s*:?\s*$/im,
+  /^(?:SECCI[OÓ]N\s+\d+\s*:?\s*)?(Introducción|Resumen ejecutivo|Prioridad(?: y análisis detallado)?(?: de mejora)?|Análisis detallado|Comparativa|Conclusión)\s*:?\s*$/im,
 ]
 
 function parseAiSections(aiText) {
@@ -401,10 +400,9 @@ export async function generateHeuristicPdfWithAi(reportData, options = {}) {
   const sectionTitles = [
     '1. Introducción',
     '2. Resumen ejecutivo',
-    '3. Prioridad de mejora por impacto negativo',
-    '4. Análisis detallado por heurística',
-    '5. Comparativa de puntuaciones por evaluador',
-    '6. Conclusión',
+    '3. Prioridad de mejora y análisis detallado por heurística',
+    '4. Comparativa de puntuaciones por evaluador',
+    '5. Conclusión',
   ]
 
   function getSectionContent(sectionIndex) {
@@ -508,8 +506,8 @@ export async function generateHeuristicPdfWithAi(reportData, options = {}) {
       y = doc.lastAutoTable.finalY + 16
     }
 
-    // ── Section 4: per-heuristic detail ──────────────────────────────────
-    if (i === 3) {
+    // ── Per-heuristic detail (dentro de la sección combinada 3) ─────────
+    if (i === 2) {
       evidence.orderedByImpact.forEach((item) => {
         ensureSpace(80)
 
@@ -615,8 +613,8 @@ export async function generateHeuristicPdfWithAi(reportData, options = {}) {
       })
     }
 
-    // ── Section 5: evaluator matrix + time stats ─────────────────────────
-    if (i === 4) {
+    // ── Section 4: evaluator matrix + time stats ─────────────────────────
+    if (i === 3) {
       const matrixHeaders = Array.isArray(heuristicsEvaluator?.header)
         ? heuristicsEvaluator.header.map(
             (h) => h.title || h.text || h.value || '',
@@ -791,8 +789,8 @@ export async function generateHeuristicPdfWithAi(reportData, options = {}) {
       y += 16
     }
 
-    // ── Section 6: conclusion metadata ──────────────────────────────────
-    if (i === 5) {
+    // ── Section 5: conclusion metadata ──────────────────────────────────
+    if (i === 4) {
       ensureSpace(40)
       doc.setDrawColor(...COLORS.muted)
       doc.setLineWidth(0.3)

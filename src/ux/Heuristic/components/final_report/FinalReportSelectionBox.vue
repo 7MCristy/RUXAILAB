@@ -316,15 +316,28 @@ const timeByHeuristics = computed(() => {
 })
 
 const generateAiFinalReport = async (finalReportItem) => {
+  console.log('[generateAiFinalReport] 🎯 Iniciando generación de informe con IA...')
+  console.log('[generateAiFinalReport] Datos recibidos:', {
+    titulo: finalReportItem.title,
+    url: finalReportItem.testUrl,
+    heuristicas: finalReportItem.statisticsByHeuristics?.items?.length,
+    evaluadores: finalReportItem.statisticsTable?.items?.length,
+    respuestas: finalReportItem.allAnswers?.length,
+  })
+
   try {
     // Intenta Gemini primero, fallback a Ollama si está disponible
     const content = await generateAiReportWithFallback(finalReportItem, {
       ollamaUrl: process.env.VUE_APP_OLLAMA_API_URL || 'http://localhost:11434/api/chat',
       buildFallback: buildFallbackConclusion
     })
+
+    console.log('[generateAiFinalReport] ✅ Informe IA generado, longitud:', content?.length)
+    console.log('[generateAiFinalReport] 📄 Preview (primeros 150 chars):', content?.substring(0, 150))
     return content
   } catch (error) {
-    console.error('AI report generation error:', error)
+    console.error('[generateAiFinalReport] ❌ Error generando informe con IA:', error)
+    console.warn('[generateAiFinalReport] ⚠️ Usando fallback manual')
     // Fallback final: conclusión manual
     return finalReportItem.finalReport || buildFallbackConclusion()
   }
@@ -397,7 +410,7 @@ const buildFinalReportItem = () => {
       severity: getSeverityLabel(item.percentage),
     }))
 
-  return {
+  const reportItem = {
     testTitle: test.value.testTitle,
     title: test.value.testTitle,
     testUrl: getTestUrl(),
@@ -429,6 +442,21 @@ const buildFinalReportItem = () => {
     },
     participants: getCooperatorEmails().map((email) => ({ email })),
   }
+
+  console.log('[FinalReportItem] 📦 Datos preparados para IA:', {
+    titulo: reportItem.title,
+    url: reportItem.testUrl,
+    descripcion: reportItem.testDescription?.substring(0, 100),
+    numHeuristicas: reportItem.statisticsByHeuristics?.items?.length || 0,
+    numEvaluadores: reportItem.statisticsTable?.items?.length || 0,
+    numRespuestas: reportItem.allAnswers?.length || 0,
+    numEstructuras: reportItem.testStructure?.length || 0,
+    cumplimientoGlobal: reportItem.generalStatistics?.average,
+    tieneComentarios: Object.keys(reportItem.heuristicComments || {}).length > 0,
+    rankingHeuristicas: heuristicRankingItems.map(h => `${h.name}: ${h.percentage}%`),
+  })
+
+  return reportItem
 }
 
 const slugify = (text) =>
@@ -525,29 +553,38 @@ const previewPdf = async () => {
 
 const previewPdfWithAi = async () => {
   isLoading.value = true
+  console.log('[previewPdfWithAi] 🚀 INICIO - Vista previa con IA')
   startPreview(
     'Vista previa del informe con IA',
-    'Consultando Ollama/Qwen para redactar el informe...',
+    'Generando informe con IA...',
   )
   try {
     const finalReportItem = buildFinalReportItem()
-    finalReportItem.finalReport = await generateAiFinalReport(finalReportItem)
-    finalReportItem.studyConclusion = finalReportItem.finalReport
+    console.log('[previewPdfWithAi] 📦 finalReportItem construido, llamando a generateAiFinalReport...')
+    const aiContent = await generateAiFinalReport(finalReportItem)
+    console.log('[previewPdfWithAi] ✅ Contenido IA recibido, asignando a finalReportItem...')
+    finalReportItem.finalReport = aiContent
+    finalReportItem.studyConclusion = aiContent
+    console.log('[previewPdfWithAi] Generando PDF con contenido IA...')
     await openPdfPreview(finalReportItem, '_ai', { showQuickSummary: false }, generateHeuristicPdfWithAi)
+    console.log('[previewPdfWithAi] ✅ PDF con IA generado exitosamente')
   } catch (error) {
-    console.error('AI PDF preview failed:', error)
+    console.error('[previewPdfWithAi] ❌ Error generando PDF con IA:', error)
+    console.warn('[previewPdfWithAi] ⚠️ Intentando fallback sin IA...')
     previewStatus.value =
-      'Ollama ha fallado. Generando una vista previa de respaldo...'
+      'La IA ha fallado. Generando una vista previa de respaldo...'
 
     try {
       const fallbackItem = buildFinalReportItem()
       fallbackItem.finalReport = buildFallbackConclusion()
       fallbackItem.studyConclusion = fallbackItem.finalReport
+      console.log('[previewPdfWithAi] Generando PDF de respaldo (sin IA)...')
       await openPdfPreview(fallbackItem, '_ai_fallback', {
         showQuickSummary: false,
       }, generateHeuristicPdf)
+      console.log('[previewPdfWithAi] ✅ PDF de respaldo generado')
     } catch (fallbackError) {
-      console.error('AI fallback PDF preview failed:', fallbackError)
+      console.error('[previewPdfWithAi] ❌ Error también en fallback:', fallbackError)
       showPreviewError(
         fallbackError,
         'No se pudo generar la vista previa con IA ni la vista previa de respaldo.',
@@ -555,6 +592,7 @@ const previewPdfWithAi = async () => {
     }
   } finally {
     isLoading.value = false
+    console.log('[previewPdfWithAi] 🏁 FIN - Vista previa con IA completada')
   }
 }
 

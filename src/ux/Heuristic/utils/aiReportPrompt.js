@@ -83,12 +83,20 @@ function getQuestionSummaries(reportItem, heuristicIndex) {
 
   return questions.map((question, questionIndex) => {
     const values = allAnswers
-      .map((answer) => answer?.heuristicQuestions?.[heuristicIndex]?.heuristicQuestions?.[questionIndex]?.heuristicAnswer?.value)
+      .map(
+        (answer) =>
+          answer?.heuristicQuestions?.[heuristicIndex]?.heuristicQuestions?.[
+            questionIndex
+          ]?.heuristicAnswer?.value,
+      )
       .filter((v) => v != null && Number.isFinite(Number(v)))
       .map(Number)
 
     const warnings = allAnswers.filter(
-      (answer) => answer?.heuristicQuestions?.[heuristicIndex]?.heuristicQuestions?.[questionIndex]?.heuristicAnswer?.warning === true,
+      (answer) =>
+        answer?.heuristicQuestions?.[heuristicIndex]?.heuristicQuestions?.[
+          questionIndex
+        ]?.heuristicAnswer?.warning === true,
     ).length
 
     const avg = values.length
@@ -97,12 +105,19 @@ function getQuestionSummaries(reportItem, heuristicIndex) {
 
     const maxPossible = Math.max(...values, 1)
 
-    const title = question?.title || question?.question || question?.name || `Pregunta ${questionIndex + 1}`
+    const title =
+      question?.title ||
+      question?.question ||
+      question?.name ||
+      `Pregunta ${questionIndex + 1}`
 
     return {
       title: stripHtml(title),
       average: avg != null ? avg : null,
-      averagePercent: avg != null && maxPossible > 0 ? ((avg / maxPossible) * 100).toFixed(1) + '%' : 'N/D',
+      averagePercent:
+        avg != null && maxPossible > 0
+          ? ((avg / maxPossible) * 100).toFixed(1) + '%'
+          : 'N/D',
       maxPossible,
       evaluatorCount: values.length,
       warnings,
@@ -115,7 +130,10 @@ function formatQuestionSummary(questions) {
   if (!questions.length) return '  No hay datos de preguntas disponibles.'
   return questions
     .map((q, i) => {
-      const warningTag = q.warnings > 0 ? ` ⚠️ (${q.warnings} warning${q.warnings > 1 ? 's' : ''})` : ''
+      const warningTag =
+        q.warnings > 0
+          ? ` ⚠️ (${q.warnings} warning${q.warnings > 1 ? 's' : ''})`
+          : ''
       return `  ${i + 1}. "${q.title}" → Media: ${q.average != null ? q.average.toFixed(2) + '/' + q.maxPossible + ' (' + q.averagePercent + ')' : 'N/D'}${warningTag}`
     })
     .join('\n')
@@ -157,14 +175,18 @@ function buildHeuristicDetailData(reportItem, heuristicStats) {
       warnings: getWarningsByHeuristic(reportItem, item?.name),
       questionSummary: formatQuestionSummary(questions),
       questions,
-      manualComment: reportItem?.heuristicComments?.[
-        reportItem?.testStructure?.[index]?.id
-      ] || '',
+      manualComment:
+        reportItem?.heuristicComments?.[
+          reportItem?.testStructure?.[index]?.id
+        ] || '',
     }
   })
 }
 
-export function buildHeuristicReportPrompt(reportItem) {
+export function buildHeuristicReportPrompt(
+  reportItem,
+  webResearchContent = '',
+) {
   const heuristicStats = reportItem?.statisticsByHeuristics?.items || []
   const generalStatistics = reportItem?.generalStatistics || {}
   const evaluatorItems = reportItem?.statisticsTable?.items || []
@@ -174,7 +196,10 @@ export function buildHeuristicReportPrompt(reportItem) {
   const globalCompliance = toFiniteNumber(generalStatistics?.average)
   const globalSeverity = getSeverity(globalCompliance)
   const heuristics = buildHeuristicDetailData(reportItem, heuristicStats)
-  const globalWarnings = heuristics.reduce((total, h) => total + (h.warnings || 0), 0)
+  const globalWarnings = heuristics.reduce(
+    (total, h) => total + (h.warnings || 0),
+    0,
+  )
   const { optimal, critical } = classifyHeuristics(heuristics)
   const sortedByImpact = [...heuristics].sort(
     (a, b) => (a.compliance ?? 100) - (b.compliance ?? 100),
@@ -182,9 +207,33 @@ export function buildHeuristicReportPrompt(reportItem) {
   const top3Critical = sortedByImpact.slice(0, 3)
   const evaluatorSummary = formatEvaluatorsSummary(evaluatorItems)
 
-  const heuristicsDetailText = sortedByImpact.map((h, i) => {
-    const rank = i + 1
-    return `
+  console.log('[aiReportPrompt] 📝 Construyendo prompt para IA...')
+  console.log('[aiReportPrompt] Datos incluidos en el prompt:', {
+    testName,
+    testUrl: testUrl || 'No especificada',
+    globalCompliance:
+      globalCompliance != null ? globalCompliance.toFixed(2) + '%' : 'N/D',
+    globalSeverity,
+    globalWarnings,
+    totalHeuristicas: heuristics.length,
+    totalEvaluadores: evaluatorItems.length,
+    optimas: optimal.length,
+    criticas: critical.length,
+    top3Criticas: top3Critical.map(
+      (h) => `${h.title} (${h.compliance?.toFixed(1)}%)`,
+    ),
+    preguntasPorHeuristica: heuristics.map((h) => ({
+      heuristica: h.title,
+      preguntas: h.questions?.length || 0,
+      compliance: h.compliance != null ? h.compliance.toFixed(2) + '%' : 'N/D',
+      warnings: h.warnings,
+    })),
+  })
+
+  const heuristicsDetailText = sortedByImpact
+    .map((h, i) => {
+      const rank = i + 1
+      return `
 --- Heurística #${rank}: ${h.title} (${h.compliance != null ? h.compliance.toFixed(2) + '%' : 'N/D'}) ---
   Severidad: ${h.severity}
   Desviación típica: ${h.standardDeviation != null ? h.standardDeviation.toFixed(2) : 'N/D'}
@@ -194,7 +243,8 @@ export function buildHeuristicReportPrompt(reportItem) {
 ${h.questionSummary}
   Comentarios de evaluadores: ${h.manualComment ? `"${h.manualComment}"` : 'Sin comentarios'}
 `.trim()
-  }).join('\n\n')
+    })
+    .join('\n\n')
 
   const highSdHeuristics = [...heuristics]
     .filter((h) => h.standardDeviation != null)
@@ -216,7 +266,7 @@ ${h.questionSummary}
     : '  No disponibles'
 
   return `
-Genera un INFORME DE EVALUACIÓN HEURÍSTICA profesional con las 6 secciones que se indican a continuación.
+Genera un INFORME DE EVALUACIÓN HEURÍSTICA profesional con las 5 secciones que se indican a continuación.
 
 INSTRUCCIONES CRÍTICAS:
 - Escribe como un consultor senior de UX que ha analizado personalmente el sitio web.
@@ -266,26 +316,15 @@ ${evaluatorSummary}
 Sin viñetas. Párrafo continuo.
 
 ================================================================
-SECCION 3 - PRIORIDAD DE MEJORA POR IMPACTO NEGATIVO
-================================================================
-Para CADA heurística ordenada por impacto negativo (de menor a mayor cumplimiento), redacta UN PÁRRAFO por heurística con:
+SECCION 3 - PRIORIDAD Y ANALISIS DETALLADO POR HEURISTICA
+===============================================================
+Combina la priorización y el análisis detallado en UNA SOLA SECCIÓN donde CADA heurística incluya todos estos campos:
 
-${heuristicsDetailText}
+[DATOS DE LA HEURISTICA]
+[NOMBRE] — [XX.XX%] — Severidad: [Nivel] — Warnings: [N]
+Desviación típica: [SD] — Rango: [min] - [max]
 
-Estructura de cada párrafo:
-1. POR QUÉ ocupa esta posición: basado en el porcentaje de cumplimiento, la desviación típica y las puntuaciones de las preguntas concretas.
-2. IMPACTO REAL en el usuario: qué experimenta, dónde se produce fricción, errores o abandono.
-3. EVIDENCIA: menciona los datos concretos (porcentajes, warnings, preguntas con peor puntuación).
-4. URGENCIA: basada en la severidad y la cantidad de warnings.
-
-IMPORTANTE: Usa los datos de las preguntas individuales para ser específico. No seas genérico.
-
-================================================================
-SECCION 4 - ANALISIS DETALLADO POR HEURISTICA
-================================================================
-Para CADA heurística, genera un análisis con esta estructura exacta:
-
-[NOMBRE DE LA HEURISTICA] — [XX.XX%] — Severidad: [Nivel]
+Párrafo de prioridad: (3-4 frases) Basado en el porcentaje de cumplimiento, la desviación típica y las puntuaciones de las preguntas concretas, explica POR QUÉ ocupa esta posición, el IMPACTO REAL en el usuario y la URGENCIA de intervención.
 
 Descripción funcional: (1-2 frases) Qué evalúa esta heurística y por qué es relevante para este sistema concreto.
 
@@ -300,8 +339,10 @@ Plan de acción recomendado: (3 recomendaciones numeradas, específicas y técni
 Datos disponibles para cada heurística:
 ${heuristicsDetailText}
 
-================================================================
-SECCION 5 - COMPARATIVA DE PUNTUACIONES POR EVALUADOR
+IMPORTANTE: Usa los datos de las preguntas individuales para ser específico. No seas genérico. Cada heurística debe tener TODOS los campos indicados arriba, en el orden indicado.
+
+===============================================================
+SECCION 4 - COMPARATIVA DE PUNTUACIONES POR EVALUADOR
 ================================================================
 Redacta 5-6 frases que:
 
@@ -319,7 +360,7 @@ Tu análisis debe:
 5. Si hay comentarios de evaluadores, úsalos para enriquecer el análisis.
 
 ================================================================
-SECCION 6 - CONCLUSION
+SECCION 5 - CONCLUSION
 ================================================================
 Redacta 6-8 frases finales que:
 
@@ -336,9 +377,26 @@ Tu conclusión debe:
 4. Proponer un roadmap: qué atacar primero y en qué orden, con criterio de impacto vs. esfuerzo.
 5. Cerrar con una valoración profesional honesta del estado del producto.
 
-${reportItem?.finalReport ? `\nNota del equipo evaluador (úsala como contexto, no la copies): "${stripHtml(reportItem.finalReport)}"` : ''}
+  ${reportItem?.finalReport ? `\nNota del equipo evaluador (úsala como contexto, no la copies): "${stripHtml(reportItem.finalReport)}"` : ''}
 
-FIN DEL INFORME
+  ${
+    webResearchContent
+      ? `==============================================================
+INVESTIGACION WEB ADICIONAL
+===============================================================
+A continuación se incluye información obtenida de una investigación web en tiempo real sobre el sitio evaluado. Úsala como contexto adicional para enriquecer tu análisis y recomendaciones, pero NO la copies textualmente. Debes integrarla con los datos del test para ofrecer una visión más completa y actualizada.
+
+${webResearchContent}
+
+Instrucciones específicas para usar la investigación web:
+- Si la información web revela problemas de usabilidad conocidos o reseñas de usuarios, menciónalos si son relevantes.
+- Si el sitio ha cambiado respecto a lo que muestran los datos del test, indícalo.
+- Usa la información para contextualizar mejor las recomendaciones.
+- Si la investigación web no aporta nada relevante, simplemente ignórala y basa tu informe en los datos del test.`
+      : ''
+  }
+
+  FIN DEL INFORME
 `.trim()
 }
 

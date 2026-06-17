@@ -538,6 +538,55 @@ function buildHeuristicEvidence({
   }
 }
 
+/**
+ * Extrae las URLs de imágenes de allAnswers para una heurística y pregunta específicas.
+ */
+function getQuestionImageUrls(allAnswers, heuristicIndex, questionIndex) {
+  return allAnswers
+    .flatMap((answer) => {
+      const q = answer?.heuristicQuestions?.[heuristicIndex]?.heuristicQuestions?.[questionIndex]
+      if (!q) return []
+      const imgs = Array.isArray(q?.images) ? q.images
+        : Array.isArray(q?.heuristicAnswer?.images) ? q.heuristicAnswer.images
+        : []
+      return imgs.map((img) => img?.url || img?.imageUrl || img).filter(Boolean)
+    })
+}
+
+/**
+ * Extrae todas las URLs de imágenes de allAnswers para una heurística.
+ */
+function getAllImagesForHeuristic(allAnswers, heuristicIndex, testStructure) {
+  const heuristic = testStructure?.[heuristicIndex]
+  if (!heuristic) return []
+  const questions = heuristic?.questions || heuristic?.heuristicQuestions || []
+  const urls = []
+  questions.forEach((_, qIdx) => {
+    const imgUrls = getQuestionImageUrls(allAnswers, heuristicIndex, qIdx)
+    urls.push(...imgUrls)
+  })
+  return urls
+}
+
+/**
+ * Carga una imagen desde una URL y la convierte a base64 para jsPDF.
+ * Retorna null si falla.
+ */
+async function loadImageAsBase64(url) {
+  try {
+    const response = await fetch(url, { mode: 'cors' })
+    if (!response.ok) return null
+    const blob = await response.blob()
+    return new Promise((resolve) => {
+      const reader = new FileReader()
+      reader.onloadend = () => resolve(reader.result)
+      reader.readAsDataURL(blob)
+    })
+  } catch {
+    return null
+  }
+}
+
 export async function generateHeuristicPdf(reportData, options = {}) {
   console.log(
     '[generateHeuristicPdf] reportData keys:',
@@ -1013,7 +1062,7 @@ export async function generateHeuristicPdf(reportData, options = {}) {
   addPageHeader()
   startSection('4. Análisis detallado por heurística')
 
-  evidence.orderedByImpact.forEach((item) => {
+  for (const item of evidence.orderedByImpact) {
     ensureSpace(110)
 
     // Title + severity badge (keep percentage here as it's the section identifier)
@@ -1078,6 +1127,58 @@ export async function generateHeuristicPdf(reportData, options = {}) {
         },
       })
       y = doc.lastAutoTable.finalY + 20
+    }
+
+    // ── Renderizar comentarios de evaluadores ────────────────────────────
+    const allCommentDetails = item.questionSummaries.flatMap((q) => q.commentDetails || [])
+    if (allCommentDetails.length > 0) {
+      writeParagraph('Comentarios de los evaluadores:', {
+        bold: true, size: 10, spacing: 3,
+      })
+      for (const cd of allCommentDetails) {
+        const commentLine = `${cd.evaluatorName}: "${stripHtml(cd.text)}"`
+        const wrapped = doc.splitTextToSize(commentLine, CONTENT_W - 12)
+        for (const line of wrapped) {
+          ensureSpace(12)
+          doc.setFont(FONT, 'normal')
+          doc.setFontSize(9)
+          doc.setTextColor(...COLORS.text)
+          doc.text(line, M + 6, y)
+          y += 11
+        }
+        y += 2
+      }
+    }
+
+    // ── Renderizar imágenes de evaluadores ───────────────────────────────
+    const heuristicIndex = (item.position || 1) - 1
+    const imgUrls = getAllImagesForHeuristic(allAnswers, heuristicIndex, testStructure)
+    if (imgUrls.length > 0) {
+      writeParagraph(
+        `Evidencias visuales (${imgUrls.length}):`,
+        { bold: true, size: 10, spacing: 3 },
+      )
+      const maxImgs = Math.min(imgUrls.length, 4)
+      for (let ii = 0; ii < maxImgs; ii++) {
+        try {
+          const base64 = await loadImageAsBase64(imgUrls[ii])
+          if (base64) {
+            ensureSpace(110)
+            const imgWidth = Math.min(CONTENT_W - 12, 240)
+            const imgHeight = 90
+            doc.addImage(base64, 'JPEG', M + 6, y, imgWidth, imgHeight)
+            y += imgHeight + 6
+          }
+        } catch {
+          // Si falla la carga, mostrar la URL como texto
+          ensureSpace(12)
+          doc.setFont(FONT, 'normal')
+          doc.setFontSize(8)
+          doc.setTextColor(...COLORS.sub)
+          doc.text(`Imagen: ${imgUrls[ii]}`, M + 6, y)
+          y += 11
+        }
+      }
     }
 
     // ── Desviación típica por heurística ─────────────────────────────────
@@ -1161,7 +1262,7 @@ export async function generateHeuristicPdf(reportData, options = {}) {
     }
 
     y += 14
-  })
+  }
 
   // ─── 5. COMPARATIVA POR EVALUADOR ────────────────────────────────────────
   doc.addPage()
@@ -1429,4 +1530,7 @@ export {
   LH,
   COLORS,
   SEVERITY_COLORS,
+  getQuestionImageUrls,
+  getAllImagesForHeuristic,
+  loadImageAsBase64,
 }

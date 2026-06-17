@@ -8,6 +8,8 @@ const testData = {
   max: null,
   min: null,
   sd: null,
+  totalComments: 0,
+  totalImages: 0,
 }
 
 /**
@@ -450,6 +452,7 @@ function statistics() {
         let totalWarnings = 0
         let noReply = 0
         let totalImages = 0
+        let totalComments = 0
         let res = heuristic.heuristicQuestions.reduce(
           (SumOfValues, question) => {
             // LOG TEMPORAL DE DIAGNÓSTICO
@@ -496,6 +499,19 @@ function statistics() {
             ) {
               totalImages += 1
             }
+            const qComments = Array.isArray(question?.comments)
+              ? question.comments
+              : Array.isArray(question.heuristicAnswer?.comments)
+                ? question.heuristicAnswer.comments
+                : []
+            if (qComments.length > 0) {
+              totalComments += qComments.length
+            } else if (
+              question?.heuristicComment?.trim() ||
+              question.heuristicAnswer?.heuristicComment?.trim()
+            ) {
+              totalComments += 1
+            }
             return SumOfValues + Number(question.heuristicAnswer?.value ?? 0)
           },
 
@@ -512,6 +528,7 @@ function statistics() {
           totalNoReply: noReply,
           totalWarnings: totalWarnings,
           totalImages,
+          totalComments,
           timeSpentMs: parseTimeSpentToMs(heuristic.timeSpent),
         })
         heurisIndex++
@@ -639,11 +656,25 @@ function finalResult(
       averageResult - averageBaseWarning
     ).toFixed(2)}%`
 
+    // Aggregate total comments and images across all evaluators' heuristics
+    testData.totalComments = validItems.reduce((sum, ev) => {
+      return sum + (Array.isArray(ev.heuristics)
+        ? ev.heuristics.reduce((s, h) => s + (h.totalComments || 0), 0)
+        : 0)
+    }, 0)
+    testData.totalImages = validItems.reduce((sum, ev) => {
+      return sum + (Array.isArray(ev.heuristics)
+        ? ev.heuristics.reduce((s, h) => s + (h.totalImages || 0), 0)
+        : 0)
+    }, 0)
+
     console.log('[finalResult] computed global stats:', {
       average: testData.average,
       max: testData.max,
       min: testData.min,
       sd: testData.sd,
+      totalComments: testData.totalComments,
+      totalImages: testData.totalImages,
       avrgWarning: warningsData.avrgWarning,
       avrgmaxWarning: warningsData.avrgmaxWarning,
       avrgminWarning: warningsData.avrgminWarning,

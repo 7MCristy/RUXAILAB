@@ -14,6 +14,9 @@ import {
   parseMmSsToMs,
   getMaxQuestionScore,
   buildHeuristicEvidence,
+  getQuestionImageUrls,
+  getAllImagesForHeuristic,
+  loadImageAsBase64,
 } from './pdfGenerator'
 
 const FONT = 'helvetica'
@@ -508,7 +511,7 @@ export async function generateHeuristicPdfWithAi(reportData, options = {}) {
 
     // ── Per-heuristic detail (dentro de la sección combinada 3) ─────────
     if (i === 2) {
-      evidence.orderedByImpact.forEach((item) => {
+      for (const item of evidence.orderedByImpact) {
         ensureSpace(80)
 
         // Heuristic sub-header
@@ -576,6 +579,60 @@ export async function generateHeuristicPdfWithAi(reportData, options = {}) {
           y = doc.lastAutoTable.finalY + 12
         }
 
+        // ── Renderizar comentarios de evaluadores ────────────────────────
+        const allCommentDetails = item.questionSummaries.flatMap((q) => q.commentDetails || [])
+        if (allCommentDetails.length > 0) {
+          doc.setFont(FONT, 'bold')
+          doc.setFontSize(9)
+          doc.setTextColor(...COLORS.primary)
+          doc.text('Comentarios de los evaluadores:', M + 8, y)
+          y += 13
+          for (const cd of allCommentDetails) {
+            const commentLine = `${cd.evaluatorName}: "${stripHtml(cd.text)}"`
+            const wrapped = doc.splitTextToSize(commentLine, CONTENT_W - 24)
+            for (const line of wrapped) {
+              ensureSpace(12)
+              doc.setFont(FONT, 'normal')
+              doc.setFontSize(8.5)
+              doc.setTextColor(...COLORS.text)
+              doc.text(line, M + 12, y)
+              y += 11
+            }
+            y += 2
+          }
+        }
+
+        // ── Renderizar imágenes de evaluadores ────────────────────────────
+        const hIndex = (item.position || 1) - 1
+        const imgUrls = getAllImagesForHeuristic(allAnswers, hIndex, testStructure)
+        if (imgUrls.length > 0) {
+          doc.setFont(FONT, 'bold')
+          doc.setFontSize(9)
+          doc.setTextColor(...COLORS.primary)
+          doc.text(`Evidencias visuales (${imgUrls.length}):`, M + 8, y)
+          y += 13
+          const maxImgs = Math.min(imgUrls.length, 4)
+          for (let ii = 0; ii < maxImgs; ii++) {
+            try {
+              const base64 = await loadImageAsBase64(imgUrls[ii])
+              if (base64) {
+                ensureSpace(110)
+                const imgWidth = Math.min(CONTENT_W - 24, 200)
+                const imgHeight = 80
+                doc.addImage(base64, 'JPEG', M + 12, y, imgWidth, imgHeight)
+                y += imgHeight + 6
+              }
+            } catch {
+              ensureSpace(12)
+              doc.setFont(FONT, 'normal')
+              doc.setFontSize(8)
+              doc.setTextColor(...COLORS.sub)
+              doc.text(`Imagen: ${imgUrls[ii]}`, M + 12, y)
+              y += 11
+            }
+          }
+        }
+
         // Metadata: warnings, images, comments
         const metaBits = []
         if (item.totalWarnings > 0) {
@@ -610,7 +667,7 @@ export async function generateHeuristicPdfWithAi(reportData, options = {}) {
         }
 
         y += 8
-      })
+      }
     }
 
     // ── Section 4: evaluator matrix + time stats ─────────────────────────

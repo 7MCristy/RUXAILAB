@@ -2,6 +2,7 @@
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
 import { formatTimeSpentFromMs } from '@/ux/Heuristic/utils/statistics'
+import { getStorage, ref, getBlob } from 'firebase/storage'
 
 const FONT = 'helvetica'
 const M = 52
@@ -91,9 +92,16 @@ function extractCommentTexts(answer) {
   if (Array.isArray(answer?.comments)) {
     comments.push(...answer.comments)
   }
+  if (Array.isArray(answer?.heuristicAnswer?.comments)) {
+    comments.push(...answer.heuristicAnswer.comments)
+  }
   const legacyComment = normalizeText(answer?.heuristicComment)
   if (legacyComment) {
     comments.push(legacyComment)
+  }
+  const legacyNested = normalizeText(answer?.heuristicAnswer?.heuristicComment)
+  if (legacyNested) {
+    comments.push(legacyNested)
   }
   return comments
     .map((comment) => {
@@ -480,6 +488,17 @@ function buildHeuristicEvidence({
       (total, item) => total + item.comments,
       0,
     )
+    console.log(
+      `[buildHeuristicEvidence][${getHeuristicShortTitle(heuristic, heuristicIndex)}] ` +
+        `totalWarnings=${totalWarnings} totalImages=${totalImages} totalComments=${totalComments}`,
+      'questionSummaries:',
+      questionSummaries.map((q) => ({
+        title: q.title,
+        images: q.images,
+        comments: q.comments,
+        commentDetailsCount: q.commentDetails?.length || 0,
+      })),
+    )
     const responseAverage = responseValues.length
       ? responseValues.reduce((sum, value) => sum + value, 0) /
         responseValues.length
@@ -542,15 +561,27 @@ function buildHeuristicEvidence({
  * Extrae las URLs de imágenes de allAnswers para una heurística y pregunta específicas.
  */
 function getQuestionImageUrls(allAnswers, heuristicIndex, questionIndex) {
-  return allAnswers
-    .flatMap((answer) => {
-      const q = answer?.heuristicQuestions?.[heuristicIndex]?.heuristicQuestions?.[questionIndex]
-      if (!q) return []
-      const imgs = Array.isArray(q?.images) ? q.images
-        : Array.isArray(q?.heuristicAnswer?.images) ? q.heuristicAnswer.images
+  return allAnswers.flatMap((answer) => {
+    const q =
+      answer?.heuristicQuestions?.[heuristicIndex]?.heuristicQuestions?.[
+        questionIndex
+      ]
+    if (!q) return []
+    const imgs = Array.isArray(q?.images)
+      ? q.images
+      : Array.isArray(q?.heuristicAnswer?.images)
+        ? q.heuristicAnswer.images
         : []
-      return imgs.map((img) => img?.url || img?.imageUrl || img).filter(Boolean)
-    })
+    const urls = imgs
+      .map((img) => img?.url || img?.imageUrl || img)
+      .filter(Boolean)
+    const legacyUrl =
+      q?.answerImageUrl || q?.heuristicAnswer?.answerImageUrl || ''
+    if (legacyUrl && !urls.includes(legacyUrl)) {
+      urls.push(legacyUrl)
+    }
+    return urls
+  })
 }
 
 /**
@@ -569,20 +600,64 @@ function getAllImagesForHeuristic(allAnswers, heuristicIndex, testStructure) {
 }
 
 /**
+ * Extrae el path de Storage desde una URL de descarga de Firebase.
+ */
+function getStoragePathFromDownloadUrl(downloadUrl) {
+  const match = downloadUrl.match(/\/o\/([^?]+)/)
+  if (!match) return null
+  return decodeURIComponent(match[1])
+}
+
+/**
+ * Convierte un Blob a base64 (data URL).
+ */
+function blobToBase64(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onloadend = () => resolve(reader.result)
+    reader.onerror = () => reject(new Error('FileReader error'))
+    reader.readAsDataURL(blob)
+  })
+}
+
+/**
  * Carga una imagen desde una URL y la convierte a base64 para jsPDF.
+ * Primero intenta fetch() directo; si falla por CORS, usa Firebase Storage SDK.
  * Retorna null si falla.
  */
 async function loadImageAsBase64(url) {
+  console.log('[loadImageAsBase64] Attempting to load:', url)
+
+  // 1) Try direct fetch (works when CORS is configured)
   try {
     const response = await fetch(url, { mode: 'cors' })
-    if (!response.ok) return null
-    const blob = await response.blob()
-    return new Promise((resolve) => {
-      const reader = new FileReader()
-      reader.onloadend = () => resolve(reader.result)
-      reader.readAsDataURL(blob)
-    })
-  } catch {
+    if (response.ok) {
+      const blob = await response.blob()
+      const base64 = await blobToBase64(blob)
+      console.log('[loadImageAsBase64] fetch OK, image loaded')
+      return base64
+    }
+    console.warn('[loadImageAsBase64] fetch returned !ok:', response.status)
+  } catch (err) {
+    console.warn('[loadImageAsBase64] fetch CORS error:', err.message)
+  }
+
+  // 2) Fallback: Firebase Storage SDK (bypasses CORS)
+  try {
+    const storagePath = getStoragePathFromDownloadUrl(url)
+    if (!storagePath) {
+      console.warn('[loadImageAsBase64] Could not parse storage path')
+      return null
+    }
+    console.log('[loadImageAsBase64] Trying Firebase SDK for:', storagePath)
+    const storage = getStorage()
+    const storageRef = ref(storage, storagePath)
+    const blob = await getBlob(storageRef)
+    const base64 = await blobToBase64(blob)
+    console.log('[loadImageAsBase64] Firebase SDK OK, image loaded')
+    return base64
+  } catch (err) {
+    console.warn('[loadImageAsBase64] Firebase SDK fallback failed:', err.message)
     return null
   }
 }
@@ -1122,7 +1197,7 @@ export async function generateHeuristicPdf(reportData, options = {}) {
         margin: { left: M + 6, right: M },
         theme: 'grid',
         columnStyles: {
-          0: { cellWidth: CONTENT_W - 60, overflow: 'linebreak' },
+          0: { overflow: 'linebreak' },
           1: { halign: 'center', cellWidth: 40 },
         },
       })
@@ -1130,10 +1205,20 @@ export async function generateHeuristicPdf(reportData, options = {}) {
     }
 
     // ── Renderizar comentarios de evaluadores ────────────────────────────
-    const allCommentDetails = item.questionSummaries.flatMap((q) => q.commentDetails || [])
+    const allCommentDetails = item.questionSummaries.flatMap(
+      (q) => q.commentDetails || [],
+    )
+    console.log(
+      `[pdfGenerator] Heuristic #${item.position} commentDetails:`,
+      allCommentDetails.length,
+      'items',
+      allCommentDetails.map((c) => c.evaluatorName + ': ' + c.text.substring(0, 50)),
+    )
     if (allCommentDetails.length > 0) {
       writeParagraph('Comentarios de los evaluadores:', {
-        bold: true, size: 10, spacing: 3,
+        bold: true,
+        size: 10,
+        spacing: 3,
       })
       for (const cd of allCommentDetails) {
         const commentLine = `${cd.evaluatorName}: "${stripHtml(cd.text)}"`
@@ -1152,12 +1237,22 @@ export async function generateHeuristicPdf(reportData, options = {}) {
 
     // ── Renderizar imágenes de evaluadores ───────────────────────────────
     const heuristicIndex = (item.position || 1) - 1
-    const imgUrls = getAllImagesForHeuristic(allAnswers, heuristicIndex, testStructure)
+    const imgUrls = getAllImagesForHeuristic(
+      allAnswers,
+      heuristicIndex,
+      testStructure,
+    )
+    console.log(
+      `[pdfGenerator] Heuristic #${item.position} imgUrls:`,
+      imgUrls.length,
+      imgUrls.slice(0, 4),
+    )
     if (imgUrls.length > 0) {
-      writeParagraph(
-        `Evidencias visuales (${imgUrls.length}):`,
-        { bold: true, size: 10, spacing: 3 },
-      )
+      writeParagraph(`Evidencias visuales (${imgUrls.length}):`, {
+        bold: true,
+        size: 10,
+        spacing: 3,
+      })
       const maxImgs = Math.min(imgUrls.length, 4)
       for (let ii = 0; ii < maxImgs; ii++) {
         try {

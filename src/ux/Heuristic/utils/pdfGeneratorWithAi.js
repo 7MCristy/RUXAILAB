@@ -572,7 +572,7 @@ export async function generateHeuristicPdfWithAi(reportData, options = {}) {
             margin: { left: M + 8, right: M },
             theme: 'grid',
             columnStyles: {
-              0: { cellWidth: CONTENT_W - 70, overflow: 'linebreak' },
+              0: { overflow: 'linebreak' },
               1: { halign: 'center', cellWidth: 40 },
             },
           })
@@ -581,6 +581,12 @@ export async function generateHeuristicPdfWithAi(reportData, options = {}) {
 
         // ── Renderizar comentarios de evaluadores ────────────────────────
         const allCommentDetails = item.questionSummaries.flatMap((q) => q.commentDetails || [])
+        console.log(
+          '[pdfGeneratorWithAi] Heuristic #' + (item.position || '?') + ' commentDetails:',
+          allCommentDetails.length,
+          'items',
+          allCommentDetails.map((c) => c.evaluatorName + ': ' + c.text.substring(0, 50)),
+        )
         if (allCommentDetails.length > 0) {
           doc.setFont(FONT, 'bold')
           doc.setFontSize(9)
@@ -605,6 +611,11 @@ export async function generateHeuristicPdfWithAi(reportData, options = {}) {
         // ── Renderizar imágenes de evaluadores ────────────────────────────
         const hIndex = (item.position || 1) - 1
         const imgUrls = getAllImagesForHeuristic(allAnswers, hIndex, testStructure)
+        console.log(
+          '[pdfGeneratorWithAi] Heuristic #' + (item.position || '?') + ' imgUrls:',
+          imgUrls.length,
+          imgUrls.slice(0, 4),
+        )
         if (imgUrls.length > 0) {
           doc.setFont(FONT, 'bold')
           doc.setFontSize(9)

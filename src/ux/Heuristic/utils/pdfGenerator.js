@@ -2,7 +2,6 @@
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
 import { formatTimeSpentFromMs } from '@/ux/Heuristic/utils/statistics'
-import { getStorage, ref, getBlob } from 'firebase/storage'
 
 const FONT = 'helvetica'
 const M = 52
@@ -622,44 +621,45 @@ function blobToBase64(blob) {
 
 /**
  * Carga una imagen desde una URL y la convierte a base64 para jsPDF.
- * Primero intenta fetch() directo; si falla por CORS, usa Firebase Storage SDK.
- * Retorna null si falla.
+ * Usa proxy del dev server para evitar CORS. Retorna null si falla.
  */
 async function loadImageAsBase64(url) {
+  if (!url) return null
   console.log('[loadImageAsBase64] Attempting to load:', url)
 
-  // 1) Try direct fetch (works when CORS is configured)
+  // 1) Proxy del dev server (misma origen, sin CORS)
   try {
-    const response = await fetch(url, { mode: 'cors' })
+    const proxyUrl = url.replace(
+      'https://firebasestorage.googleapis.com',
+      '/storage-proxy',
+    )
+    const response = await fetch(proxyUrl)
     if (response.ok) {
       const blob = await response.blob()
       const base64 = await blobToBase64(blob)
-      console.log('[loadImageAsBase64] fetch OK, image loaded')
+      console.log('[loadImageAsBase64] proxy OK, image loaded')
       return base64
     }
-    console.warn('[loadImageAsBase64] fetch returned !ok:', response.status)
+    console.warn('[loadImageAsBase64] proxy returned !ok:', response.status)
   } catch (err) {
-    console.warn('[loadImageAsBase64] fetch CORS error:', err.message)
+    console.warn('[loadImageAsBase64] proxy error:', err.message)
   }
 
-  // 2) Fallback: Firebase Storage SDK (bypasses CORS)
+  // 2) Fallback: fetch directo (si CORS está configurado en el bucket)
   try {
-    const storagePath = getStoragePathFromDownloadUrl(url)
-    if (!storagePath) {
-      console.warn('[loadImageAsBase64] Could not parse storage path')
-      return null
+    const response = await fetch(url)
+    if (response.ok) {
+      const blob = await response.blob()
+      const base64 = await blobToBase64(blob)
+      console.log('[loadImageAsBase64] direct fetch OK')
+      return base64
     }
-    console.log('[loadImageAsBase64] Trying Firebase SDK for:', storagePath)
-    const storage = getStorage()
-    const storageRef = ref(storage, storagePath)
-    const blob = await getBlob(storageRef)
-    const base64 = await blobToBase64(blob)
-    console.log('[loadImageAsBase64] Firebase SDK OK, image loaded')
-    return base64
   } catch (err) {
-    console.warn('[loadImageAsBase64] Firebase SDK fallback failed:', err.message)
-    return null
+    console.warn('[loadImageAsBase64] direct fetch error:', err.message)
   }
+
+  console.warn('[loadImageAsBase64] all methods failed for:', url)
+  return null
 }
 
 export async function generateHeuristicPdf(reportData, options = {}) {

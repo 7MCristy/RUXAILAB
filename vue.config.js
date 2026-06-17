@@ -4,6 +4,19 @@ module.exports = {
   productionSourceMap: false,
   css: { sourceMap: false },
 
+  devServer: {
+    proxy: {
+      '/storage-proxy': {
+        target: 'https://firebasestorage.googleapis.com',
+        changeOrigin: true,
+        pathRewrite: { '^/storage-proxy': '' },
+        onProxyReq(proxyReq) {
+          proxyReq.setHeader('Referer', '')
+        },
+      },
+    },
+  },
+
   transpileDependencies: [
     'vuetify',
     'resize-detector',

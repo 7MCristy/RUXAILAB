@@ -76,43 +76,52 @@
             </v-col>
           </v-row>
 
-          <div v-else class="single-evaluator-caption mt-4">
-            <div class="single-evaluator-title">
-              {{ t('HeuristicsTestAnswer.summary.warningSummary') }}
-            </div>
-            <div class="single-evaluator-row mt-2">
-              <div class="single-evaluator-item">
-                <div class="mini-label">
-                  {{ t('HeuristicsTestAnswer.summary.averageMaxWarning') }}
-                </div>
-                <div
-                  class="mini-value"
-                  :style="metricColor(result.avrgmaxWarning, 'average')"
-                >
-                  {{ result.avrgmaxWarning || '0.00%' }}
-                </div>
-              </div>
-              <div class="single-evaluator-item">
-                <div class="mini-label">
-                  {{ t('HeuristicsTestAnswer.summary.averageMinWarning') }}
-                </div>
-                <div
-                  class="mini-value"
-                  :style="metricColor(result.avrgminWarning, 'average')"
-                >
-                  {{ result.avrgminWarning || '0.00%' }}
-                </div>
-              </div>
-            </div>
-          </div>
+           <div v-else-if="result.avrgmaxWarning && result.avrgminWarning" class="single-evaluator-caption mt-4">
+             <div class="single-evaluator-title">
+               {{ t('HeuristicsTestAnswer.summary.warningSummary') }}
+             </div>
+
+             <div class="single-evaluator-row mt-2">
+               <div class="single-evaluator-item">
+                 <div class="mini-label">
+                   {{ t('HeuristicsTestAnswer.summary.averageMaxWarning') }}
+                 </div>
+                 <div
+                   class="mini-value"
+                   :style="metricColor(result.avrgmaxWarning, 'average')"
+                 >
+                   {{ result.avrgmaxWarning || '0.00%' }}
+                 </div>
+               </div>
+               <div class="single-evaluator-item">
+                 <div class="mini-label">
+                   {{ t('HeuristicsTestAnswer.summary.averageMinWarning') }}
+                 </div>
+                 <div
+                   class="mini-value"
+                   :style="metricColor(result.avrgminWarning, 'average')"
+                 >
+                   {{ result.avrgminWarning || '0.00%' }}
+                 </div>
+               </div>
+             </div>
+           </div>
+           <div v-else class="single-evaluator-caption mt-4">
+             <div class="single-evaluator-title">
+               {{ t('HeuristicsTestAnswer.summary.warningSummary') }}
+             </div>
+             <div class="text-body-2 text-medium-emphasis">
+               {{ t('HeuristicsTestAnswer.summary.noWarningData') }}
+             </div>
+           </div>
         </v-card>
 
-        <v-card
-          v-if="!isSingleEvaluator"
-          flat
-          rounded="lg"
-          class="summary-panel pa-5 mt-4"
-        >
+         <v-card
+           v-if="!isSingleEvaluator && result.avrgmaxWarning && result.avrgminWarning"
+           flat
+           rounded="lg"
+           class="summary-panel pa-5 mt-4"
+         >
           <div
             class="d-flex align-start justify-space-between mb-5 warning-header"
           >
@@ -338,6 +347,12 @@ const evaluatorsLabel = computed(() => {
 const evaluatorIdentityLabel = computed(() =>
   String(props.evaluatorIdentity || '').trim(),
 )
+
+const hasWarnings = computed(() => {
+  const maxWarning = toPercent(props.result.avrgmaxWarning)
+  const minWarning = toPercent(props.result.avrgminWarning)
+  return maxWarning > 0 || minWarning > 0
+})
 
 const metricColor = (value, kind) => {
   const percent = toPercent(value)

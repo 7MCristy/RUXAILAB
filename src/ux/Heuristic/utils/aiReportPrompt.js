@@ -318,28 +318,34 @@ Sin viñetas. Párrafo continuo.
 ================================================================
 SECCION 3 - PRIORIDAD Y ANALISIS DETALLADO POR HEURISTICA
 ===============================================================
-Combina la priorización y el análisis detallado en UNA SOLA SECCIÓN donde CADA heurística incluya todos estos campos:
+Combina la priorización y el análisis detallado en UNA SOLA SECCIÓN.
 
-[DATOS DE LA HEURISTICA]
-[NOMBRE] — [XX.XX%] — Severidad: [Nivel] — Warnings: [N]
-Desviación típica: [SD] — Rango: [min] - [max]
+INSTRUCCIÓN DE FORMATO OBLIGATORIA:
+Escribe CADA análisis de heurística precedido por un NÚMERO seguido de punto y el nombre de la heurística entre corchetes. Ejemplo:
 
-Párrafo de prioridad: (3-4 frases) Basado en el porcentaje de cumplimiento, la desviación típica y las puntuaciones de las preguntas concretas, explica POR QUÉ ocupa esta posición, el IMPACTO REAL en el usuario y la URGENCIA de intervención.
+1. [Visibilidad del estado del sistema]
+Análisis completo de esta heurística aquí...
 
-Descripción funcional: (1-2 frases) Qué evalúa esta heurística y por qué es relevante para este sistema concreto.
+2. [Correspondencia entre el sistema y el mundo real]
+Análisis completo de esta heurística aquí...
 
-Evaluación de criterios: Basándote en las puntuaciones de cada pregunta, identifica qué criterios concretos funcionan bien y cuáles fallan. Menciona las medias obtenidas.
-
-Estado actual: (3-4 frases) Interpretación cualitativa. ¿Hay consenso entre evaluadores (desviación típica baja) o divergencia (alta)? ¿Qué experimenta el usuario? ¿Qué patrones revelan las puntuaciones?
-
-Impacto en la experiencia: (2-3 frases) Efecto concreto en el comportamiento del usuario. Menciona warnings si los hay como evidencia de fricción.
-
-Plan de acción recomendado: (3 recomendaciones numeradas, específicas y técnicas. Nada de "mejorar la usabilidad".)
+Para CADA heurística, escribe exactamente estos párrafos en este orden:
+- Párrafo de prioridad: (3-4 frases) Basado en el porcentaje de cumplimiento, la desviación típica y las puntuaciones de las preguntas concretas, explica POR QUÉ ocupa esta posición, el IMPACTO REAL en el usuario y la URGENCIA de intervención.
+- Descripción funcional: (1-2 frases) Qué evalúa esta heurística y por qué es relevante para este sistema concreto.
+- Evaluación de criterios: Basándote en las puntuaciones de cada pregunta, identifica qué criterios concretos funcionan bien y cuáles fallan. Menciona las medias obtenidas.
+- Estado actual: (3-4 frases) Interpretación cualitativa. ¿Hay consenso entre evaluadores? ¿Qué experimenta el usuario?
+- Impacto en la experiencia: (2-3 frases) Efecto concreto en el comportamiento del usuario. Menciona warnings si los hay como evidencia de fricción.
+- Plan de acción recomendado: (3 recomendaciones numeradas, específicas y técnicas).
 
 Datos disponibles para cada heurística:
 ${heuristicsDetailText}
 
-IMPORTANTE: Usa los datos de las preguntas individuales para ser específico. No seas genérico. Cada heurística debe tener TODOS los campos indicados arriba, en el orden indicado.
+IMPORTANTE:
+- Usa los datos de las preguntas individuales para ser específico.
+- Cada heurística debe tener TODOS los párrafos indicados.
+- Separa cada heurística con una línea en blanco.
+- El número debe ser correlativo (1, 2, 3...).
+- NO incluyas tablas ni datos numéricos en tu texto. Solo prosa analítica. Las tablas las genera el PDF automáticamente.
 
 ===============================================================
 SECCION 4 - COMPARATIVA DE PUNTUACIONES POR EVALUADOR

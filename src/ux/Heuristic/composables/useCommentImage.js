@@ -1,4 +1,5 @@
 import { ref, computed, watch, onMounted } from 'vue'
+import { getProxiedImageUrl } from '@/ux/Heuristic/utils/imageProxy'
 
 export function useCommentImage(props, emit) {
   const show = ref(false)
@@ -140,7 +141,7 @@ export function useCommentImage(props, emit) {
   }
 
   const openImagePreview = (url) => {
-    previewImageUrl.value = url
+    previewImageUrl.value = getProxiedImageUrl(url)
     imagePreviewDialog.value = true
   }
 

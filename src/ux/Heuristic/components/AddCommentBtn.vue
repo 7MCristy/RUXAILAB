@@ -176,7 +176,7 @@
             >
               <v-card variant="outlined" class="image-card">
                 <v-img
-                  :src="image.url"
+                  :src="getProxiedImageUrl(image.url)"
                   height="150"
                   cover
                   class="cursor-pointer"
@@ -226,6 +226,7 @@ import { computed } from 'vue'
 import { useStore } from 'vuex'
 import ImageImport from '@/ux/Heuristic/components/ImportImage.vue'
 import { useCommentImage } from '@/ux/Heuristic/composables/useCommentImage'
+import { getProxiedImageUrl } from '@/ux/Heuristic/utils/imageProxy'
 
 const props = defineProps({
   answerHeu: { type: Object, default: () => ({}), required: true },

@@ -268,7 +268,7 @@
                                     >
                                       <img
                                         height="200"
-                                        :src="attachment.url || attachment"
+                                        :src="getProxiedImageUrl(attachment.url || attachment)"
                                         :alt="
                                           attachment.alt ||
                                           $t(
@@ -305,6 +305,7 @@ import { useRoute } from 'vue-router'
 import ShowInfo from '@/shared/components/ShowInfo.vue'
 import BarChart from '@/ux/Heuristic/components/charts/BarChart.vue'
 import IntroAnalytics from '@/shared/components/introduction_cards/IntroAnalytics.vue'
+import { getProxiedImageUrl } from '@/ux/Heuristic/utils/imageProxy'
 
 const store = useStore()
 const route = useRoute()

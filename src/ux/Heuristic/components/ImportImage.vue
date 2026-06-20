@@ -36,6 +36,7 @@ import {
   uploadBytes,
   getDownloadURL,
 } from 'firebase/storage'
+import { getProxiedImageUrl } from '@/ux/Heuristic/utils/imageProxy'
 
 const props = defineProps({
   heuristicId: {
@@ -108,8 +109,8 @@ const hasSavedImage = computed(() => {
 })
 
 const displayedImageUrl = computed(() => {
-  if (url.value) return url.value
-  return findImageUrl() || ''
+  if (url.value) return getProxiedImageUrl(url.value)
+  return getProxiedImageUrl(findImageUrl()) || ''
 })
 
 watch(

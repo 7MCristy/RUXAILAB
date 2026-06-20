@@ -327,13 +327,24 @@ const generateAiFinalReport = async (finalReportItem) => {
 
   try {
     // Intenta Gemini primero, fallback a Ollama si está disponible
-    const content = await generateAiReportWithFallback(finalReportItem, {
+    const result = await generateAiReportWithFallback(finalReportItem, {
       ollamaUrl: process.env.VUE_APP_OLLAMA_API_URL || 'http://localhost:11434/api/chat',
       buildFallback: buildFallbackConclusion
     })
 
+    // Handle new {content, webResearch} format
+    const content = typeof result === 'string' ? result : result.content
+    const webResearch = typeof result === 'string' ? '' : (result.webResearch || '')
+
     console.log('[generateAiFinalReport] ✅ Informe IA generado, longitud:', content?.length)
     console.log('[generateAiFinalReport] 📄 Preview (primeros 150 chars):', content?.substring(0, 150))
+
+    // Store web research in finalReportItem for PDF rendering
+    if (webResearch) {
+      finalReportItem.webResearch = webResearch
+      console.log('[generateAiFinalReport] 🌐 Investigación web guardada, longitud:', webResearch.length)
+    }
+
     return content
   } catch (error) {
     console.error('[generateAiFinalReport] ❌ Error generando informe con IA:', error)

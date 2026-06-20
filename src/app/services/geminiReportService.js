@@ -53,7 +53,7 @@ function validateApiKey() {
  * Genera un informe con IA usando la librería oficial @google/genai
  *
  * @param {Object} finalReportItem - Datos del informe final
- * @returns {Promise<string>} Contenido del informe generado
+ * @returns {Promise<{content: string, webResearch: string}>} Contenido del informe y datos de investigación web
  * @throws {Error} Si hay error en la API o configuración
  */
 export async function generateAiReportWithGemini(finalReportItem) {
@@ -172,7 +172,7 @@ export async function generateAiReportWithGemini(finalReportItem) {
         'caracteres',
       )
       console.log('[Gemini] 📄 Preview del informe (primeros 200 chars):', content.substring(0, 200))
-      return content
+      return { content, webResearch: webResearchContent || '' }
     } catch (fetchError) {
       clearTimeout(timeoutId)
       console.error('[Gemini] ❌ Error en la solicitud fetch:', {
@@ -261,7 +261,7 @@ export async function generateAiReportWithOllama(
     }
 
     console.log('[Ollama] ✅ Informe generado exitosamente')
-    return content
+    return { content, webResearch: '' }
   } catch (error) {
     console.error('[Ollama] ❌ Error con Ollama:', error.message)
     throw error
@@ -319,6 +319,10 @@ export async function generateAiReportWithFallback(
       const result = await generateAiReportWithGemini(finalReportItem)
       console.log('[AI] ✅ Éxito con Gemini API')
       console.log('[AI] ===== FIN GENERACIÓN (Gemini) =====')
+      // Normalize result format
+      if (typeof result === 'string') {
+        return { content: result, webResearch: '' }
+      }
       return result
     } catch (geminiError) {
       console.warn('[AI] ⚠️ Gemini falló:', geminiError.message)
@@ -341,6 +345,10 @@ export async function generateAiReportWithFallback(
       )
       console.log('[AI] ✅ Éxito con Ollama local')
       console.log('[AI] ===== FIN GENERACIÓN (Ollama) =====')
+      // Normalize result format
+      if (typeof result === 'string') {
+        return { content: result, webResearch: '' }
+      }
       return result
     } catch (ollamaError) {
       console.error('[AI] ❌ Ollama también falló:', ollamaError.message)
@@ -352,11 +360,10 @@ export async function generateAiReportWithFallback(
   console.log('[AI] 📝 Usando conclusión de fallback (sin IA)')
   console.log('[AI] ⚠️ AMBAS IAs fallaron. Usando texto de respaldo.')
   console.log('[AI] ===== FIN GENERACIÓN (Fallback) =====')
-  if (typeof buildFallback === 'function') {
-    console.log('[AI] Usando función buildFallback personalizada del componente')
-    return buildFallback()
-  }
-  return buildFallbackConclusionText()
+  const fallbackText = typeof buildFallback === 'function'
+    ? buildFallback()
+    : buildFallbackConclusionText()
+  return { content: fallbackText, webResearch: '' }
 }
 
 /**

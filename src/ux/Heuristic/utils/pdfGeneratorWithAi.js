@@ -140,6 +140,69 @@ function getSeverityFromPercentage(value) {
   return 'Óptimo'
 }
 
+/**
+ * Parse numbered heuristic analysis blocks from AI text.
+ * Matches patterns like:
+ *   1. [Heuristic Name]
+ *   2. [Heuristic Name]
+ *
+ * Returns array of { index, name, text } where text is the paragraph content.
+ */
+function parseNumberedHeuristicBlocks(text) {
+  if (!text) return []
+  const blocks = []
+  const regex = /^(\d+)\.\s*\[([^\]]+)\]\s*$/gm
+  const lines = text.split('\n')
+  let current = null
+
+  for (const line of lines) {
+    const match = regex.exec(line)
+    regex.lastIndex = 0
+    const trimmed = line.trim()
+
+    const numberedMatch = trimmed.match(/^(\d+)\.\s*\[([^\]]+)\]\s*$/)
+    if (numberedMatch) {
+      if (current) blocks.push(current)
+      current = {
+        index: parseInt(numberedMatch[1], 10),
+        name: numberedMatch[2].trim(),
+        text: '',
+      }
+    } else if (current) {
+      current.text += (current.text ? '\n' : '') + line
+    }
+  }
+  if (current) blocks.push(current)
+
+  return blocks
+}
+
+/**
+ * Normalize heuristic name for fuzzy matching.
+ */
+function normalizeHeuristicName(name) {
+  return name
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9 ]/g, '')
+    .trim()
+}
+
+/**
+ * Match a numbered block from AI text to an evidence heuristic item by name similarity.
+ */
+function matchBlockToEvidenceItem(block, orderedByImpact) {
+  if (!block || !orderedByImpact) return null
+  const blockNorm = normalizeHeuristicName(block.name)
+  for (const item of orderedByImpact) {
+    const itemNorm = normalizeHeuristicName(item.label)
+    if (itemNorm === blockNorm) return item
+    if (itemNorm.includes(blockNorm) || blockNorm.includes(itemNorm)) return item
+  }
+  return null
+}
+
 export async function generateHeuristicPdfWithAi(reportData, options = {}) {
   const {
     testTitle,
@@ -157,6 +220,7 @@ export async function generateHeuristicPdfWithAi(reportData, options = {}) {
     statisticsByEvaluatorAnswer,
     timeByHeuristics,
     finalReport: aiReportText,
+    webResearch,
   } = reportData
   const mode = options?.mode || 'download'
 
@@ -434,18 +498,14 @@ export async function generateHeuristicPdfWithAi(reportData, options = {}) {
     startSection(title)
 
     const sectionContent = getSectionContent(i)
-    if (sectionContent) {
-      const paragraphs = sectionContent
-        .split('\n')
-        .filter((p) => p.trim())
-        .map((p) => p.trim())
-      for (const p of paragraphs) {
-        writeParagraph(p, { spacing: 6 })
-      }
-    }
 
-    // ── Section 3: ranking table ──────────────────────────────────────────
+    // ── Section 3: INTERLEAVED AI text + tables ──────────────────────────
     if (i === 2) {
+      const section3AiText = sectionContent || ''
+      const numberedBlocks = parseNumberedHeuristicBlocks(section3AiText)
+      console.log('[pdfGeneratorWithAi] Section 3: parsed', numberedBlocks.length, 'numbered blocks')
+
+      // Render ranking table first
       const summaryRows = evidence.orderedByPercentage.map((item) => [
         item.position,
         item.label,
@@ -455,7 +515,7 @@ export async function generateHeuristicPdfWithAi(reportData, options = {}) {
 
       ensureSpace(40)
       writeParagraph(
-        'La tabla siguiente presenta el ranking completo de heurísticas ordenado por cumplimiento, utilizado como base para el análisis anterior.',
+        'La tabla siguiente presenta el ranking completo de heurísticas ordenado por cumplimiento, utilizado como base para el análisis.',
         { size: 10, spacing: 10, color: COLORS.sub },
       )
 
@@ -507,10 +567,9 @@ export async function generateHeuristicPdfWithAi(reportData, options = {}) {
         },
       })
       y = doc.lastAutoTable.finalY + 16
-    }
 
-    // ── Per-heuristic detail (dentro de la sección combinada 3) ─────────
-    if (i === 2) {
+      // Interleave: for each heuristic, render AI text → table → comments → images
+      const unmatchedBlocks = [...numberedBlocks]
       for (const item of evidence.orderedByImpact) {
         ensureSpace(80)
 
@@ -536,6 +595,21 @@ export async function generateHeuristicPdfWithAi(reportData, options = {}) {
           y,
         )
         y += 16
+
+        // AI analysis text for this heuristic (from numbered blocks)
+        const matchedBlockIndex = unmatchedBlocks.findIndex((b) =>
+          matchBlockToEvidenceItem(b, [item]),
+        )
+        if (matchedBlockIndex >= 0) {
+          const block = unmatchedBlocks.splice(matchedBlockIndex, 1)[0]
+          const analysisParagraphs = block.text
+            .split('\n')
+            .filter((p) => p.trim())
+            .map((p) => p.trim())
+          for (const p of analysisParagraphs) {
+            writeParagraph(p, { spacing: 6 })
+          }
+        }
 
         // Question table
         if (item.questionSummaries.length > 0) {
@@ -579,7 +653,7 @@ export async function generateHeuristicPdfWithAi(reportData, options = {}) {
           y = doc.lastAutoTable.finalY + 12
         }
 
-        // ── Renderizar comentarios de evaluadores ────────────────────────
+        // Comments
         const allCommentDetails = item.questionSummaries.flatMap((q) => q.commentDetails || [])
         console.log(
           '[pdfGeneratorWithAi] Heuristic #' + (item.position || '?') + ' commentDetails:',
@@ -608,7 +682,7 @@ export async function generateHeuristicPdfWithAi(reportData, options = {}) {
           }
         }
 
-        // ── Renderizar imágenes de evaluadores ────────────────────────────
+        // Images
         const hIndex = (item.position || 1) - 1
         const imgUrls = getAllImagesForHeuristic(allAnswers, hIndex, testStructure)
         console.log(
@@ -678,6 +752,27 @@ export async function generateHeuristicPdfWithAi(reportData, options = {}) {
         }
 
         y += 8
+      }
+
+      // Render any unmatched AI text blocks as fallback
+      for (const block of unmatchedBlocks) {
+        ensureSpace(40)
+        writeParagraph(`${block.name}:`, { bold: true, spacing: 6 })
+        const paragraphs = block.text.split('\n').filter((p) => p.trim())
+        for (const p of paragraphs) {
+          writeParagraph(p.trim(), { spacing: 6 })
+        }
+      }
+    }
+
+    // ── Other sections: render AI text paragraphs ─────────────────────────
+    if (i !== 2 && sectionContent) {
+      const paragraphs = sectionContent
+        .split('\n')
+        .filter((p) => p.trim())
+        .map((p) => p.trim())
+      for (const p of paragraphs) {
+        writeParagraph(p, { spacing: 6 })
       }
     }
 
@@ -885,6 +980,93 @@ export async function generateHeuristicPdfWithAi(reportData, options = {}) {
       for (const line of summaryLines) {
         doc.text(line, M + 8, y)
         y += 13
+      }
+    }
+  }
+
+  // ─── WEB RESEARCH APPENDIX ──────────────────────────────────────────────
+  if (webResearch && typeof webResearch === 'string' && webResearch.trim()) {
+    doc.addPage()
+    pageNum += 1
+    y = M + 6
+    addFooter()
+
+    // Add to TOC
+    tocEntries.push({ title: 'Análisis Web (RAG)', page: pageNum })
+
+    doc.setDrawColor(...COLORS.accent)
+    doc.setFillColor(...COLORS.accent)
+    doc.rect(M, y, 4, 24, 'F')
+    doc.setFont(FONT, 'bold')
+    doc.setFontSize(20)
+    doc.setTextColor(...COLORS.primary)
+    doc.text('ANÁLISIS WEB (RAG)', M + 14, y + 18)
+    doc.setDrawColor(...COLORS.muted)
+    doc.setLineWidth(0.3)
+    doc.line(M, y + 30, PAGE_W - M, y + 30)
+    y += 40
+
+    doc.setFont(FONT, 'normal')
+    doc.setFontSize(9)
+    doc.setTextColor(...COLORS.sub)
+    doc.text(
+      'Investigación web realizada por Jina AI / TinyFish como contexto adicional para el análisis.',
+      M,
+      y,
+    )
+    y += 14
+
+    // Split web research content into paragraphs and render
+    const webLines = webResearch.split('\n').filter((l) => l.trim())
+    for (const line of webLines) {
+      const trimmed = line.trim()
+      if (trimmed.startsWith('### ')) {
+        ensureSpace(20)
+        doc.setFont(FONT, 'bold')
+        doc.setFontSize(11)
+        doc.setTextColor(...COLORS.primary)
+        doc.text(trimmed.replace(/^#+\s*/, ''), M, y)
+        y += 14
+      } else if (trimmed.startsWith('## ')) {
+        ensureSpace(22)
+        doc.setFont(FONT, 'bold')
+        doc.setFontSize(13)
+        doc.setTextColor(...COLORS.primary)
+        doc.text(trimmed.replace(/^#+\s*/, ''), M, y)
+        y += 16
+      } else if (trimmed.startsWith('# ')) {
+        ensureSpace(24)
+        doc.setFont(FONT, 'bold')
+        doc.setFontSize(15)
+        doc.setTextColor(...COLORS.primary)
+        doc.text(trimmed.replace(/^#+\s*/, ''), M, y)
+        y += 18
+      } else if (trimmed.startsWith('=== ')) {
+        ensureSpace(18)
+        doc.setFont(FONT, 'bold')
+        doc.setFontSize(10)
+        doc.setTextColor(...COLORS.secondary)
+        const sectionLabel = trimmed.replace(/^=+/, '').replace(/=+$/, '').trim()
+        doc.text(sectionLabel, M, y)
+        y += 13
+      } else if (trimmed.startsWith('URL:')) {
+        ensureSpace(12)
+        doc.setFont(FONT, 'italic')
+        doc.setFontSize(8)
+        doc.setTextColor(...COLORS.sub)
+        doc.text(trimmed, M + 8, y)
+        y += 10
+      } else {
+        ensureSpace(14)
+        const wrapped = doc.splitTextToSize(trimmed, CONTENT_W)
+        for (const wl of wrapped) {
+          ensureSpace(12)
+          doc.setFont(FONT, 'normal')
+          doc.setFontSize(9)
+          doc.setTextColor(...COLORS.text)
+          doc.text(wl, M, y)
+          y += 11
+        }
       }
     }
   }

@@ -418,7 +418,11 @@ import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import Intro from '@/shared/components/introduction_cards/IntroReports.vue'
 import PageWrapper from '@/shared/views/template/PageWrapper.vue'
-import { STUDY_TYPES, USER_STUDY_SUBTYPES, normalizeStudyType } from '@/shared/constants/methodDefinitions'
+import {
+  STUDY_TYPES,
+  USER_STUDY_SUBTYPES,
+  normalizeStudyType,
+} from '@/shared/constants/methodDefinitions'
 import UserStudyEvaluatorAnswer from '@/ux/UserTest/models/UserStudyEvaluatorAnswer'
 import {
   parseTimeSpentToMs,
@@ -623,12 +627,16 @@ const goToCoops = () => {
 
   let base = '/heuristic'
   if (normalized === STUDY_TYPES.USER) {
-    base = subType === USER_STUDY_SUBTYPES.UNMODERATED
-      ? '/userTest/unmoderated'
-      : '/userTest/moderated'
+    base =
+      subType === USER_STUDY_SUBTYPES.UNMODERATED
+        ? '/userTest/unmoderated'
+        : '/userTest/moderated'
   } else if (normalized === STUDY_TYPES.CARD_SORTING) {
     base = '/cardSorting'
-  } else if (normalized === STUDY_TYPES.ACCESSIBILITY_MANUAL || normalized === STUDY_TYPES.ACCESSIBILITY_AUTOMATIC) {
+  } else if (
+    normalized === STUDY_TYPES.ACCESSIBILITY_MANUAL ||
+    normalized === STUDY_TYPES.ACCESSIBILITY_AUTOMATIC
+  ) {
     base = '/accessibility'
   }
 

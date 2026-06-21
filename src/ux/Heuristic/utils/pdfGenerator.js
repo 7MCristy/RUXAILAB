@@ -88,16 +88,20 @@ function stripHtml(value = '') {
 
 function extractCommentTexts(answer) {
   const comments = []
+  // Array format: answer.comments = [{id, text, createdAt}]
   if (Array.isArray(answer?.comments)) {
     comments.push(...answer.comments)
   }
+  // Nested array format
   if (Array.isArray(answer?.heuristicAnswer?.comments)) {
     comments.push(...answer.heuristicAnswer.comments)
   }
+  // Legacy string format: answer.heuristicComment = "text"
   const legacyComment = normalizeText(answer?.heuristicComment)
   if (legacyComment) {
     comments.push(legacyComment)
   }
+  // Nested legacy string
   const legacyNested = normalizeText(answer?.heuristicAnswer?.heuristicComment)
   if (legacyNested) {
     comments.push(legacyNested)
@@ -426,10 +430,26 @@ function buildHeuristicEvidence({
             evaluatorHeuristics[answerIndex],
             answerIndex,
           )
+          // Extract comments from question-level answer
           extractCommentTexts(answer).forEach((text) => {
             commentDetails.push({ evaluatorName, text })
           })
         })
+        // Also extract comments from heuristic-level answer (fallback)
+        if (commentDetails.length === 0) {
+          evaluatorHeuristics.forEach((heuristicAnswer, answerIndex) => {
+            if (!heuristicAnswer) return
+            const evaluatorName = getEvaluatorLabel(
+              evaluatorHeuristics[answerIndex],
+              answerIndex,
+            )
+            extractCommentTexts(heuristicAnswer).forEach((text) => {
+              if (!commentDetails.some((c) => c.text === text)) {
+                commentDetails.push({ evaluatorName, text })
+              }
+            })
+          })
+        }
         const comments = commentDetails.length
         const average = values.length
           ? values.reduce((sum, value) => sum + value, 0) / values.length

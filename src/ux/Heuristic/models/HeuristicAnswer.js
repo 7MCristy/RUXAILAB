@@ -37,7 +37,48 @@ export default class HeuristicAnswer {
 
   toFirestore() {
     return {
-      heuristicQuestions: this.heuristicQuestions.map((h) => h.toFirestore()),
+      heuristicQuestions: this.heuristicQuestions.map((h) => {
+        // Handle both class instances and raw objects
+        if (typeof h?.toFirestore === 'function') {
+          return h.toFirestore()
+        }
+        // Raw object fallback: serialize manually
+        return {
+          heuristicId: h.heuristicId,
+          heuristicTitle: h.heuristicTitle,
+          heuristicTotal: h.heuristicTotal,
+          timeSpent: h.timeSpent || '00:00',
+          heuristicQuestions: Array.isArray(h.heuristicQuestions)
+            ? h.heuristicQuestions.map((q) => {
+                if (typeof q?.toFirestore === 'function') {
+                  return q.toFirestore()
+                }
+                // Raw question object
+                return {
+                  heuristicId: q.heuristicId,
+                  heuristicAnswer: q.heuristicAnswer || {},
+                  heuristicComment: q.heuristicComment || '',
+                  answerImageUrl: q.answerImageUrl || '',
+                  comments: Array.isArray(q.comments)
+                    ? q.comments.map((c) => ({
+                        id: c.id,
+                        text: c.text,
+                        createdAt: c.createdAt,
+                        updatedAt: c.updatedAt || null,
+                      }))
+                    : [],
+                  images: Array.isArray(q.images)
+                    ? q.images.map((img) => ({
+                        id: img.id,
+                        url: img.url,
+                        createdAt: img.createdAt,
+                      }))
+                    : [],
+                }
+              })
+            : [],
+        }
+      }),
       progress: this.progress,
       total: this.total,
       submitted: this.submitted,

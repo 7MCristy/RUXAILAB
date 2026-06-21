@@ -35,7 +35,34 @@ export default class Heuristic {
     return {
       heuristicId: this.heuristicId,
       heuristicTitle: this.heuristicTitle,
-      heuristicQuestions: this.heuristicQuestions.map((h) => h.toFirestore()),
+      heuristicQuestions: this.heuristicQuestions.map((h) => {
+        // Handle both class instances and raw objects
+        if (typeof h?.toFirestore === 'function') {
+          return h.toFirestore()
+        }
+        // Raw object fallback
+        return {
+          heuristicId: h.heuristicId,
+          heuristicAnswer: h.heuristicAnswer || {},
+          heuristicComment: h.heuristicComment || '',
+          answerImageUrl: h.answerImageUrl || '',
+          comments: Array.isArray(h.comments)
+            ? h.comments.map((c) => ({
+                id: c.id,
+                text: c.text,
+                createdAt: c.createdAt,
+                updatedAt: c.updatedAt || null,
+              }))
+            : [],
+          images: Array.isArray(h.images)
+            ? h.images.map((img) => ({
+                id: img.id,
+                url: img.url,
+                createdAt: img.createdAt,
+              }))
+            : [],
+        }
+      }),
       heuristicTotal: this.heuristicTotal,
       timeSpent: this.timeSpent,
     }

@@ -14,7 +14,7 @@ import {
   parseMmSsToMs,
   getMaxQuestionScore,
   buildHeuristicEvidence,
-  getQuestionImageUrls,
+  renderCommentsTable,
   getAllImagesForHeuristic,
   loadImageAsBase64,
 } from './pdfGenerator'
@@ -156,7 +156,6 @@ function parseNumberedHeuristicBlocks(text) {
   let current = null
 
   for (const line of lines) {
-    const match = regex.exec(line)
     regex.lastIndex = 0
     const trimmed = line.trim()
 
@@ -503,7 +502,6 @@ export async function generateHeuristicPdfWithAi(reportData, options = {}) {
     if (i === 2) {
       const section3AiText = sectionContent || ''
       const numberedBlocks = parseNumberedHeuristicBlocks(section3AiText)
-      console.log('[pdfGeneratorWithAi] Section 3: parsed', numberedBlocks.length, 'numbered blocks')
 
       // Render ranking table first
       const summaryRows = evidence.orderedByPercentage.map((item) => [
@@ -568,7 +566,7 @@ export async function generateHeuristicPdfWithAi(reportData, options = {}) {
       })
       y = doc.lastAutoTable.finalY + 16
 
-      // Interleave: for each heuristic, render AI text → table → comments → images
+      // Interleave: for each heuristic, render table → comments → images → AI text
       const unmatchedBlocks = [...numberedBlocks]
       for (const item of evidence.orderedByImpact) {
         ensureSpace(80)
@@ -596,22 +594,7 @@ export async function generateHeuristicPdfWithAi(reportData, options = {}) {
         )
         y += 16
 
-        // AI analysis text for this heuristic (from numbered blocks)
-        const matchedBlockIndex = unmatchedBlocks.findIndex((b) =>
-          matchBlockToEvidenceItem(b, [item]),
-        )
-        if (matchedBlockIndex >= 0) {
-          const block = unmatchedBlocks.splice(matchedBlockIndex, 1)[0]
-          const analysisParagraphs = block.text
-            .split('\n')
-            .filter((p) => p.trim())
-            .map((p) => p.trim())
-          for (const p of analysisParagraphs) {
-            writeParagraph(p, { spacing: 6 })
-          }
-        }
-
-        // Question table
+        // 1. Question table
         if (item.questionSummaries.length > 0) {
           const maxScore = getMaxQuestionScore(allOptions)
           const qRows = item.questionSummaries.map((q) => {
@@ -653,43 +636,14 @@ export async function generateHeuristicPdfWithAi(reportData, options = {}) {
           y = doc.lastAutoTable.finalY + 12
         }
 
-        // Comments
-        const allCommentDetails = item.questionSummaries.flatMap((q) => q.commentDetails || [])
-        console.log(
-          '[pdfGeneratorWithAi] Heuristic #' + (item.position || '?') + ' commentDetails:',
-          allCommentDetails.length,
-          'items',
-          allCommentDetails.map((c) => c.evaluatorName + ': ' + c.text.substring(0, 50)),
-        )
-        if (allCommentDetails.length > 0) {
-          doc.setFont(FONT, 'bold')
-          doc.setFontSize(9)
-          doc.setTextColor(...COLORS.primary)
-          doc.text('Comentarios de los evaluadores:', M + 8, y)
-          y += 13
-          for (const cd of allCommentDetails) {
-            const commentLine = `${cd.evaluatorName}: "${stripHtml(cd.text)}"`
-            const wrapped = doc.splitTextToSize(commentLine, CONTENT_W - 24)
-            for (const line of wrapped) {
-              ensureSpace(12)
-              doc.setFont(FONT, 'normal')
-              doc.setFontSize(8.5)
-              doc.setTextColor(...COLORS.text)
-              doc.text(line, M + 12, y)
-              y += 11
-            }
-            y += 2
-          }
-        }
+        // 2. Comments table
+        y = renderCommentsTable(doc, item.questionSummaries, y, {
+          FONT, M, CONTENT_W, COLORS, ensureSpace,
+        })
 
-        // Images
+        // 3. Images
         const hIndex = (item.position || 1) - 1
         const imgUrls = getAllImagesForHeuristic(allAnswers, hIndex, testStructure)
-        console.log(
-          '[pdfGeneratorWithAi] Heuristic #' + (item.position || '?') + ' imgUrls:',
-          imgUrls.length,
-          imgUrls.slice(0, 4),
-        )
         if (imgUrls.length > 0) {
           doc.setFont(FONT, 'bold')
           doc.setFontSize(9)
@@ -718,7 +672,22 @@ export async function generateHeuristicPdfWithAi(reportData, options = {}) {
           }
         }
 
-        // Metadata: warnings, images, comments
+        // 4. AI analysis text for this heuristic (from numbered blocks)
+        const matchedBlockIndex = unmatchedBlocks.findIndex((b) =>
+          matchBlockToEvidenceItem(b, [item]),
+        )
+        if (matchedBlockIndex >= 0) {
+          const block = unmatchedBlocks.splice(matchedBlockIndex, 1)[0]
+          const analysisParagraphs = block.text
+            .split('\n')
+            .filter((p) => p.trim())
+            .map((p) => p.trim())
+          for (const p of analysisParagraphs) {
+            writeParagraph(p, { spacing: 6 })
+          }
+        }
+
+        // Metadata: warnings, images
         const metaBits = []
         if (item.totalWarnings > 0) {
           metaBits.push(
@@ -741,7 +710,7 @@ export async function generateHeuristicPdfWithAi(reportData, options = {}) {
           doc.setFont(FONT, 'italic')
           doc.setFontSize(9)
           doc.setTextColor(...COLORS.secondary)
-          const commentText = `Comentarios: ${stripHtml(item.comments)}`
+          const commentText = `Comentarios del investigador: ${stripHtml(item.comments)}`
           const wrapped = doc.splitTextToSize(commentText, CONTENT_W - 16)
           for (const line of wrapped) {
             ensureSpace(12)

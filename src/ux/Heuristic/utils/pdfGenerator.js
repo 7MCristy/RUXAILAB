@@ -432,7 +432,7 @@ function buildHeuristicEvidence({
           )
           // Extract comments from question-level answer
           extractCommentTexts(answer).forEach((text) => {
-            commentDetails.push({ evaluatorName, text })
+            commentDetails.push({ evaluatorName, text, questionIndex: questionIndex + 1 })
           })
         })
         // Also extract comments from heuristic-level answer (fallback)
@@ -445,7 +445,7 @@ function buildHeuristicEvidence({
             )
             extractCommentTexts(heuristicAnswer).forEach((text) => {
               if (!commentDetails.some((c) => c.text === text)) {
-                commentDetails.push({ evaluatorName, text })
+                commentDetails.push({ evaluatorName, text, questionIndex: questionIndex + 1 })
               }
             })
           })
@@ -616,15 +616,6 @@ function getAllImagesForHeuristic(allAnswers, heuristicIndex, testStructure) {
     urls.push(...imgUrls)
   })
   return urls
-}
-
-/**
- * Extrae el path de Storage desde una URL de descarga de Firebase.
- */
-function getStoragePathFromDownloadUrl(downloadUrl) {
-  const match = downloadUrl.match(/\/o\/([^?]+)/)
-  if (!match) return null
-  return decodeURIComponent(match[1])
 }
 
 /**
@@ -1224,36 +1215,10 @@ export async function generateHeuristicPdf(reportData, options = {}) {
       y = doc.lastAutoTable.finalY + 20
     }
 
-    // ── Renderizar comentarios de evaluadores ────────────────────────────
-    const allCommentDetails = item.questionSummaries.flatMap(
-      (q) => q.commentDetails || [],
-    )
-    console.log(
-      `[pdfGenerator] Heuristic #${item.position} commentDetails:`,
-      allCommentDetails.length,
-      'items',
-      allCommentDetails.map((c) => c.evaluatorName + ': ' + c.text.substring(0, 50)),
-    )
-    if (allCommentDetails.length > 0) {
-      writeParagraph('Comentarios de los evaluadores:', {
-        bold: true,
-        size: 10,
-        spacing: 3,
-      })
-      for (const cd of allCommentDetails) {
-        const commentLine = `${cd.evaluatorName}: "${stripHtml(cd.text)}"`
-        const wrapped = doc.splitTextToSize(commentLine, CONTENT_W - 12)
-        for (const line of wrapped) {
-          ensureSpace(12)
-          doc.setFont(FONT, 'normal')
-          doc.setFontSize(9)
-          doc.setTextColor(...COLORS.text)
-          doc.text(line, M + 6, y)
-          y += 11
-        }
-        y += 2
-      }
-    }
+    // ── Renderizar comentarios de evaluadores como tabla ──────────────────
+    y = renderCommentsTable(doc, item.questionSummaries, y, {
+      FONT, M, CONTENT_W, COLORS, ensureSpace,
+    })
 
     // ── Renderizar imágenes de evaluadores ───────────────────────────────
     const heuristicIndex = (item.position || 1) - 1
@@ -1610,6 +1575,67 @@ export async function generateHeuristicPdf(reportData, options = {}) {
   return { fileName, blob }
 }
 
+/**
+ * Renders evaluator comments as an autoTable with question number identification.
+ * @param {jsPDF} doc - PDF document
+ * @param {Array} questionSummaries - Array of question summary objects with commentDetails
+ * @param {number} y - Current Y position
+ * @param {Object} options - { FONT, M, CONTENT_W, COLORS, ensureSpace, doc }
+ * @returns {number} Updated Y position after rendering
+ */
+function renderCommentsTable(doc, questionSummaries, y, options = {}) {
+  const {
+    FONT = 'helvetica',
+    M: margin = 14,
+    COLORS: colors = {},
+    ensureSpace = () => {},
+  } = options
+
+  // Collect all comments with question identification
+  const commentRows = []
+  questionSummaries.forEach((q, qIdx) => {
+    const details = q.commentDetails || []
+    details.forEach((cd) => {
+      commentRows.push([
+        String(qIdx + 1),
+        cd.evaluatorName || '—',
+        stripHtml(cd.text || ''),
+      ])
+    })
+  })
+
+  if (commentRows.length === 0) return y
+
+  ensureSpace(commentRows.length * 12 + 30)
+  autoTable(doc, {
+    startY: y,
+    head: [['# Pregunta', 'Evaluador', 'Comentario']],
+    body: commentRows,
+    styles: {
+      fontSize: 8,
+      cellPadding: 3,
+      font: FONT,
+      lineColor: colors.tableBorder || [220, 220, 220],
+      lineWidth: 0.1,
+    },
+    headStyles: {
+      fillColor: colors.tableHead || [63, 81, 181],
+      textColor: colors.white || [255, 255, 255],
+      fontStyle: 'bold',
+      fontSize: 8,
+    },
+    alternateRowStyles: { fillColor: colors.tableStripe || [245, 247, 250] },
+    margin: { left: margin + 6, right: margin },
+    theme: 'grid',
+    columnStyles: {
+      0: { halign: 'center', cellWidth: 35 },
+      1: { cellWidth: 80, overflow: 'linebreak' },
+      2: { overflow: 'linebreak' },
+    },
+  })
+  return doc.lastAutoTable.finalY + 12
+}
+
 export {
   loadLogo,
   addFooter,
@@ -1637,6 +1663,7 @@ export {
   calculateHeuristicCompliance,
   calcStandardDeviation,
   buildHeuristicEvidence,
+  renderCommentsTable,
   FONT,
   M,
   PAGE_W,

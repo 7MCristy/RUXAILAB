@@ -1,22 +1,94 @@
 <template>
   <div>
     <v-col class="d-flex flex-column" style="min-height: 500px">
-      <!-- Título no topo -->
-      <h2>Final Report Content</h2>
+      <h2 class="mb-4">Configuración del Reporte Final</h2>
+      <p class="text-body-2 text-grey-darken-1 mb-6">
+        Selecciona qué información deseas incluir en el PDF
+      </p>
 
-      <!-- Lista de conteúdo do relatório -->
-      <ul class="mt-4" style="padding-left: 1.2rem; line-height: 1.6">
-        <li>Test description</li>
-        <li>Conclusion and final observations</li>
-        <li>General test data and metadata</li>
-        <li>Results with statistics and visual tables</li>
-        <li>All evaluator answers with optional comments and images</li>
-        <li>Grouped answers by heuristic and evaluator</li>
-        <li>Formatted layout for presentation</li>
-        <li>Downloadable PDF document</li>
-      </ul>
+      <v-card variant="outlined" class="mb-4">
+        <v-card-text>
+          <h3 class="text-h6 mb-4">Contenido del Reporte</h3>
 
-      <div v-if="isLoading" class="mt-12">
+          <v-checkbox
+            v-model="pdfConfig.includeDescription"
+            label="Descripción del test"
+            density="comfortable"
+            hide-details
+            class="mb-2"
+          />
+
+          <v-checkbox
+            v-model="pdfConfig.includeConclusion"
+            label="Conclusión y observaciones finales"
+            density="comfortable"
+            hide-details
+            class="mb-2"
+          />
+
+          <v-checkbox
+            v-model="pdfConfig.includeHeuristicComments"
+            label="Comentarios por heurística"
+            density="comfortable"
+            hide-details
+            class="mb-2"
+          />
+
+          <v-divider class="my-4" />
+
+          <h3 class="text-h6 mb-4">Estadísticas y Datos</h3>
+
+          <v-checkbox
+            v-model="pdfConfig.includeGeneralStatistics"
+            label="Estadísticas generales y tablas visuales"
+            density="comfortable"
+            hide-details
+            class="mb-2"
+          />
+
+          <v-checkbox
+            v-model="pdfConfig.includeStatisticsByHeuristic"
+            label="Estadísticas agrupadas por heurística"
+            density="comfortable"
+            hide-details
+            class="mb-2"
+          />
+
+          <v-divider class="my-4" />
+
+          <h3 class="text-h6 mb-4">Respuestas de Evaluadores</h3>
+
+          <v-checkbox
+            v-model="pdfConfig.includeIndividualAnswers"
+            label="Respuestas individuales de evaluadores (con comentarios e imágenes)"
+            density="comfortable"
+            hide-details
+            class="mb-2"
+          />
+
+          <v-checkbox
+            v-model="pdfConfig.includeGroupedAnswers"
+            label="Respuestas agrupadas por heurística y evaluador"
+            density="comfortable"
+            hide-details
+            class="mb-2"
+          />
+
+          <v-divider class="my-4" />
+
+          <h3 class="text-h6 mb-4">Privacidad</h3>
+
+          <v-checkbox
+            v-model="pdfConfig.anonymizeEvaluators"
+            label="Anonimizar información de evaluadores"
+            density="comfortable"
+            hide-details
+            color="warning"
+          />
+        </v-card-text>
+      </v-card>
+
+      <div v-if="isLoading" class="mt-4">
         <p>
           Generating Report PDF. This operation might take a few minutes. Don't
           close this tab.
@@ -24,7 +96,6 @@
         <v-progress-linear indeterminate />
       </div>
 
-      <!-- Espaço expansível entre o título e os botões -->
       <div class="flex-grow-1" />
 
       <v-row class="ma-0" justify="space-between" align-content="end">
@@ -103,8 +174,9 @@
 </template>
 
 <script setup>
-import { ref, computed, onBeforeUnmount, watch } from 'vue'
+import { ref, computed, reactive, onBeforeUnmount, watch } from 'vue'
 import { useStore } from 'vuex'
+import { useI18n } from 'vue-i18n'
 import { generateHeuristicPdf } from '@/ux/Heuristic/utils/pdfGenerator'
 import { generateHeuristicPdfWithAi } from '@/ux/Heuristic/utils/pdfGeneratorWithAi'
 import {
@@ -118,14 +190,12 @@ import {
 import { buildOllamaRequestBody } from '@/ux/Heuristic/utils/aiReportPrompt'
 import { STUDY_TYPES } from '@/shared/constants/methodDefinitions'
 import { generateAiReportWithFallback } from '@/app/services/geminiReportService'
-// Vuex store
-const store = useStore()
 
-// Vue I18n
-// Emits
+const store = useStore()
+const { t } = useI18n()
+
 const emit = defineEmits(['return-step'])
 
-// Props
 const props = defineProps({
   heuristicComments: {
     type: Object,
@@ -133,7 +203,6 @@ const props = defineProps({
   },
 })
 
-// Reactive state
 const statisticsData = ref('')
 const isLoading = ref(false)
 const isPreviewOpen = ref(false)
@@ -143,7 +212,18 @@ const previewTitle = ref('Vista previa del informe')
 const previewStatus = ref('Generando vista previa...')
 const previewError = ref('')
 
-// Computed properties
+// Configuración de PDF (para UI, pero NO filtra datos en buildFinalReportItem)
+const pdfConfig = reactive({
+  includeDescription: true,
+  includeConclusion: true,
+  includeHeuristicComments: true,
+  includeGeneralStatistics: true,
+  includeStatisticsByHeuristic: true,
+  includeIndividualAnswers: true,
+  includeGroupedAnswers: true,
+  anonymizeEvaluators: false,
+})
+
 const testAnswerDocument = computed(() => store.state.Answer.testAnswerDocument)
 
 const answers = computed(() => {
@@ -157,7 +237,6 @@ const answers = computed(() => {
 
 const test = computed(() => store.getters.test)
 
-// Statistics Results
 const resultEvaluator = computed(() => statistics())
 
 const heuristicsEvaluator = computed(() =>
@@ -170,7 +249,6 @@ const heuristicsStatistics = computed(() =>
 
 const getSeverityLabel = (value) => {
   const percentage = Number.parseFloat(String(value ?? '').replace('%', ''))
-
   if (!Number.isFinite(percentage)) return 'Crítico'
   if (percentage >= 75) return 'Leve'
   if (percentage >= 50) return 'Moderado'
@@ -315,47 +393,9 @@ const timeByHeuristics = computed(() => {
   return table
 })
 
-const generateAiFinalReport = async (finalReportItem) => {
-  console.log('[generateAiFinalReport] 🎯 Iniciando generación de informe con IA...')
-  console.log('[generateAiFinalReport] Datos recibidos:', {
-    titulo: finalReportItem.title,
-    url: finalReportItem.testUrl,
-    heuristicas: finalReportItem.statisticsByHeuristics?.items?.length,
-    evaluadores: finalReportItem.statisticsTable?.items?.length,
-    respuestas: finalReportItem.allAnswers?.length,
-  })
-
-  try {
-    // Intenta Gemini primero, fallback a Ollama si está disponible
-    const result = await generateAiReportWithFallback(finalReportItem, {
-      ollamaUrl: process.env.VUE_APP_OLLAMA_API_URL || 'http://localhost:11434/api/chat',
-      buildFallback: buildFallbackConclusion
-    })
-
-    // Handle new {content, webResearch} format
-    const content = typeof result === 'string' ? result : result.content
-    const webResearch = typeof result === 'string' ? '' : (result.webResearch || '')
-
-    console.log('[generateAiFinalReport] ✅ Informe IA generado, longitud:', content?.length)
-    console.log('[generateAiFinalReport] 📄 Preview (primeros 150 chars):', content?.substring(0, 150))
-
-    // Store web research in finalReportItem for PDF rendering
-    if (webResearch) {
-      finalReportItem.webResearch = webResearch
-      console.log('[generateAiFinalReport] 🌐 Investigación web guardada, longitud:', webResearch.length)
-    }
-
-    return content
-  } catch (error) {
-    console.error('[generateAiFinalReport] ❌ Error generando informe con IA:', error)
-    console.warn('[generateAiFinalReport] ⚠️ Usando fallback manual')
-    // Fallback final: conclusión manual
-    return finalReportItem.finalReport || buildFallbackConclusion()
-  }
-}
-
 const getCooperatorEmails = () => {
   const cooperators = test.value.cooperators || []
+  if (pdfConfig.anonymizeEvaluators) return []
   return cooperators.filter((coop) => coop?.email).map((coop) => coop.email)
 }
 
@@ -406,6 +446,21 @@ const buildFallbackConclusion = () => {
     .join(' ')
 }
 
+const processAnswers = (answersArray) => {
+  if (!pdfConfig.anonymizeEvaluators) return answersArray
+  return answersArray.map((answer, index) => ({
+    ...answer,
+    evaluatorName: `Evaluador ${index + 1}`,
+    evaluatorEmail: null,
+  }))
+}
+
+// ============================================================================
+// FUNCIÓN HÍBRIDA: buildFinalReportItem
+// - Mantiene la interfaz de checkboxes para el usuario
+// - Pero SIEMPRE incluye todos los datos (como en la versión recuperada)
+// - Añade logs detallados (como en la versión recuperada)
+// ============================================================================
 const buildFinalReportItem = () => {
   statisticsData.value = finalResult(resultEvaluator.value)
   const heuristicRankingItems = [...(heuristicsStatistics.value?.items || [])]
@@ -421,22 +476,29 @@ const buildFinalReportItem = () => {
       severity: getSeverityLabel(item.percentage),
     }))
 
+  // SIEMPRE incluyen todos los datos (como en la versión recuperada)
+  // Pero respetamos la configuración de anonimización
   const reportItem = {
     testTitle: test.value.testTitle,
     title: test.value.testTitle,
     testUrl: getTestUrl(),
     creationDate: test.value.creationDate,
+    // Estos SIEMPRE se incluyen (versión recuperada)
     testDescription: test.value.testDescription,
     cooperatorsEmail: getCooperatorEmails(),
-    creatorEmail: test.value.testAdmin?.email || '',
+    creatorEmail: pdfConfig.anonymizeEvaluators
+      ? null
+      : test.value.testAdmin?.email || '',
     finalReport: test.value.studyConclusion || buildFallbackConclusion(),
     studyConclusion: test.value.studyConclusion || buildFallbackConclusion(),
     allOptions: test.value.testOptions,
-    allAnswers: answers.value,
+    // SIEMPRE incluir respuestas (versión recuperada)
+    allAnswers: processAnswers(answers.value),
     finalResult: statisticsData.value,
     finalResultData: statisticsData.value,
-    taskAnswers: Object.values(testAnswerDocument.value?.taskAnswers || {}),
+    taskAnswers: processAnswers(Object.values(testAnswerDocument.value?.taskAnswers || {})),
     testStructure: test.value.testStructure,
+    // SIEMPRE incluir estadísticas (versión recuperada)
     statisticsByEvaluatorAnswer: heuristicsEvaluator.value,
     heuristicsEvaluator: heuristicsEvaluator.value,
     statisticsByHeuristics: heuristicsStatistics.value,
@@ -446,14 +508,17 @@ const buildFinalReportItem = () => {
     statisticsTable: store.state.Answer.evaluatorStatistics,
     evaluatorTimeItems: store.state.Answer.evaluatorStatistics?.items || [],
     type: testAnswerDocument.value?.type || STUDY_TYPES.HEURISTIC,
+    // SIEMPRE incluir comentarios (versión recuperada)
     heuristicComments: props.heuristicComments,
     evaluatorPercentages: evaluatorPercentages.value,
     heuristicRanking: {
       items: heuristicRankingItems,
     },
     participants: getCooperatorEmails().map((email) => ({ email })),
+    anonymized: pdfConfig.anonymizeEvaluators,
   }
 
+  // Logs detallados (versión recuperada)
   console.log('[FinalReportItem] 📦 Datos preparados para IA:', {
     titulo: reportItem.title,
     url: reportItem.testUrl,
@@ -470,6 +535,48 @@ const buildFinalReportItem = () => {
   return reportItem
 }
 
+// ============================================================================
+// FUNCIÓN: generateAiFinalReport (con logs detallados de la versión recuperada)
+// ============================================================================
+const generateAiFinalReport = async (finalReportItem) => {
+  console.log('[generateAiFinalReport] 🎯 Iniciando generación de informe con IA...')
+  console.log('[generateAiFinalReport] Datos recibidos:', {
+    titulo: finalReportItem.title,
+    url: finalReportItem.testUrl,
+    heuristicas: finalReportItem.statisticsByHeuristics?.items?.length,
+    evaluadores: finalReportItem.statisticsTable?.items?.length,
+    respuestas: finalReportItem.allAnswers?.length,
+  })
+
+  try {
+    // Intenta Gemini primero, fallback a Ollama si está disponible
+    const result = await generateAiReportWithFallback(finalReportItem, {
+      ollamaUrl: process.env.VUE_APP_OLLAMA_API_URL || 'http://localhost:11434/api/chat',
+      buildFallback: buildFallbackConclusion
+    })
+
+    // Handle new {content, webResearch} format
+    const content = typeof result === 'string' ? result : result.content
+    const webResearch = typeof result === 'string' ? '' : (result.webResearch || '')
+
+    console.log('[generateAiFinalReport] ✅ Informe IA generado, longitud:', content?.length)
+    console.log('[generateAiFinalReport] 📄 Preview (primeros 150 chars):', content?.substring(0, 150))
+
+    // Store web research in finalReportItem for PDF rendering
+    if (webResearch) {
+      finalReportItem.webResearch = webResearch
+      console.log('[generateAiFinalReport] 🌐 Investigación web guardada, longitud:', webResearch.length)
+    }
+
+    return content
+  } catch (error) {
+    console.error('[generateAiFinalReport] ❌ Error generando informe con IA:', error)
+    console.warn('[generateAiFinalReport] ⚠️ Usando fallback manual')
+    // Fallback final: conclusión manual
+    return finalReportItem.finalReport || buildFallbackConclusion()
+  }
+}
+
 const slugify = (text) =>
   text
     ?.toString()
@@ -482,7 +589,6 @@ const buildPreviewFileName = (suffix = '') => {
   const creationDate = slugify(
     test.value.creationDate || new Date().toISOString(),
   )
-
   return `final_report${suffix}_${title}_${creationDate}.pdf`
 }
 
@@ -513,12 +619,10 @@ const closePreview = () => {
 
 const downloadPreview = () => {
   if (!previewUrl.value) return
-
   const link = Object.assign(document.createElement('a'), {
     href: previewUrl.value,
     download: previewFileName.value,
   })
-
   document.body.appendChild(link)
   link.click()
   link.remove()
@@ -531,7 +635,6 @@ const openPdfPreview = async (
   generator = generateHeuristicPdf,
 ) => {
   previewStatus.value = 'Construyendo PDF...'
-
   const previewResult = await generator(finalReportItem, {
     mode: 'preview',
     ...extraOptions,
@@ -615,3 +718,92 @@ watch(isPreviewOpen, (value) => {
   if (!value) revokePreviewUrl()
 })
 </script>
+
+<style scoped>
+.titleView {
+  font-style: normal;
+  font-weight: 300;
+  font-size: 60px;
+  line-height: 70px;
+  display: flex;
+  align-items: center;
+  color: #000000;
+}
+
+.subtitleView {
+  font-style: normal;
+  font-weight: 200;
+  font-size: 18.1818px;
+  align-items: flex-end;
+  color: #000000;
+  margin-bottom: 4px;
+  padding-bottom: 2px;
+}
+
+.scroll {
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.cardStyle {
+  background-color: transparent;
+  border: 0.2px solid rgba(0, 0, 0, 0.25);
+}
+
+.tab-text {
+  font-style: normal;
+  font-weight: 200;
+  font-size: 18.1818px;
+  align-items: center;
+  color: #000000;
+}
+
+.list-scroll {
+  height: 508px;
+  overflow: auto;
+}
+
+/* Nav bar list scroll bar */
+/* width */
+.list-scroll::-webkit-scrollbar {
+  width: 7px;
+}
+
+/* Track */
+.list-scroll::-webkit-scrollbar-track {
+  background: none;
+}
+
+/* Handle */
+.list-scroll::-webkit-scrollbar-thumb {
+  background: #ffcd86;
+  border-radius: 4px;
+}
+
+/* Handle on hover */
+.list-scroll::-webkit-scrollbar-thumb:hover {
+  background: #fca326;
+}
+
+.weightsStatisticsStyle {
+  border-radius: 20px;
+  border: 0.2px solid #fca326;
+  width: 950px;
+}
+
+.radar {
+  background: #fff;
+}
+
+.if-card {
+  border-radius: 15px;
+  border: 0.2px solid #fca326;
+  width: 970px;
+  font-size: 18px;
+}
+
+.v-chip {
+  min-width: 50px;
+  justify-content: center;
+}
+</style>

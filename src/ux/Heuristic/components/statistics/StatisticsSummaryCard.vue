@@ -11,7 +11,7 @@
     <v-divider class="summary-divider" />
 
     <v-row class="ma-0 pa-4 summary-grid" dense>
-      <v-col cols="12" md="12">
+      <v-col cols="12" :md="hasWarnings ? 6 : 12" :lg="hasWarnings ? 5 : 12">
         <v-card flat rounded="lg" class="stat-tile stat-tile--hero pa-5 h-100">
           <div class="d-flex align-center justify-space-between mb-2">
             <div class="d-flex align-center ga-3">
@@ -77,7 +77,7 @@
           </v-row>
 
           <div
-            v-else-if="result.avrgmaxWarning && result.avrgminWarning"
+            v-if="isSingleEvaluator && hasWarnings"
             class="single-evaluator-caption mt-4"
           >
             <div class="single-evaluator-title">
@@ -85,7 +85,10 @@
             </div>
 
             <div class="single-evaluator-row mt-2">
-              <div class="single-evaluator-item">
+              <div
+                v-if="maxWarningDiffers"
+                class="single-evaluator-item"
+              >
                 <div class="mini-label">
                   {{ t('HeuristicsTestAnswer.summary.averageMaxWarning') }}
                 </div>
@@ -96,7 +99,10 @@
                   {{ result.avrgmaxWarning || '0.00%' }}
                 </div>
               </div>
-              <div class="single-evaluator-item">
+              <div
+                v-if="minWarningDiffers"
+                class="single-evaluator-item"
+              >
                 <div class="mini-label">
                   {{ t('HeuristicsTestAnswer.summary.averageMinWarning') }}
                 </div>
@@ -109,24 +115,11 @@
               </div>
             </div>
           </div>
-          <div v-else class="single-evaluator-caption mt-4">
-            <div class="single-evaluator-title">
-              {{ t('HeuristicsTestAnswer.summary.warningSummary') }}
-            </div>
-            <div class="text-body-2 text-medium-emphasis">
-              {{ t('HeuristicsTestAnswer.summary.noWarningData') }}
-            </div>
-          </div>
         </v-card>
+      </v-col>
 
-        <v-card
-          v-if="
-            !isSingleEvaluator && result.avrgmaxWarning && result.avrgminWarning
-          "
-          flat
-          rounded="lg"
-          class="summary-panel pa-5 mt-4"
-        >
+      <v-col v-if="!isSingleEvaluator && hasWarnings" cols="12" :md="6" :lg="7">
+        <v-card flat rounded="lg" class="summary-panel pa-5 h-100">
           <div
             class="d-flex align-start justify-space-between mb-5 warning-header"
           >
@@ -146,12 +139,12 @@
               variant="flat"
               class="text-amber-900 warning-metrics-chip"
             >
-              2 {{ t('HeuristicsTestAnswer.summary.metrics') }}
+              {{ warningMetricsCount }} {{ t('HeuristicsTestAnswer.summary.metrics') }}
             </v-chip>
           </div>
 
           <v-row dense>
-            <v-col cols="12" md="6">
+            <v-col v-if="maxWarningDiffers" cols="12" :md="minWarningDiffers ? 6 : 12">
               <v-card flat rounded="lg" class="warning-kpi pa-4 h-100">
                 <div
                   class="text-caption text-medium-emphasis card-metric-title"
@@ -173,7 +166,7 @@
                 </div>
               </v-card>
             </v-col>
-            <v-col cols="12" md="6">
+            <v-col v-if="minWarningDiffers" cols="12" :md="maxWarningDiffers ? 6 : 12">
               <v-card flat rounded="lg" class="warning-kpi pa-4 h-100">
                 <div
                   class="text-caption text-medium-emphasis card-metric-title"
@@ -199,7 +192,7 @@
         </v-card>
       </v-col>
 
-      <v-col cols="12" lg="7">
+      <v-col v-if="imageTotalsByHeuristic.length" cols="12" lg="7">
         <v-card flat rounded="lg" class="summary-panel pa-5 h-100">
           <div class="d-flex align-center justify-space-between mb-4">
             <div>
@@ -221,7 +214,7 @@
             </v-chip>
           </div>
 
-          <div v-if="imageTotalsByHeuristic.length" class="images-chart-center">
+          <div class="images-chart-center">
             <div class="image-stat-grid">
               <div
                 v-for="item in imageTotalsByHeuristic"
@@ -243,14 +236,10 @@
               </div>
             </div>
           </div>
-
-          <div v-else class="text-body-2 text-medium-emphasis">
-            {{ t('HeuristicsTestAnswer.summary.noImageData') }}
-          </div>
         </v-card>
       </v-col>
 
-      <v-col cols="12" lg="5">
+      <v-col v-if="optionLabels.length" cols="12" :lg="imageTotalsByHeuristic.length ? 5 : 6">
         <v-card flat rounded="lg" class="summary-panel pa-5 h-100">
           <div class="d-flex align-center justify-space-between mb-4">
             <div>
@@ -264,7 +253,6 @@
           </div>
 
           <SelectionPieChart
-            v-if="optionLabels.length"
             question-title=""
             :options="optionLabels"
             :counts="optionCounts"
@@ -272,10 +260,6 @@
             :chart-colors="optionColors"
             :show-percentages="true"
           />
-
-          <div v-else class="text-body-2 text-medium-emphasis">
-            {{ t('HeuristicsTestAnswer.summary.noOptionData') }}
-          </div>
         </v-card>
       </v-col>
     </v-row>
@@ -354,9 +338,31 @@ const evaluatorIdentityLabel = computed(() =>
 )
 
 const hasWarnings = computed(() => {
+  const average = toPercent(props.result.average)
   const maxWarning = toPercent(props.result.avrgmaxWarning)
   const minWarning = toPercent(props.result.avrgminWarning)
-  return maxWarning > 0 || minWarning > 0
+  const maxDiffers = Number.isFinite(maxWarning) && Math.abs(maxWarning - average) > 0.01
+  const minDiffers = Number.isFinite(minWarning) && Math.abs(minWarning - average) > 0.01
+  return maxDiffers || minDiffers
+})
+
+const maxWarningDiffers = computed(() => {
+  const average = toPercent(props.result.average)
+  const maxWarning = toPercent(props.result.avrgmaxWarning)
+  return Number.isFinite(maxWarning) && Math.abs(maxWarning - average) > 0.01
+})
+
+const minWarningDiffers = computed(() => {
+  const average = toPercent(props.result.average)
+  const minWarning = toPercent(props.result.avrgminWarning)
+  return Number.isFinite(minWarning) && Math.abs(minWarning - average) > 0.01
+})
+
+const warningMetricsCount = computed(() => {
+  let count = 0
+  if (maxWarningDiffers.value) count++
+  if (minWarningDiffers.value) count++
+  return count
 })
 
 const metricColor = (value, kind) => {

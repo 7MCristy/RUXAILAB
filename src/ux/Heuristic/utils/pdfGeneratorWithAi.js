@@ -637,9 +637,19 @@ export async function generateHeuristicPdfWithAi(reportData, options = {}) {
         }
 
         // 2. Comments table
-        y = renderCommentsTable(doc, item.questionSummaries, y, {
-          FONT, M, CONTENT_W, COLORS, ensureSpace,
-        })
+        const hasAnyComments = item.questionSummaries.some(
+          (q) => (q.commentDetails || []).length > 0,
+        )
+        if (hasAnyComments) {
+          writeParagraph('Comentarios de evaluadores:', {
+            bold: true,
+            size: 10,
+            spacing: 3,
+          })
+          y = renderCommentsTable(doc, item.questionSummaries, y, {
+            FONT, M, CONTENT_W, COLORS, ensureSpace,
+          })
+        }
 
         // 3. Images
         const hIndex = (item.position || 1) - 1

@@ -1,4 +1,3 @@
-/* eslint-disable no-console */
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
 import { formatTimeSpentFromMs } from '@/ux/Heuristic/utils/statistics'
@@ -137,13 +136,7 @@ function getHeuristicShortTitle(heuristic, index) {
 }
 
 function getEvaluatorLabel(item, index) {
-  return (
-    normalizeText(item?.name) ||
-    normalizeText(item?.evaluator) ||
-    normalizeText(item?.email) ||
-    normalizeText(item?.userDocId) ||
-    `Ev${index + 1}`
-  )
+  return `Evaluador/a ${index + 1}`
 }
 
 function getQuestionLabel(question, index) {
@@ -507,17 +500,6 @@ function buildHeuristicEvidence({
       (total, item) => total + item.comments,
       0,
     )
-    console.log(
-      `[buildHeuristicEvidence][${getHeuristicShortTitle(heuristic, heuristicIndex)}] ` +
-        `totalWarnings=${totalWarnings} totalImages=${totalImages} totalComments=${totalComments}`,
-      'questionSummaries:',
-      questionSummaries.map((q) => ({
-        title: q.title,
-        images: q.images,
-        comments: q.comments,
-        commentDetailsCount: q.commentDetails?.length || 0,
-      })),
-    )
     const responseAverage = responseValues.length
       ? responseValues.reduce((sum, value) => sum + value, 0) /
         responseValues.length
@@ -636,7 +618,6 @@ function blobToBase64(blob) {
  */
 async function loadImageAsBase64(url) {
   if (!url) return null
-  console.log('[loadImageAsBase64] Attempting to load:', url)
 
   // 1) Proxy del dev server (misma origen, sin CORS)
   try {
@@ -648,12 +629,10 @@ async function loadImageAsBase64(url) {
     if (response.ok) {
       const blob = await response.blob()
       const base64 = await blobToBase64(blob)
-      console.log('[loadImageAsBase64] proxy OK, image loaded')
       return base64
     }
-    console.warn('[loadImageAsBase64] proxy returned !ok:', response.status)
-  } catch (err) {
-    console.warn('[loadImageAsBase64] proxy error:', err.message)
+  } catch {
+    // proxy failed, try direct
   }
 
   // 2) Fallback: fetch directo (si CORS está configurado en el bucket)
@@ -662,23 +641,16 @@ async function loadImageAsBase64(url) {
     if (response.ok) {
       const blob = await response.blob()
       const base64 = await blobToBase64(blob)
-      console.log('[loadImageAsBase64] direct fetch OK')
       return base64
     }
-  } catch (err) {
-    console.warn('[loadImageAsBase64] direct fetch error:', err.message)
+  } catch {
+    // direct fetch also failed
   }
 
-  console.warn('[loadImageAsBase64] all methods failed for:', url)
   return null
 }
 
 export async function generateHeuristicPdf(reportData, options = {}) {
-  console.log(
-    '[generateHeuristicPdf] reportData keys:',
-    Object.keys(reportData || {}),
-  )
-
   const {
     testTitle,
     testDescription,
@@ -702,28 +674,6 @@ export async function generateHeuristicPdf(reportData, options = {}) {
   const useWarningTerm = showQuickSummary
   const cleanTestDescription = stripHtml(testDescription)
   const cleanStudyConclusion = stripHtml(studyConclusion)
-
-  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  // DEBUG: finalResultData
-  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  console.log('[generateHeuristicPdf] finalResultData:', finalResultData)
-  console.log(
-    '[generateHeuristicPdf] finalResultData keys:',
-    finalResultData ? Object.keys(finalResultData) : 'null',
-  )
-  console.log('[generateHeuristicPdf] finalResultData.sd:', finalResultData?.sd)
-  console.log(
-    '[generateHeuristicPdf] finalResultData.min:',
-    finalResultData?.min,
-  )
-  console.log(
-    '[generateHeuristicPdf] finalResultData.max:',
-    finalResultData?.max,
-  )
-  console.log(
-    '[generateHeuristicPdf] finalResultData.average:',
-    finalResultData?.average,
-  )
 
   const doc = new jsPDF({ unit: 'pt', format: 'a4' })
   const logo = await loadLogo('/brand/logo_full.png', 30)
@@ -779,13 +729,6 @@ export async function generateHeuristicPdf(reportData, options = {}) {
   const globalSd = normalizeText(finalResultData?.sd || '0.00')
   const globalMax = normalizeText(finalResultData?.max || '0.00')
   const globalMin = normalizeText(finalResultData?.min || '0.00')
-
-  console.log('[generateHeuristicPdf] EXTRACTED GLOBAL VALUES:')
-  console.log('[generateHeuristicPdf] globalPct:', globalPct)
-  console.log('[generateHeuristicPdf] globalSd:', globalSd)
-  console.log('[generateHeuristicPdf] globalMax:', globalMax)
-  console.log('[generateHeuristicPdf] globalMin:', globalMin)
-  console.log('[generateHeuristicPdf] globalSeverity:', globalSeverity)
 
   let pageNum = 1
   let y = M
@@ -1011,10 +954,6 @@ export async function generateHeuristicPdf(reportData, options = {}) {
     `El resultado global de la evaluación se interpreta con un margen de mejora ${globalSeverity}, con un promedio de cumplimiento entre evaluadores del ${Number(getNumber(evaluatorPercentages?.globalAverage || 0)).toFixed(2)}%. Este dato se calcula sumando los porcentajes individuales de cumplimiento y dividiendo entre el número total de evaluadores.`,
   )
   // SD global — shown here, "escenarios de warning maximo/minimo" removed
-  console.log(
-    '[generateHeuristicPdf] About to write SD paragraph with values:',
-    { globalSd, globalMax, globalMin },
-  )
   writeParagraph(
     `La desviación estándar global de las puntuaciones es ${globalSd}, lo que refleja el grado de consenso entre los evaluadores: valores bajos indican alta coincidencia y valores altos señalan mayor divergencia en la percepción de la usabilidad del sistema. El valor máximo (${globalMax}) corresponde al mayor porcentaje de cumplimiento obtenido por un evaluador, mientras que el valor mínimo (${globalMin}) corresponde al menor porcentaje de cumplimiento obtenido por otro evaluador.`,
   )
@@ -1060,7 +999,7 @@ export async function generateHeuristicPdf(reportData, options = {}) {
   const evaluatorRows = evaluatorSummaryItems.map((item, index) => {
     const percentage = getNumber(item?.percentage)
     return [
-      item?.name || getEvaluatorLabel(item, index),
+      getEvaluatorLabel(item, index),
       `${formatDecimal(percentage)}%`,
     ]
   })
@@ -1073,7 +1012,7 @@ export async function generateHeuristicPdf(reportData, options = {}) {
     ensureSpace(60)
     autoTable(doc, {
       startY: y,
-      head: [['Evaluador', '% Cumplimiento']],
+      head: [['Evaluador/a', '% Cumplimiento']],
       body: evaluatorRows,
       styles: { fontSize: 9, cellPadding: 5 },
       headStyles: { fillColor: COLORS.tableHead, textColor: COLORS.white },
@@ -1216,9 +1155,19 @@ export async function generateHeuristicPdf(reportData, options = {}) {
     }
 
     // ── Renderizar comentarios de evaluadores como tabla ──────────────────
-    y = renderCommentsTable(doc, item.questionSummaries, y, {
-      FONT, M, CONTENT_W, COLORS, ensureSpace,
-    })
+    const hasAnyComments = item.questionSummaries.some(
+      (q) => (q.commentDetails || []).length > 0,
+    )
+    if (hasAnyComments) {
+      writeParagraph('Comentarios de evaluadores:', {
+        bold: true,
+        size: 10,
+        spacing: 3,
+      })
+      y = renderCommentsTable(doc, item.questionSummaries, y, {
+        FONT, M, CONTENT_W, COLORS, ensureSpace,
+      })
+    }
 
     // ── Renderizar imágenes de evaluadores ───────────────────────────────
     const heuristicIndex = (item.position || 1) - 1
@@ -1226,11 +1175,6 @@ export async function generateHeuristicPdf(reportData, options = {}) {
       allAnswers,
       heuristicIndex,
       testStructure,
-    )
-    console.log(
-      `[pdfGenerator] Heuristic #${item.position} imgUrls:`,
-      imgUrls.length,
-      imgUrls.slice(0, 4),
     )
     if (imgUrls.length > 0) {
       writeParagraph(`Evidencias visuales (${imgUrls.length}):`, {
@@ -1609,7 +1553,7 @@ function renderCommentsTable(doc, questionSummaries, y, options = {}) {
   ensureSpace(commentRows.length * 12 + 30)
   autoTable(doc, {
     startY: y,
-    head: [['# Pregunta', 'Evaluador', 'Comentario']],
+    head: [['# Pregunta', 'Evaluador/a', 'Comentario']],
     body: commentRows,
     styles: {
       fontSize: 8,

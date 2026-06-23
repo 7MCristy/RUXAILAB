@@ -16,6 +16,7 @@ import {
   getMaxQuestionScore,
   buildHeuristicEvidence,
   renderCommentsTable,
+  renderHeuristicCommentsTable,
   getAllImagesForHeuristic,
   loadImageAsBase64,
 } from './pdfGenerator'
@@ -279,10 +280,10 @@ export async function generateHeuristicPdfWithAi(reportData, options = {}) {
   const tocEntries = []
 
   function addFooter() {
-    const fy = PAGE_H - 18
+    const fy = PAGE_H - 22
     doc.setDrawColor(...COLORS.muted)
     doc.setLineWidth(0.3)
-    doc.line(M, fy - 6, PAGE_W - M, fy - 6)
+    doc.line(M, fy - 10, PAGE_W - M, fy - 10)
     doc.setFont(FONT, 'normal')
     doc.setFontSize(7.5)
     doc.setTextColor(...COLORS.sub)
@@ -296,7 +297,7 @@ export async function generateHeuristicPdfWithAi(reportData, options = {}) {
   }
 
   function ensureSpace(needed) {
-    if (y + needed > PAGE_H - M - 14) {
+    if (y + needed > PAGE_H - M - 20) {
       doc.addPage()
       pageNum += 1
       y = M + 6
@@ -573,7 +574,7 @@ export async function generateHeuristicPdfWithAi(reportData, options = {}) {
       // Interleave: for each heuristic, render table → comments → images → AI text
       const unmatchedBlocks = [...numberedBlocks]
       for (const item of evidence.orderedByImpact) {
-        ensureSpace(80)
+        ensureSpace(110)
 
         // Heuristic sub-header
         doc.setDrawColor(...COLORS.secondary)
@@ -658,11 +659,11 @@ export async function generateHeuristicPdfWithAi(reportData, options = {}) {
             try {
               const base64 = await loadImageAsBase64(imgUrls[ii])
               if (base64) {
-                ensureSpace(110)
-                const imgWidth = Math.min(CONTENT_W - 24, 200)
-                const imgHeight = 80
-                doc.addImage(base64, 'JPEG', M + 12, y, imgWidth, imgHeight)
-                y += imgHeight + 6
+                ensureSpace(400)
+                const imgWidth = Math.min(CONTENT_W - 24, 400)
+                const imgHeight = 300
+                doc.addImage(base64, 'JPEG', M + 45, y, imgWidth, imgHeight)
+                y += imgHeight + 20
               }
             } catch {
               ensureSpace(12)
@@ -750,80 +751,49 @@ export async function generateHeuristicPdfWithAi(reportData, options = {}) {
         const fallbackComment = normalizeText(item.comments)
 
         if (hasPerQuestionComments || fallbackComment) {
-          ensureSpace(50)
-          const cardX = M + 8
-          const cardW = CONTENT_W - 16
-          const cardPadX = 10
-          const cardPadY = 8
+          ensureSpace(40)
+          writeParagraph('Comentarios del investigador:', {
+            bold: true,
+            size: 10,
+            spacing: 3,
+          })
 
-          const contentLines = []
+          // Use table format for per-question comments
           if (hasPerQuestionComments) {
             const questionDefs = item.questionSummaries || []
-            Object.entries(perQComments).forEach(([qId, text]) => {
-              const t = String(text || '').trim()
-              if (!t) return
-              const qIdx = Number.parseInt(qId, 10)
-              const qSummary = questionDefs[qIdx]
-              const qLabel = `Q${qIdx + 1}`
-              const qTitle = qSummary?.title || ''
-              const header = qTitle ? `${qLabel} \u2014 ${qTitle}` : qLabel
-              contentLines.push({ header, text: t })
+            y = renderHeuristicCommentsTable(doc, perQComments, questionDefs, y, {
+              FONT,
+              M,
+              CONTENT_W,
+              COLORS,
+              ensureSpace,
             })
           } else if (fallbackComment) {
-            contentLines.push({ header: null, text: fallbackComment })
+            // If no per-question comments, show the generic heuristic comment
+            const commentRows = [[fallbackComment]]
+            ensureSpace(commentRows.length * 12 + 30)
+            autoTable(doc, {
+              startY: y,
+              head: [[]],
+              body: commentRows,
+              styles: {
+                fontSize: 9,
+                cellPadding: 4,
+                font: FONT,
+                lineColor: COLORS.tableBorder,
+                lineWidth: 0.1,
+              },
+              margin: { left: M + 8, right: M },
+              theme: 'plain',
+              columnStyles: {
+                0: { overflow: 'linebreak' },
+              },
+            })
+            y = doc.lastAutoTable.finalY + 8
           }
 
-          let totalBodyLines = 0
-          for (const ci of contentLines) {
-            if (ci.header) totalBodyLines += 1
-            const wrapped = doc.splitTextToSize(stripHtml(ci.text), cardW - cardPadX * 2 - 6)
-            totalBodyLines += wrapped.length + 1
-          }
-          const headerH = 10
-          const bodyH = totalBodyLines * 5 + 4
-          const cardH = headerH + bodyH + cardPadY * 2
-
-          doc.setFillColor(...COLORS.bg)
-          doc.roundedRect(cardX, y, cardW, cardH, 3, 3, 'F')
-          doc.setFillColor(...COLORS.accent)
-          doc.rect(cardX, y, 4, cardH, 'F')
-
-          let ty = y + cardPadY + 4
-          doc.setFont(FONT, 'bold')
-          doc.setFontSize(10)
-          doc.setTextColor(...COLORS.accent)
-          doc.text('COMENTARIOS DEL INVESTIGADOR', cardX + cardPadX + 2, ty)
-          ty += 4
-          doc.setFont(FONT, 'normal')
-          doc.setFontSize(8)
-          doc.setTextColor(...COLORS.sub)
-          doc.text(`Heur\u00edstica ${item.position} \u2014 ${item.label}`, cardX + cardPadX + 2, ty)
-          ty += 8
-
-          for (const entry of contentLines) {
-            if (entry.header) {
-              doc.setFont(FONT, 'bold')
-              doc.setFontSize(9)
-              doc.setTextColor(...COLORS.accent)
-              doc.text(entry.header, cardX + cardPadX + 2, ty)
-              ty += 5
-            }
-            doc.setFont(FONT, 'normal')
-            doc.setFontSize(9)
-            doc.setTextColor(...COLORS.text)
-            const wrapped = doc.splitTextToSize(stripHtml(entry.text), cardW - cardPadX * 2 - 6)
-            for (const line of wrapped) {
-              doc.text(line, cardX + cardPadX + 2, ty)
-              ty += 5
-            }
-            ty += 3
-          }
-
-          y += cardH + 10
-        }
-
-        y += 8
-      }
+          y += 8
+        }      }
 
       // Render any unmatched AI text blocks as fallback
       for (const block of unmatchedBlocks) {

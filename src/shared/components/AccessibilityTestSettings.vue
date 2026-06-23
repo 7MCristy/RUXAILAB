@@ -125,6 +125,7 @@
                 </v-icon>
               </div>
               <div>
+                <p>{{es esta la clase????????}}</p>
                 <h3 class="text-h6 font-weight-bold text-grey-darken-4 mb-1">
                   {{ $t('testSettings.testInformation') }}
                 </h3>

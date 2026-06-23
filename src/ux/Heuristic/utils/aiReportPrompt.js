@@ -175,10 +175,18 @@ function buildHeuristicDetailData(reportItem, heuristicStats) {
       warnings: getWarningsByHeuristic(reportItem, item?.name),
       questionSummary: formatQuestionSummary(questions),
       questions,
-      manualComment:
-        reportItem?.heuristicComments?.[
-          reportItem?.testStructure?.[index]?.id
-        ] || '',
+      manualComment: (() => {
+        const heuId = reportItem?.testStructure?.[index]?.id
+        const heuComments = reportItem?.heuristicComments?.[heuId]
+        if (!heuComments) return ''
+        if (typeof heuComments === 'string') return heuComments
+        if (typeof heuComments === 'object') {
+          return Object.values(heuComments)
+            .filter((t) => t && String(t).trim().length > 0)
+            .join('\n')
+        }
+        return ''
+      })(),
     }
   })
 }

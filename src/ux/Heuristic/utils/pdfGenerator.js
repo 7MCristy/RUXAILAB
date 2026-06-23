@@ -560,13 +560,27 @@ function buildHeuristicEvidence({
       responseSpread,
       impactScore,
       severity: getSeverityFromPercentage(percentage),
-      comments: normalizeText(
-        stripHtml(
-          heuristicComments?.[
-            heuristic?.heuristicId || `H${heuristicIndex + 1}`
-          ] || '',
-        ),
-      ),
+      comments: (() => {
+        const heuComments = heuristicComments?.[
+          heuristic?.heuristicId || `H${heuristicIndex + 1}`
+        ]
+        if (!heuComments) return ''
+        if (typeof heuComments === 'string') return normalizeText(stripHtml(heuComments))
+        if (typeof heuComments === 'object') {
+          return Object.values(heuComments)
+            .filter((t) => t && String(t).trim().length > 0)
+            .map((t) => normalizeText(stripHtml(String(t))))
+            .join('\n')
+        }
+        return ''
+      })(),
+      perQuestionComments: (() => {
+        const heuComments = heuristicComments?.[
+          heuristic?.heuristicId || `H${heuristicIndex + 1}`
+        ]
+        if (!heuComments || typeof heuComments !== 'object') return {}
+        return heuComments
+      })(),
     }
   })
 
@@ -1177,26 +1191,6 @@ export async function generateHeuristicPdf(reportData, options = {}) {
       y = doc.lastAutoTable.finalY + 20
     }
 
-    // ── Renderizar comentarios de evaluadores como tabla ──────────────────
-    console.log(`[DEBUG PDF] H${item.position} questionSummaries:`, item.questionSummaries?.length)
-    item.questionSummaries?.forEach((q, i) => {
-      console.log(`[DEBUG PDF] H${item.position} Q${i + 1} commentDetails:`, q.commentDetails?.length || 0)
-    })
-    const hasAnyComments = item.questionSummaries.some(
-      (q) => (q.commentDetails || []).length > 0,
-    )
-    console.log(`[DEBUG PDF] H${item.position} hasAnyComments:`, hasAnyComments)
-    if (hasAnyComments) {
-      writeParagraph('Comentarios de evaluadores:', {
-        bold: true,
-        size: 10,
-        spacing: 3,
-      })
-      y = renderCommentsTable(doc, item.questionSummaries, y, {
-        FONT, M, CONTENT_W, COLORS, ensureSpace,
-      })
-    }
-
     // ── Renderizar imágenes de evaluadores ───────────────────────────────
     const heuristicIndex = (item.position || 1) - 1
     const imgUrls = getAllImagesForHeuristic(
@@ -1231,6 +1225,26 @@ export async function generateHeuristicPdf(reportData, options = {}) {
           y += 11
         }
       }
+    }
+
+    // ── Renderizar comentarios de evaluadores como tabla ──────────────────
+    console.log(`[DEBUG PDF] H${item.position} questionSummaries:`, item.questionSummaries?.length)
+    item.questionSummaries?.forEach((q, i) => {
+      console.log(`[DEBUG PDF] H${item.position} Q${i + 1} commentDetails:`, q.commentDetails?.length || 0)
+    })
+    const hasAnyComments = item.questionSummaries.some(
+      (q) => (q.commentDetails || []).length > 0,
+    )
+    console.log(`[DEBUG PDF] H${item.position} hasAnyComments:`, hasAnyComments)
+    if (hasAnyComments) {
+      writeParagraph('Comentarios de evaluadores:', {
+        bold: true,
+        size: 10,
+        spacing: 3,
+      })
+      y = renderCommentsTable(doc, item.questionSummaries, y, {
+        FONT, M, CONTENT_W, COLORS, ensureSpace,
+      })
     }
 
     // ── Desviación típica por heurística ─────────────────────────────────
@@ -1302,15 +1316,89 @@ export async function generateHeuristicPdf(reportData, options = {}) {
         { size: 10, spacing: 4 },
       )
     }
-    if (normalizeText(item.comments)) {
-      writeParagraph(
-        `Comentarios de los evaluadores: ${stripHtml(item.comments)}`,
-        {
-          size: 10,
-          color: COLORS.sub,
-          spacing: 4,
-        },
-      )
+    // ── Comentarios del investigador por pregunta (estilo tarjeta profesional) ──
+    const perQComments = item.perQuestionComments || {}
+    const hasPerQuestionComments = Object.keys(perQComments).some(
+      (k) => perQComments[k] && String(perQComments[k]).trim().length > 0,
+    )
+    const fallbackComment = normalizeText(item.comments)
+
+    if (hasPerQuestionComments || fallbackComment) {
+      ensureSpace(50)
+      const cardX = M + 6
+      const cardW = CONTENT_W - 12
+      const cardPadX = 10
+      const cardPadY = 8
+
+      // Preparar l\u00edneas: por pregunta o genérico
+      const contentLines = []
+      if (hasPerQuestionComments) {
+        const questionDefs = item.questionSummaries || []
+        Object.entries(perQComments).forEach(([qId, text]) => {
+          const t = String(text || '').trim()
+          if (!t) return
+          const qIdx = Number.parseInt(qId, 10)
+          const qSummary = questionDefs[qIdx]
+          const qLabel = `Q${qIdx + 1}`
+          const qTitle = qSummary?.title || ''
+          const header = qTitle ? `${qLabel} \u2014 ${qTitle}` : qLabel
+          contentLines.push({ header, text: t })
+        })
+      } else if (fallbackComment) {
+        contentLines.push({ header: null, text: fallbackComment })
+      }
+
+      // Calcular altura total
+      let totalBodyLines = 0
+      for (const item2 of contentLines) {
+        if (item2.header) totalBodyLines += 1
+        const wrapped = doc.splitTextToSize(stripHtml(item2.text), cardW - cardPadX * 2 - 6)
+        totalBodyLines += wrapped.length + 1 // +1 for spacing
+      }
+      const headerH = 10
+      const bodyH = totalBodyLines * 5 + 4
+      const cardH = headerH + bodyH + cardPadY * 2
+
+      // Fondo de tarjeta
+      doc.setFillColor(...COLORS.zebra)
+      doc.roundedRect(cardX, y, cardW, cardH, 3, 3, 'F')
+      doc.setFillColor(...COLORS.accent)
+      doc.rect(cardX, y, 4, cardH, 'F')
+
+      // Encabezado de tarjeta
+      let ty = y + cardPadY + 4
+      doc.setFont(FONT, 'bold')
+      doc.setFontSize(10)
+      doc.setTextColor(...COLORS.accent)
+      doc.text('COMENTARIOS DEL INVESTIGADOR', cardX + cardPadX + 2, ty)
+      ty += 4
+      doc.setFont(FONT, 'normal')
+      doc.setFontSize(8)
+      doc.setTextColor(...COLORS.sub)
+      doc.text(`Heur\u00edstica ${item.position} \u2014 ${item.label}`, cardX + cardPadX + 2, ty)
+      ty += 8
+
+      // Contenido
+      for (const entry of contentLines) {
+        if (entry.header) {
+          doc.setFont(FONT, 'bold')
+          doc.setFontSize(9)
+          doc.setTextColor(...COLORS.accent)
+          doc.text(entry.header, cardX + cardPadX + 2, ty)
+          ty += 5
+        }
+        doc.setFont(FONT, 'normal')
+        doc.setFontSize(9)
+        doc.setTextColor(...COLORS.text)
+        const wrapped = doc.splitTextToSize(stripHtml(entry.text), cardW - cardPadX * 2 - 6)
+        for (const line of wrapped) {
+          doc.text(line, cardX + cardPadX + 2, ty)
+          ty += 5
+        }
+        ty += 3
+      }
+
+      y += cardH + 10
     }
 
     y += 14

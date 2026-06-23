@@ -476,15 +476,15 @@ const buildFinalReportItem = () => {
       severity: getSeverityLabel(item.percentage),
     }))
 
-  // SIEMPRE incluyen todos los datos (como en la versión recuperada)
-  // Pero respetamos la configuración de anonimización
+  const testTitle = test.value.testTitle || test.value.title || ''
+  const testDescription = test.value.testDescription || test.value.description || ''
+
   const reportItem = {
-    testTitle: test.value.testTitle,
-    title: test.value.testTitle,
+    testTitle,
+    title: testTitle,
     testUrl: getTestUrl(),
     creationDate: test.value.creationDate,
-    // Estos SIEMPRE se incluyen (versión recuperada)
-    testDescription: test.value.testDescription,
+    testDescription,
     cooperatorsEmail: getCooperatorEmails(),
     creatorEmail: pdfConfig.anonymizeEvaluators
       ? null
@@ -585,7 +585,7 @@ const slugify = (text) =>
     .replace(/[^\w\-]+/g, '')
 
 const buildPreviewFileName = (suffix = '') => {
-  const title = slugify(test.value.testTitle || 'report')
+  const title = slugify(test.value.testTitle || test.value.title || 'report')
   const creationDate = slugify(
     test.value.creationDate || new Date().toISOString(),
   )

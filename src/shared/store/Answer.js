@@ -16,10 +16,14 @@ export default {
     evaluatorStatistics: [],
     finalReport: [],
     mediaUrls: {},
+    heuristicComments: {},
   },
   getters: {
     mediaUrls(state) {
       return state.mediaUrls
+    },
+    heuristicComments(state) {
+      return state.heuristicComments
     },
     testAnswerDocument(state, rootState) {
       if (!state.testAnswerDocument) {
@@ -253,6 +257,9 @@ export default {
       if (!state.toast) state.toast = {}
       state.toast = payload
     },
+    SET_HEURISTIC_COMMENTS(state, payload) {
+      state.heuristicComments = payload
+    },
   },
   actions: {
     async getCurrentTestAnswerDoc({ commit, rootState }) {
@@ -439,6 +446,20 @@ export default {
         size,
         userId,
       })
+    },
+
+    async saveHeuristicComments({ commit, rootState }, comments) {
+      const currentTest = rootState.Tests.Test
+      if (!currentTest || !currentTest.answersDocId) return
+      commit('SET_HEURISTIC_COMMENTS', comments)
+      try {
+        await answerController.saveHeuristicComments(
+          comments,
+          currentTest.answersDocId,
+        )
+      } catch (error) {
+        console.error('[Answer Store] Failed to save heuristic comments:', error)
+      }
     },
   },
 }

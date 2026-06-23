@@ -125,4 +125,10 @@ export default class AnswerController extends Controller {
     }
     return super.update(COLLECTION, answersDocId, update)
   }
+
+  async saveHeuristicComments(comments, answersDocId) {
+    return super.update(COLLECTION, answersDocId, {
+      heuristicComments: comments,
+    })
+  }
 }

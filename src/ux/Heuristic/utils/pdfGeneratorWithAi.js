@@ -98,7 +98,10 @@ function parseAiSections(aiText) {
     if (!matched) {
       const lower = trimmed.toLowerCase()
       for (let i = 0; i < SECTION_NAMES.length; i++) {
-        if (lower.startsWith(SECTION_NAMES[i]) || lower.includes(SECTION_NAMES[i])) {
+        if (
+          lower.startsWith(SECTION_NAMES[i]) ||
+          lower.includes(SECTION_NAMES[i])
+        ) {
           if (currentSection) {
             sections.push({
               title: currentSection,
@@ -198,7 +201,8 @@ function matchBlockToEvidenceItem(block, orderedByImpact) {
   for (const item of orderedByImpact) {
     const itemNorm = normalizeHeuristicName(item.label)
     if (itemNorm === blockNorm) return item
-    if (itemNorm.includes(blockNorm) || blockNorm.includes(itemNorm)) return item
+    if (itemNorm.includes(blockNorm) || blockNorm.includes(itemNorm))
+      return item
   }
   return null
 }
@@ -349,14 +353,7 @@ export async function generateHeuristicPdfWithAi(reportData, options = {}) {
   y = M + 40
 
   if (logo) {
-    doc.addImage(
-      logo.img,
-      'PNG',
-      M + 20,
-      y,
-      logo.width,
-      logo.height,
-    )
+    doc.addImage(logo.img, 'PNG', M + 20, y, logo.width, logo.height)
     y += logo.height + 30
   }
 
@@ -376,7 +373,10 @@ export async function generateHeuristicPdfWithAi(reportData, options = {}) {
   doc.setFont(FONT, 'normal')
   doc.setFontSize(14)
   doc.setTextColor(...COLORS.secondary)
-  const titleWrapped = doc.splitTextToSize(testTitle || 'Sistema evaluado', CONTENT_W - 60)
+  const titleWrapped = doc.splitTextToSize(
+    testTitle || 'Sistema evaluado',
+    CONTENT_W - 60,
+  )
   doc.text(titleWrapped, M + 20, y)
   y += titleWrapped.length * 20 + 10
 
@@ -478,7 +478,10 @@ export async function generateHeuristicPdfWithAi(reportData, options = {}) {
     }
     if (aiSections.length === 1 && aiSections[0].content) {
       const paras = aiSections[0].content.split('\n').filter((p) => p.trim())
-      const chunkSize = Math.max(1, Math.floor(paras.length / sectionTitles.length))
+      const chunkSize = Math.max(
+        1,
+        Math.floor(paras.length / sectionTitles.length),
+      )
       const start = sectionIndex * chunkSize
       if (start < paras.length) {
         return paras.slice(start, start + chunkSize).join('\n')
@@ -637,29 +640,13 @@ export async function generateHeuristicPdfWithAi(reportData, options = {}) {
           y = doc.lastAutoTable.finalY + 12
         }
 
-        // 2. Comments table
-        console.log(`[DEBUG AI PDF] H${item.position} questionSummaries:`, item.questionSummaries?.length)
-        item.questionSummaries?.forEach((q, i) => {
-          console.log(`[DEBUG AI PDF] H${item.position} Q${i + 1} commentDetails:`, q.commentDetails?.length || 0)
-        })
-        const hasAnyComments = item.questionSummaries.some(
-          (q) => (q.commentDetails || []).length > 0,
-        )
-        console.log(`[DEBUG AI PDF] H${item.position} hasAnyComments:`, hasAnyComments)
-        if (hasAnyComments) {
-          writeParagraph('Comentarios de evaluadores:', {
-            bold: true,
-            size: 10,
-            spacing: 3,
-          })
-          y = renderCommentsTable(doc, item.questionSummaries, y, {
-            FONT, M, CONTENT_W, COLORS, ensureSpace,
-          })
-        }
-
-        // 3. Images
+        // 2. Images
         const hIndex = (item.position || 1) - 1
-        const imgUrls = getAllImagesForHeuristic(allAnswers, hIndex, testStructure)
+        const imgUrls = getAllImagesForHeuristic(
+          allAnswers,
+          hIndex,
+          testStructure,
+        )
         if (imgUrls.length > 0) {
           doc.setFont(FONT, 'bold')
           doc.setFontSize(9)
@@ -686,6 +673,39 @@ export async function generateHeuristicPdfWithAi(reportData, options = {}) {
               y += 11
             }
           }
+        }
+
+        // 3. Comments table
+        console.log(
+          `[DEBUG AI PDF] H${item.position} questionSummaries:`,
+          item.questionSummaries?.length,
+        )
+        item.questionSummaries?.forEach((q, i) => {
+          console.log(
+            `[DEBUG AI PDF] H${item.position} Q${i + 1} commentDetails:`,
+            q.commentDetails?.length || 0,
+          )
+        })
+        const hasAnyComments = item.questionSummaries.some(
+          (q) => (q.commentDetails || []).length > 0,
+        )
+        console.log(
+          `[DEBUG AI PDF] H${item.position} hasAnyComments:`,
+          hasAnyComments,
+        )
+        if (hasAnyComments) {
+          writeParagraph('Comentarios de evaluadores:', {
+            bold: true,
+            size: 10,
+            spacing: 3,
+          })
+          y = renderCommentsTable(doc, item.questionSummaries, y, {
+            FONT,
+            M,
+            CONTENT_W,
+            COLORS,
+            ensureSpace,
+          })
         }
 
         // 4. AI analysis text for this heuristic (from numbered blocks)
@@ -722,18 +742,84 @@ export async function generateHeuristicPdfWithAi(reportData, options = {}) {
           doc.text(`Datos registrados: ${metaBits.join(', ')}.`, M + 8, y)
           y += 13
         }
-        if (normalizeText(item.comments)) {
-          doc.setFont(FONT, 'italic')
-          doc.setFontSize(9)
-          doc.setTextColor(...COLORS.secondary)
-          const commentText = `Comentarios del investigador: ${stripHtml(item.comments)}`
-          const wrapped = doc.splitTextToSize(commentText, CONTENT_W - 16)
-          for (const line of wrapped) {
-            ensureSpace(12)
-            doc.text(line, M + 8, y)
-            y += 11
+        // ── Comentarios del investigador por pregunta (estilo tarjeta profesional) ──
+        const perQComments = item.perQuestionComments || {}
+        const hasPerQuestionComments = Object.keys(perQComments).some(
+          (k) => perQComments[k] && String(perQComments[k]).trim().length > 0,
+        )
+        const fallbackComment = normalizeText(item.comments)
+
+        if (hasPerQuestionComments || fallbackComment) {
+          ensureSpace(50)
+          const cardX = M + 8
+          const cardW = CONTENT_W - 16
+          const cardPadX = 10
+          const cardPadY = 8
+
+          const contentLines = []
+          if (hasPerQuestionComments) {
+            const questionDefs = item.questionSummaries || []
+            Object.entries(perQComments).forEach(([qId, text]) => {
+              const t = String(text || '').trim()
+              if (!t) return
+              const qIdx = Number.parseInt(qId, 10)
+              const qSummary = questionDefs[qIdx]
+              const qLabel = `Q${qIdx + 1}`
+              const qTitle = qSummary?.title || ''
+              const header = qTitle ? `${qLabel} \u2014 ${qTitle}` : qLabel
+              contentLines.push({ header, text: t })
+            })
+          } else if (fallbackComment) {
+            contentLines.push({ header: null, text: fallbackComment })
           }
-          y += 4
+
+          let totalBodyLines = 0
+          for (const ci of contentLines) {
+            if (ci.header) totalBodyLines += 1
+            const wrapped = doc.splitTextToSize(stripHtml(ci.text), cardW - cardPadX * 2 - 6)
+            totalBodyLines += wrapped.length + 1
+          }
+          const headerH = 10
+          const bodyH = totalBodyLines * 5 + 4
+          const cardH = headerH + bodyH + cardPadY * 2
+
+          doc.setFillColor(...COLORS.bg)
+          doc.roundedRect(cardX, y, cardW, cardH, 3, 3, 'F')
+          doc.setFillColor(...COLORS.accent)
+          doc.rect(cardX, y, 4, cardH, 'F')
+
+          let ty = y + cardPadY + 4
+          doc.setFont(FONT, 'bold')
+          doc.setFontSize(10)
+          doc.setTextColor(...COLORS.accent)
+          doc.text('COMENTARIOS DEL INVESTIGADOR', cardX + cardPadX + 2, ty)
+          ty += 4
+          doc.setFont(FONT, 'normal')
+          doc.setFontSize(8)
+          doc.setTextColor(...COLORS.sub)
+          doc.text(`Heur\u00edstica ${item.position} \u2014 ${item.label}`, cardX + cardPadX + 2, ty)
+          ty += 8
+
+          for (const entry of contentLines) {
+            if (entry.header) {
+              doc.setFont(FONT, 'bold')
+              doc.setFontSize(9)
+              doc.setTextColor(...COLORS.accent)
+              doc.text(entry.header, cardX + cardPadX + 2, ty)
+              ty += 5
+            }
+            doc.setFont(FONT, 'normal')
+            doc.setFontSize(9)
+            doc.setTextColor(...COLORS.text)
+            const wrapped = doc.splitTextToSize(stripHtml(entry.text), cardW - cardPadX * 2 - 6)
+            for (const line of wrapped) {
+              doc.text(line, cardX + cardPadX + 2, ty)
+              ty += 5
+            }
+            ty += 3
+          }
+
+          y += cardH + 10
         }
 
         y += 8
@@ -770,9 +856,7 @@ export async function generateHeuristicPdfWithAi(reportData, options = {}) {
         : []
       const heuristicNameByIndex = Array.isArray(testStructure)
         ? testStructure.map((h, idx) => {
-            const id = normalizeText(
-              h?.id || h?.heuristicId || `H${idx + 1}`,
-            )
+            const id = normalizeText(h?.id || h?.heuristicId || `H${idx + 1}`)
             const title = normalizeText(
               h?.title || h?.heuristicTitle || h?.name,
             )
@@ -886,10 +970,11 @@ export async function generateHeuristicPdfWithAi(reportData, options = {}) {
 
       if (timeLabels.length > 1 && timeRows.length) {
         ensureSpace(40)
-        writeParagraph(
-          'Tiempos registrados por heurística y evaluador:',
-          { size: 10, spacing: 6, color: COLORS.sub },
-        )
+        writeParagraph('Tiempos registrados por heurística y evaluador:', {
+          size: 10,
+          spacing: 6,
+          color: COLORS.sub,
+        })
 
         autoTable(doc, {
           startY: y,
@@ -1031,7 +1116,10 @@ export async function generateHeuristicPdfWithAi(reportData, options = {}) {
         doc.setFont(FONT, 'bold')
         doc.setFontSize(10)
         doc.setTextColor(...COLORS.secondary)
-        const sectionLabel = trimmed.replace(/^=+/, '').replace(/=+$/, '').trim()
+        const sectionLabel = trimmed
+          .replace(/^=+/, '')
+          .replace(/=+$/, '')
+          .trim()
         doc.text(sectionLabel, M, y)
         y += 13
       } else if (trimmed.startsWith('URL:')) {
@@ -1109,7 +1197,8 @@ export async function generateHeuristicPdfWithAi(reportData, options = {}) {
 }
 
 function getTimeColors(valueMs, maxMs) {
-  if (!maxMs || valueMs <= 0) return { fill: [245, 248, 250], text: [44, 48, 52] }
+  if (!maxMs || valueMs <= 0)
+    return { fill: [245, 248, 250], text: [44, 48, 52] }
   const ratio = valueMs / maxMs
   if (ratio < 0.33) return { fill: [230, 245, 235], text: [39, 174, 96] }
   if (ratio < 0.66) return { fill: [255, 248, 225], text: [180, 130, 20] }

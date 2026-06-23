@@ -47,6 +47,17 @@
             </div>
           </div>
 
+          <div v-if="totalComments > 0" class="mt-3">
+            <v-chip
+              size="small"
+              color="#F3E5C7"
+              variant="flat"
+              class="text-amber-900"
+            >
+              {{ totalComments }} {{ t('HeuristicsTestAnswer.summary.comments') }}
+            </v-chip>
+          </div>
+
           <v-progress-linear
             class="mt-3"
             rounded
@@ -85,10 +96,7 @@
             </div>
 
             <div class="single-evaluator-row mt-2">
-              <div
-                v-if="maxWarningDiffers"
-                class="single-evaluator-item"
-              >
+              <div v-if="maxWarningDiffers" class="single-evaluator-item">
                 <div class="mini-label">
                   {{ t('HeuristicsTestAnswer.summary.averageMaxWarning') }}
                 </div>
@@ -99,10 +107,7 @@
                   {{ result.avrgmaxWarning || '0.00%' }}
                 </div>
               </div>
-              <div
-                v-if="minWarningDiffers"
-                class="single-evaluator-item"
-              >
+              <div v-if="minWarningDiffers" class="single-evaluator-item">
                 <div class="mini-label">
                   {{ t('HeuristicsTestAnswer.summary.averageMinWarning') }}
                 </div>
@@ -139,12 +144,17 @@
               variant="flat"
               class="text-amber-900 warning-metrics-chip"
             >
-              {{ warningMetricsCount }} {{ t('HeuristicsTestAnswer.summary.metrics') }}
+              {{ warningMetricsCount }}
+              {{ t('HeuristicsTestAnswer.summary.metrics') }}
             </v-chip>
           </div>
 
           <v-row dense>
-            <v-col v-if="maxWarningDiffers" cols="12" :md="minWarningDiffers ? 6 : 12">
+            <v-col
+              v-if="maxWarningDiffers"
+              cols="12"
+              :md="minWarningDiffers ? 6 : 12"
+            >
               <v-card flat rounded="lg" class="warning-kpi pa-4 h-100">
                 <div
                   class="text-caption text-medium-emphasis card-metric-title"
@@ -166,7 +176,11 @@
                 </div>
               </v-card>
             </v-col>
-            <v-col v-if="minWarningDiffers" cols="12" :md="maxWarningDiffers ? 6 : 12">
+            <v-col
+              v-if="minWarningDiffers"
+              cols="12"
+              :md="maxWarningDiffers ? 6 : 12"
+            >
               <v-card flat rounded="lg" class="warning-kpi pa-4 h-100">
                 <div
                   class="text-caption text-medium-emphasis card-metric-title"
@@ -203,15 +217,25 @@
                 {{ t('HeuristicsTestAnswer.summary.imagesSubtitle') }}
               </div>
             </div>
-            <v-chip
-              size="small"
-              color="#E9EEF5"
-              variant="flat"
-              class="text-slate-700"
-            >
-              {{ imageTotalsByHeuristic.length }}
-              {{ t('HeuristicsTestAnswer.titles.heuristics') }}
-            </v-chip>
+            <div class="d-flex align-center">
+              <v-chip
+                size="small"
+                color="#E9EEF5"
+                variant="flat"
+                class="text-slate-700"
+              >
+                {{ imageTotalsByHeuristic.length }}
+                {{ t('HeuristicsTestAnswer.titles.heuristics') }}
+              </v-chip>
+              <v-chip
+                size="small"
+                color="#F3E5C7"
+                variant="flat"
+                class="text-amber-900 ml-2"
+              >
+                {{ totalComments }} {{ t('HeuristicsTestAnswer.summary.comments') }}
+              </v-chip>
+            </div>
           </div>
 
           <div class="images-chart-center">
@@ -239,7 +263,11 @@
         </v-card>
       </v-col>
 
-      <v-col v-if="optionLabels.length" cols="12" :lg="imageTotalsByHeuristic.length ? 5 : 6">
+      <v-col
+        v-if="optionLabels.length"
+        cols="12"
+        :lg="imageTotalsByHeuristic.length ? 5 : 6"
+      >
         <v-card flat rounded="lg" class="summary-panel pa-5 h-100">
           <div class="d-flex align-center justify-space-between mb-4">
             <div>
@@ -297,6 +325,10 @@ const props = defineProps({
     type: String,
     default: '',
   },
+  totalComments: {
+    type: Number,
+    default: 0,
+  },
 })
 
 const optionColors = [
@@ -341,8 +373,10 @@ const hasWarnings = computed(() => {
   const average = toPercent(props.result.average)
   const maxWarning = toPercent(props.result.avrgmaxWarning)
   const minWarning = toPercent(props.result.avrgminWarning)
-  const maxDiffers = Number.isFinite(maxWarning) && Math.abs(maxWarning - average) > 0.01
-  const minDiffers = Number.isFinite(minWarning) && Math.abs(minWarning - average) > 0.01
+  const maxDiffers =
+    Number.isFinite(maxWarning) && Math.abs(maxWarning - average) > 0.01
+  const minDiffers =
+    Number.isFinite(minWarning) && Math.abs(minWarning - average) > 0.01
   return maxDiffers || minDiffers
 })
 

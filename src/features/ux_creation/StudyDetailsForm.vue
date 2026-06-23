@@ -30,6 +30,7 @@
                         {{ $t('studyCreation.details.basicInformation') }}
                       </h3>
                     </div>
+                    
 
                     <v-form ref="form" @submit.prevent="validate">
                       <v-text-field

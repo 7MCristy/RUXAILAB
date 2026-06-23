@@ -816,7 +816,8 @@
       "averageMaxWarning": "Average max warning threshold",
       "averageMinWarning": "Average min warning threshold",
       "groups": "groups",
-      "metrics": "metrics"
+      "metrics": "metrics",
+      "comments": "Comments"
     },
     "evaluators": {
       "headers": {

@@ -1660,9 +1660,6 @@ export async function generateHeuristicPdf(reportData, options = {}) {
     const url = URL.createObjectURL(blob)
     return { fileName, blob, url }
   }
-
-  const blob = doc.output('blob')
-  return { fileName, blob }
 }
 
 /**

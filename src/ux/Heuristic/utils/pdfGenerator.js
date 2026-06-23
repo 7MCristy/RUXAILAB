@@ -1,3 +1,4 @@
+/* eslint-disable no-console */
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
 import { formatTimeSpentFromMs } from '@/ux/Heuristic/utils/statistics'
@@ -87,6 +88,10 @@ function stripHtml(value = '') {
 
 function extractCommentTexts(answer) {
   const comments = []
+  console.log('[DEBUG extractCommentTexts] answer keys:', answer ? Object.keys(answer) : 'null')
+  console.log('[DEBUG extractCommentTexts] answer.comments:', answer?.comments)
+  console.log('[DEBUG extractCommentTexts] answer.heuristicAnswer:', answer?.heuristicAnswer)
+  console.log('[DEBUG extractCommentTexts] answer.heuristicComment:', answer?.heuristicComment)
   // Array format: answer.comments = [{id, text, createdAt}]
   if (Array.isArray(answer?.comments)) {
     comments.push(...answer.comments)
@@ -105,12 +110,14 @@ function extractCommentTexts(answer) {
   if (legacyNested) {
     comments.push(legacyNested)
   }
-  return comments
+  const result = comments
     .map((comment) => {
       if (typeof comment === 'string') return normalizeText(comment)
       return normalizeText(comment?.text || comment)
     })
     .filter(Boolean)
+  console.log('[DEBUG extractCommentTexts] raw comments:', comments.length, '→ filtered result:', result.length)
+  return result
 }
 
 function getNumber(value, fallback = 0) {
@@ -385,10 +392,21 @@ function buildHeuristicEvidence({
   testOptions = [],
 }) {
   const maxQuestionScore = getMaxQuestionScore(testOptions)
+  console.log('[DEBUG buildHeuristicEvidence] allAnswers count:', allAnswers.length)
+  console.log('[DEBUG buildHeuristicEvidence] testStructure count:', testStructure.length)
+  if (allAnswers.length > 0) {
+    console.log('[DEBUG buildHeuristicEvidence] allAnswers[0] keys:', Object.keys(allAnswers[0] || {}))
+    console.log('[DEBUG buildHeuristicEvidence] allAnswers[0].heuristicQuestions:', allAnswers[0]?.heuristicQuestions?.length)
+  }
   const heuristics = testStructure.map((heuristic, heuristicIndex) => {
     const evaluatorHeuristics = allAnswers
       .map((answer) => answer?.heuristicQuestions?.[heuristicIndex])
       .filter(Boolean)
+    console.log(`[DEBUG buildHeuristicEvidence] H${heuristicIndex + 1} evaluatorHeuristics count:`, evaluatorHeuristics.length)
+    if (evaluatorHeuristics.length > 0) {
+      console.log(`[DEBUG buildHeuristicEvidence] H${heuristicIndex + 1} evaluatorHeuristics[0] keys:`, Object.keys(evaluatorHeuristics[0] || {}))
+      console.log(`[DEBUG buildHeuristicEvidence] H${heuristicIndex + 1} evaluatorHeuristics[0].heuristicQuestions:`, evaluatorHeuristics[0]?.heuristicQuestions?.length)
+    }
     const questionDefinitions = Array.isArray(heuristic?.questions)
       ? heuristic.questions
       : Array.isArray(heuristic?.heuristicQuestions)
@@ -424,7 +442,9 @@ function buildHeuristicEvidence({
             answerIndex,
           )
           // Extract comments from question-level answer
-          extractCommentTexts(answer).forEach((text) => {
+          const texts = extractCommentTexts(answer)
+          console.log(`[DEBUG Comments] H${heuristicIndex + 1} Q${questionIndex + 1} Ev${answerIndex + 1} question-level: found ${texts.length} comments`, texts)
+          texts.forEach((text) => {
             commentDetails.push({ evaluatorName, text, questionIndex: questionIndex + 1 })
           })
         })
@@ -436,13 +456,16 @@ function buildHeuristicEvidence({
               evaluatorHeuristics[answerIndex],
               answerIndex,
             )
-            extractCommentTexts(heuristicAnswer).forEach((text) => {
+            const texts = extractCommentTexts(heuristicAnswer)
+            console.log(`[DEBUG Comments] H${heuristicIndex + 1} Q${questionIndex + 1} Ev${answerIndex + 1} heuristic-level fallback: found ${texts.length} comments`, texts)
+            texts.forEach((text) => {
               if (!commentDetails.some((c) => c.text === text)) {
                 commentDetails.push({ evaluatorName, text, questionIndex: questionIndex + 1 })
               }
             })
           })
         }
+        console.log(`[DEBUG Comments] H${heuristicIndex + 1} Q${questionIndex + 1} total commentDetails:`, commentDetails.length, commentDetails)
         const comments = commentDetails.length
         const average = values.length
           ? values.reduce((sum, value) => sum + value, 0) / values.length
@@ -1155,9 +1178,14 @@ export async function generateHeuristicPdf(reportData, options = {}) {
     }
 
     // ── Renderizar comentarios de evaluadores como tabla ──────────────────
+    console.log(`[DEBUG PDF] H${item.position} questionSummaries:`, item.questionSummaries?.length)
+    item.questionSummaries?.forEach((q, i) => {
+      console.log(`[DEBUG PDF] H${item.position} Q${i + 1} commentDetails:`, q.commentDetails?.length || 0)
+    })
     const hasAnyComments = item.questionSummaries.some(
       (q) => (q.commentDetails || []).length > 0,
     )
+    console.log(`[DEBUG PDF] H${item.position} hasAnyComments:`, hasAnyComments)
     if (hasAnyComments) {
       writeParagraph('Comentarios de evaluadores:', {
         bold: true,
@@ -1535,6 +1563,11 @@ function renderCommentsTable(doc, questionSummaries, y, options = {}) {
     ensureSpace = () => {},
   } = options
 
+  console.log('[DEBUG renderCommentsTable] questionSummaries count:', questionSummaries.length)
+  questionSummaries.forEach((q, i) => {
+    console.log(`[DEBUG renderCommentsTable] Q${i + 1} commentDetails:`, q.commentDetails?.length || 0, q.commentDetails)
+  })
+
   // Collect all comments with question identification
   const commentRows = []
   questionSummaries.forEach((q, qIdx) => {
@@ -1547,6 +1580,7 @@ function renderCommentsTable(doc, questionSummaries, y, options = {}) {
       ])
     })
   })
+  console.log('[DEBUG renderCommentsTable] total commentRows:', commentRows.length)
 
   if (commentRows.length === 0) return y
 

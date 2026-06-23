@@ -1,3 +1,4 @@
+/* eslint-disable no-console */
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
 import { formatTimeSpentFromMs } from '@/ux/Heuristic/utils/statistics'
@@ -637,9 +638,14 @@ export async function generateHeuristicPdfWithAi(reportData, options = {}) {
         }
 
         // 2. Comments table
+        console.log(`[DEBUG AI PDF] H${item.position} questionSummaries:`, item.questionSummaries?.length)
+        item.questionSummaries?.forEach((q, i) => {
+          console.log(`[DEBUG AI PDF] H${item.position} Q${i + 1} commentDetails:`, q.commentDetails?.length || 0)
+        })
         const hasAnyComments = item.questionSummaries.some(
           (q) => (q.commentDetails || []).length > 0,
         )
+        console.log(`[DEBUG AI PDF] H${item.position} hasAnyComments:`, hasAnyComments)
         if (hasAnyComments) {
           writeParagraph('Comentarios de evaluadores:', {
             bold: true,

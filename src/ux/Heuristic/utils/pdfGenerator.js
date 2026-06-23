@@ -1429,239 +1429,234 @@ export async function generateHeuristicPdf(reportData, options = {}) {
       }
 
       y += 8
-    }    }
-
-    y += 14
-  }
-
-  // ─── 5. COMPARATIVA POR EVALUADOR ────────────────────────────────────────
-  doc.addPage()
-  pageNum += 1
-  y = M
-  addPageHeader()
-  startSection('5. Comparativa de puntuaciones por evaluador')
-  writeParagraph(
-    'La matriz siguiente muestra los valores medios de respuesta por heurística y evaluador. Los colores facilitan detectar respuestas bajas, medias y altas de forma visual.',
-  )
-
-  const matrixHeaders = Array.isArray(heuristicsEvaluator?.header)
-    ? heuristicsEvaluator.header.map(
-        (header) => header.title || header.text || header.value || '',
-      )
-    : []
-  const heuristicNameByIndex = Array.isArray(testStructure)
-    ? testStructure.map((heuristic, index) => {
-        const heuristicId = normalizeText(
-          heuristic?.id || heuristic?.heuristicId || `H${index + 1}`,
-        )
-        const heuristicTitle = normalizeText(
-          heuristic?.title || heuristic?.heuristicTitle || heuristic?.name,
-        )
-        return heuristicTitle
-          ? `${heuristicId} - ${heuristicTitle}`
-          : heuristicId
-      })
-    : []
-  const matrixRows = heuristicMatrixItems.map((item, rowIndex) => ({
-    heuristic: heuristicNameByIndex[rowIndex] || item.heuristic || '—',
-    max: Number(item.max),
-    min: Number(item.min),
-    values: matrixHeaders.map((_, index) => {
-      if (index === 0)
-        return heuristicNameByIndex[rowIndex] || item.heuristic || '—'
-      const key = heuristicsEvaluator.header?.[index]?.value
-      const val = item?.[key]
-      return val != null ? formatDecimal(val) : '0,00'
-    }),
-  }))
-  const matrixBody = matrixRows.map((row) => row.values)
-  const heuristicColumnWidth = Math.max(190, Math.min(CONTENT_W * 0.44, 260))
-  const evaluatorColumnCount = Math.max(1, matrixHeaders.length - 1)
-  const evaluatorColumnWidth =
-    (CONTENT_W - heuristicColumnWidth) / evaluatorColumnCount
-  const matrixColumnStyles = {
-    0: {
-      halign: 'left',
-      fontStyle: 'bold',
-      textColor: COLORS.accent,
-      cellWidth: heuristicColumnWidth,
-      overflow: 'linebreak',
-    },
-  }
-  for (let index = 1; index < matrixHeaders.length; index += 1) {
-    matrixColumnStyles[index] = {
-      halign: 'center',
-      cellWidth: evaluatorColumnWidth,
     }
   }
 
-  if (matrixHeaders.length > 1) {
-    ensureSpace(40)
-    autoTable(doc, {
-      startY: y,
-      head: [matrixHeaders],
-      body: matrixBody,
-      styles: {
-        fontSize: 8,
-        cellPadding: 5,
-        halign: 'center',
-        valign: 'middle',
-      },
-      columnStyles: matrixColumnStyles,
-      headStyles: {
-        fillColor: COLORS.tableHead,
-        textColor: COLORS.white,
-        fontStyle: 'bold',
-      },
-      alternateRowStyles: { fillColor: [250, 252, 255] },
-      tableWidth: CONTENT_W,
-      margin: { left: M, right: M },
-      theme: 'grid',
-      didParseCell(data) {
-        if (data.section !== 'body' || data.column.index === 0) return
-        const row = matrixRows[data.row.index]
-        const color = getHeuristicsCellColor(data.cell.raw, row?.max, row?.min)
+  y += 14
+}
+
+// ─── 5. COMPARATIVA POR EVALUADOR ────────────────────────────────────────
+doc.addPage()
+pageNum += 1
+y = M
+addPageHeader()
+startSection('5. Comparativa de puntuaciones por evaluador')
+writeParagraph(
+  'La matriz siguiente muestra los valores medios de respuesta por heurística y evaluador. Los colores facilitan detectar respuestas bajas, medias y altas de forma visual.',
+)
+
+const matrixHeaders = Array.isArray(heuristicsEvaluator?.header)
+  ? heuristicsEvaluator.header.map(
+      (header) => header.title || header.text || header.value || '',
+    )
+  : []
+const heuristicNameByIndex = Array.isArray(testStructure)
+  ? testStructure.map((heuristic, index) => {
+      const heuristicId = normalizeText(
+        heuristic?.id || heuristic?.heuristicId || `H${index + 1}`,
+      )
+      const heuristicTitle = normalizeText(
+        heuristic?.title || heuristic?.heuristicTitle || heuristic?.name,
+      )
+      return heuristicTitle ? `${heuristicId} - ${heuristicTitle}` : heuristicId
+    })
+  : []
+const matrixRows = heuristicMatrixItems.map((item, rowIndex) => ({
+  heuristic: heuristicNameByIndex[rowIndex] || item.heuristic || '—',
+  max: Number(item.max),
+  min: Number(item.min),
+  values: matrixHeaders.map((_, index) => {
+    if (index === 0)
+      return heuristicNameByIndex[rowIndex] || item.heuristic || '—'
+    const key = heuristicsEvaluator.header?.[index]?.value
+    const val = item?.[key]
+    return val != null ? formatDecimal(val) : '0,00'
+  }),
+}))
+const matrixBody = matrixRows.map((row) => row.values)
+const heuristicColumnWidth = Math.max(190, Math.min(CONTENT_W * 0.44, 260))
+const evaluatorColumnCount = Math.max(1, matrixHeaders.length - 1)
+const evaluatorColumnWidth =
+  (CONTENT_W - heuristicColumnWidth) / evaluatorColumnCount
+const matrixColumnStyles = {
+  0: {
+    halign: 'left',
+    fontStyle: 'bold',
+    textColor: COLORS.accent,
+    cellWidth: heuristicColumnWidth,
+    overflow: 'linebreak',
+  },
+}
+for (let index = 1; index < matrixHeaders.length; index += 1) {
+  matrixColumnStyles[index] = {
+    halign: 'center',
+    cellWidth: evaluatorColumnWidth,
+  }
+}
+
+if (matrixHeaders.length > 1) {
+  ensureSpace(40)
+  autoTable(doc, {
+    startY: y,
+    head: [matrixHeaders],
+    body: matrixBody,
+    styles: {
+      fontSize: 8,
+      cellPadding: 5,
+      halign: 'center',
+      valign: 'middle',
+    },
+    columnStyles: matrixColumnStyles,
+    headStyles: {
+      fillColor: COLORS.tableHead,
+      textColor: COLORS.white,
+      fontStyle: 'bold',
+    },
+    alternateRowStyles: { fillColor: [250, 252, 255] },
+    tableWidth: CONTENT_W,
+    margin: { left: M, right: M },
+    theme: 'grid',
+    didParseCell(data) {
+      if (data.section !== 'body' || data.column.index === 0) return
+      const row = matrixRows[data.row.index]
+      const color = getHeuristicsCellColor(data.cell.raw, row?.max, row?.min)
+      data.cell.styles.fillColor = color.fill
+      data.cell.styles.textColor = color.text
+      data.cell.styles.fontStyle = 'bold'
+    },
+  })
+  y = doc.lastAutoTable.finalY + 20
+}
+
+writeParagraph(
+  'La tabla siguiente muestra tiempos por heurística, total y promedio por evaluador.',
+)
+
+const timeByHeuristicsHeader = Array.isArray(timeByHeuristics?.header)
+  ? timeByHeuristics.header
+  : []
+const timeByHeuristicsItems = Array.isArray(timeByHeuristics?.items)
+  ? timeByHeuristics.items
+  : []
+const filteredTimeHeader = timeByHeuristicsHeader.filter(
+  (header) => (header?.value || '') !== 'timeSd',
+)
+const timeHeaderLabels = filteredTimeHeader.map(
+  (header) => header?.title || header?.text || header?.value || '',
+)
+const timeRows = timeByHeuristicsItems.map((item) =>
+  filteredTimeHeader.map((header) => {
+    const key = header?.value
+    return item?.[key] != null ? String(item[key]) : '—'
+  }),
+)
+const maxTimeMs = Math.max(
+  ...timeByHeuristicsItems.map((item) =>
+    Math.max(parseMmSsToMs(item?.totalTime), parseMmSsToMs(item?.averageTime)),
+  ),
+  0,
+)
+
+if (timeHeaderLabels.length > 1 && timeRows.length) {
+  ensureSpace(40)
+  autoTable(doc, {
+    startY: y,
+    head: [timeHeaderLabels],
+    body: timeRows,
+    styles: { fontSize: 8, cellPadding: 4 },
+    headStyles: { fillColor: COLORS.tableHead, textColor: COLORS.white },
+    alternateRowStyles: { fillColor: COLORS.zebra },
+    margin: { left: M, right: M },
+    theme: 'grid',
+    didParseCell(data) {
+      if (data.section !== 'body' || data.column.index === 0) return
+      const headerKey = filteredTimeHeader[data.column.index]?.value
+      const rawMs = parseMmSsToMs(data.cell.raw)
+      if (
+        headerKey?.startsWith('Ev') ||
+        headerKey === 'totalTime' ||
+        headerKey === 'averageTime'
+      ) {
+        const color = getTimeColor(rawMs, maxTimeMs)
         data.cell.styles.fillColor = color.fill
         data.cell.styles.textColor = color.text
         data.cell.styles.fontStyle = 'bold'
-      },
-    })
-    y = doc.lastAutoTable.finalY + 20
-  }
-
-  writeParagraph(
-    'La tabla siguiente muestra tiempos por heurística, total y promedio por evaluador.',
-  )
-
-  const timeByHeuristicsHeader = Array.isArray(timeByHeuristics?.header)
-    ? timeByHeuristics.header
-    : []
-  const timeByHeuristicsItems = Array.isArray(timeByHeuristics?.items)
-    ? timeByHeuristics.items
-    : []
-  const filteredTimeHeader = timeByHeuristicsHeader.filter(
-    (header) => (header?.value || '') !== 'timeSd',
-  )
-  const timeHeaderLabels = filteredTimeHeader.map(
-    (header) => header?.title || header?.text || header?.value || '',
-  )
-  const timeRows = timeByHeuristicsItems.map((item) =>
-    filteredTimeHeader.map((header) => {
-      const key = header?.value
-      return item?.[key] != null ? String(item[key]) : '—'
-    }),
-  )
-  const maxTimeMs = Math.max(
-    ...timeByHeuristicsItems.map((item) =>
-      Math.max(
-        parseMmSsToMs(item?.totalTime),
-        parseMmSsToMs(item?.averageTime),
-      ),
-    ),
-    0,
-  )
-
-  if (timeHeaderLabels.length > 1 && timeRows.length) {
-    ensureSpace(40)
-    autoTable(doc, {
-      startY: y,
-      head: [timeHeaderLabels],
-      body: timeRows,
-      styles: { fontSize: 8, cellPadding: 4 },
-      headStyles: { fillColor: COLORS.tableHead, textColor: COLORS.white },
-      alternateRowStyles: { fillColor: COLORS.zebra },
-      margin: { left: M, right: M },
-      theme: 'grid',
-      didParseCell(data) {
-        if (data.section !== 'body' || data.column.index === 0) return
-        const headerKey = filteredTimeHeader[data.column.index]?.value
-        const rawMs = parseMmSsToMs(data.cell.raw)
-        if (
-          headerKey?.startsWith('Ev') ||
-          headerKey === 'totalTime' ||
-          headerKey === 'averageTime'
-        ) {
-          const color = getTimeColor(rawMs, maxTimeMs)
-          data.cell.styles.fillColor = color.fill
-          data.cell.styles.textColor = color.text
-          data.cell.styles.fontStyle = 'bold'
-        }
-      },
-    })
-    y = doc.lastAutoTable.finalY + 20
-  }
-
-  writeParagraph(`Tiempo medio de ejecución global: ${averageTime}.`)
-
-  // ─── 6. CONCLUSION ────────────────────────────────────────────────────────
-  startSection('6. Conclusión')
-  if (cleanStudyConclusion) {
-    writeParagraph(cleanStudyConclusion)
-  }
-  const warningText = useWarningTerm
-    ? pluralize(totalWarnings, 'warning', 'warnings')
-    : pluralize(
-        totalWarnings,
-        'pregunta que requiere un análisis más profundo',
-        'preguntas que requieren un análisis más profundo',
-      )
-  const commentText = pluralize(totalComments, 'comentario', 'comentarios')
-  const imageText = pluralize(totalImages, 'imagen', 'imágenes')
-  writeParagraph(
-    `En conjunto, el informe muestra un cumplimiento global de ${globalPct}, con ${totalWarnings} ${warningText}, ${totalComments} ${commentText} y ${totalImages} ${imageText} registradas como evidencias.`,
-  )
-  writeParagraph(
-    'Las heurísticas con peor posición en el ranking de impacto son las que combinan bajo cumplimiento y señales de riesgo operativo, por lo que deben priorizarse en la hoja de ruta de mejora.',
-  )
-
-  // ─── INDICE (completar páginas reales) ───────────────────────────────────
-  doc.setPage(2)
-  let tocY = M + 28
-  doc.setFont(FONT, 'normal')
-  doc.setFontSize(11)
-  doc.setTextColor(...COLORS.text)
-  tocEntries.forEach((entry) => {
-    if (tocY > PAGE_H - M) return
-    const title = normalizeText(entry.title)
-    const titleWidth =
-      (doc.getStringUnitWidth(title) * doc.getFontSize()) /
-      doc.internal.scaleFactor
-    doc.text(title, M, tocY)
-    const dotStart = M + titleWidth + 8
-    const dotEnd = PAGE_W - M - 20
-    if (dotEnd > dotStart) {
-      const dots = '.'.repeat(
-        Math.max(
-          3,
-          Math.floor(
-            (dotEnd - dotStart) /
-              ((doc.getStringUnitWidth('.') * doc.getFontSize()) /
-                doc.internal.scaleFactor),
-          ),
-        ),
-      )
-      doc.text(dots, dotStart, tocY)
-    }
-    doc.text(String(entry.page), PAGE_W - M, tocY, { align: 'right' })
-    tocY += 20
+      }
+    },
   })
+  y = doc.lastAutoTable.finalY + 20
+}
 
-  const fileName = `informe_heurística_${
-    testTitle ? testTitle.replace(/\s+/g, '_').toLowerCase() : 'evaluación'
-  }.pdf`
+writeParagraph(`Tiempo medio de ejecución global: ${averageTime}.`)
 
-  if (mode === 'download') {
-    doc.save(fileName)
-    return { fileName }
+// ─── 6. CONCLUSION ────────────────────────────────────────────────────────
+startSection('6. Conclusión')
+if (cleanStudyConclusion) {
+  writeParagraph(cleanStudyConclusion)
+}
+const warningText = useWarningTerm
+  ? pluralize(totalWarnings, 'warning', 'warnings')
+  : pluralize(
+      totalWarnings,
+      'pregunta que requiere un análisis más profundo',
+      'preguntas que requieren un análisis más profundo',
+    )
+const commentText = pluralize(totalComments, 'comentario', 'comentarios')
+const imageText = pluralize(totalImages, 'imagen', 'imágenes')
+writeParagraph(
+  `En conjunto, el informe muestra un cumplimiento global de ${globalPct}, con ${totalWarnings} ${warningText}, ${totalComments} ${commentText} y ${totalImages} ${imageText} registradas como evidencias.`,
+)
+writeParagraph(
+  'Las heurísticas con peor posición en el ranking de impacto son las que combinan bajo cumplimiento y señales de riesgo operativo, por lo que deben priorizarse en la hoja de ruta de mejora.',
+)
+
+// ─── INDICE (completar páginas reales) ───────────────────────────────────
+doc.setPage(2)
+let tocY = M + 28
+doc.setFont(FONT, 'normal')
+doc.setFontSize(11)
+doc.setTextColor(...COLORS.text)
+tocEntries.forEach((entry) => {
+  if (tocY > PAGE_H - M) return
+  const title = normalizeText(entry.title)
+  const titleWidth =
+    (doc.getStringUnitWidth(title) * doc.getFontSize()) /
+    doc.internal.scaleFactor
+  doc.text(title, M, tocY)
+  const dotStart = M + titleWidth + 8
+  const dotEnd = PAGE_W - M - 20
+  if (dotEnd > dotStart) {
+    const dots = '.'.repeat(
+      Math.max(
+        3,
+        Math.floor(
+          (dotEnd - dotStart) /
+            ((doc.getStringUnitWidth('.') * doc.getFontSize()) /
+              doc.internal.scaleFactor),
+        ),
+      ),
+    )
+    doc.text(dots, dotStart, tocY)
   }
+  doc.text(String(entry.page), PAGE_W - M, tocY, { align: 'right' })
+  tocY += 20
+})
 
-  if (mode === 'preview') {
-    const blob = doc.output('blob')
-    const url = URL.createObjectURL(blob)
-    return { fileName, blob, url }
-  }
+const fileName = `informe_heurística_${
+  testTitle ? testTitle.replace(/\s+/g, '_').toLowerCase() : 'evaluación'
+}.pdf`
 
+if (mode === 'download') {
+  doc.save(fileName)
+  return { fileName }
+}
 
+if (mode === 'preview') {
+  const blob = doc.output('blob')
+  const url = URL.createObjectURL(blob)
+}
+  return { fileName, blob, url }
+}
 
 /**
  * Renders evaluator comments as an autoTable with question number identification.
@@ -1750,7 +1745,13 @@ function renderCommentsTable(doc, questionSummaries, y, options = {}) {
  * @param {Object} options - Configuration options
  * @returns {number} Updated Y position after rendering
  */
-function renderHeuristicCommentsTable(doc, perQuestionComments, questionDefinitions, y, options = {}) {
+function renderHeuristicCommentsTable(
+  doc,
+  perQuestionComments,
+  questionDefinitions,
+  y,
+  options = {},
+) {
   const {
     FONT = 'helvetica',
     M: margin = 14,
@@ -1770,11 +1771,7 @@ function renderHeuristicCommentsTable(doc, perQuestionComments, questionDefiniti
     if (commentText && String(commentText).trim().length > 0) {
       const qLabel = `Q${qIndex + 1}`
       const qTitle = getQuestionLabel(question, qIndex)
-      commentRows.push([
-        qLabel,
-        qTitle,
-        stripHtml(String(commentText)),
-      ])
+      commentRows.push([qLabel, qTitle, stripHtml(String(commentText))])
     }
   })
 

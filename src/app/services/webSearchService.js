@@ -2,10 +2,28 @@ const JINA_SEARCH_URL = 'https://s.jina.ai'
 const JINA_READ_URL = 'https://r.jina.ai'
 const TINYFISH_SEARCH_URL = 'https://api.search.tinyfish.ai'
 
-const TIMEOUT_MS = 15000
+const TIMEOUT_MS = 25000
 
 function getJinaApiKey() {
   return process.env.VUE_APP_JINA_API_KEY || ''
+}
+
+async function retryWithBackoff(
+  fn,
+  { retries = 2, baseDelay = 2000, label = '' } = {},
+) {
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      return await fn()
+    } catch (error) {
+      if (attempt === retries) throw error
+      const delay = baseDelay * Math.pow(2, attempt)
+      console.warn(
+        `[WebSearch] ⚠️ ${label} intento ${attempt + 1} falló, retry en ${delay}ms: ${error.message}`,
+      )
+      await new Promise((resolve) => setTimeout(resolve, delay))
+    }
+  }
 }
 
 /**
@@ -14,36 +32,50 @@ function getJinaApiKey() {
  * @returns {Promise<string>} Contenido en markdown de los resultados
  */
 async function searchWithJina(query) {
-  const url = `${JINA_SEARCH_URL}/${encodeURIComponent(query)}`
-  const headers = {
-    'Accept': 'text/markdown',
-    'X-Return-Format': 'markdown',
-  }
-  const apiKey = getJinaApiKey()
-  if (apiKey) {
-    headers['Authorization'] = `Bearer ${apiKey}`
-  }
+  return retryWithBackoff(
+    async () => {
+      const url = `${JINA_SEARCH_URL}/${encodeURIComponent(query)}`
+      const headers = {
+        Accept: 'text/markdown',
+        'X-Return-Format': 'markdown',
+      }
+      const apiKey = getJinaApiKey()
+      if (apiKey) {
+        headers['Authorization'] = `Bearer ${apiKey}`
+      }
 
-  console.log('[WebSearch] 🔍 Buscando con Jina AI:', query.substring(0, 100))
+      console.log(
+        '[WebSearch] 🔍 Buscando con Jina AI:',
+        query.substring(0, 100),
+      )
 
-  const controller = new AbortController()
-  const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS)
+      const controller = new AbortController()
+      const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS)
 
-  try {
-    const response = await fetch(url, { headers, signal: controller.signal })
-    clearTimeout(timeoutId)
+      try {
+        const response = await fetch(url, {
+          headers,
+          signal: controller.signal,
+        })
+        clearTimeout(timeoutId)
 
-    if (!response.ok) {
-      throw new Error(`Jina search HTTP ${response.status}`)
-    }
+        if (!response.ok) {
+          throw new Error(`Jina search HTTP ${response.status}`)
+        }
 
-    const text = await response.text()
-    console.log('[WebSearch] ✅ Jina AI respondió, longitud:', text.length)
-    return text
-  } catch (error) {
-    clearTimeout(timeoutId)
-    throw error
-  }
+        const text = await response.text()
+        console.log(
+          '[WebSearch] ✅ Jina AI respondió, longitud:',
+          text.length,
+        )
+        return text
+      } catch (error) {
+        clearTimeout(timeoutId)
+        throw error
+      }
+    },
+    { retries: 2, baseDelay: 2000, label: `Jina search: ${query.substring(0, 50)}` },
+  )
 }
 
 /**
@@ -52,36 +84,44 @@ async function searchWithJina(query) {
  * @returns {Promise<string>} Contenido en markdown
  */
 async function readUrlWithJina(url) {
-  const fullUrl = `${JINA_READ_URL}/${encodeURIComponent(url)}`
-  const headers = {
-    'Accept': 'text/markdown',
-    'X-Return-Format': 'markdown',
-  }
-  const apiKey = getJinaApiKey()
-  if (apiKey) {
-    headers['Authorization'] = `Bearer ${apiKey}`
-  }
+  return retryWithBackoff(
+    async () => {
+      const fullUrl = `${JINA_READ_URL}/${encodeURIComponent(url)}`
+      const headers = {
+        Accept: 'text/markdown',
+        'X-Return-Format': 'markdown',
+      }
+      const apiKey = getJinaApiKey()
+      if (apiKey) {
+        headers['Authorization'] = `Bearer ${apiKey}`
+      }
 
-  console.log('[WebSearch] 📖 Leyendo URL con Jina AI:', url)
+      console.log('[WebSearch] 📖 Leyendo URL con Jina AI:', url)
 
-  const controller = new AbortController()
-  const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS)
+      const controller = new AbortController()
+      const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS)
 
-  try {
-    const response = await fetch(fullUrl, { headers, signal: controller.signal })
-    clearTimeout(timeoutId)
+      try {
+        const response = await fetch(fullUrl, {
+          headers,
+          signal: controller.signal,
+        })
+        clearTimeout(timeoutId)
 
-    if (!response.ok) {
-      throw new Error(`Jina read HTTP ${response.status}`)
-    }
+        if (!response.ok) {
+          throw new Error(`Jina read HTTP ${response.status}`)
+        }
 
-    const text = await response.text()
-    console.log('[WebSearch] ✅ URL leída, longitud:', text.length)
-    return text
-  } catch (error) {
-    clearTimeout(timeoutId)
-    throw error
-  }
+        const text = await response.text()
+        console.log('[WebSearch] ✅ URL leída, longitud:', text.length)
+        return text
+      } catch (error) {
+        clearTimeout(timeoutId)
+        throw error
+      }
+    },
+    { retries: 2, baseDelay: 2000, label: `Jina read: ${url.substring(0, 50)}` },
+  )
 }
 
 /**
@@ -90,38 +130,49 @@ async function readUrlWithJina(url) {
  * @returns {Promise<Array>} Resultados estructurados
  */
 async function searchWithTinyFish(query) {
-  const apiKey = process.env.VUE_APP_TINYFISH_API_KEY
-  if (!apiKey) {
-    throw new Error('TinyFish API key no configurada')
-  }
+  return retryWithBackoff(
+    async () => {
+      const apiKey = process.env.VUE_APP_TINYFISH_API_KEY
+      if (!apiKey) {
+        throw new Error('TinyFish API key no configurada')
+      }
 
-  const url = `${TINYFISH_SEARCH_URL}?q=${encodeURIComponent(query)}`
-  console.log('[WebSearch] 🔍 Buscando con TinyFish:', query.substring(0, 100))
+      const url = `${TINYFISH_SEARCH_URL}?q=${encodeURIComponent(query)}`
+      console.log(
+        '[WebSearch] 🔍 Buscando con TinyFish:',
+        query.substring(0, 100),
+      )
 
-  const controller = new AbortController()
-  const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS)
+      const controller = new AbortController()
+      const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS)
 
-  try {
-    const response = await fetch(url, {
-      headers: {
-        'X-API-Key': apiKey,
-        'Accept': 'application/json',
-      },
-      signal: controller.signal,
-    })
-    clearTimeout(timeoutId)
+      try {
+        const response = await fetch(url, {
+          headers: {
+            'X-API-Key': apiKey,
+            Accept: 'application/json',
+          },
+          signal: controller.signal,
+        })
+        clearTimeout(timeoutId)
 
-    if (!response.ok) {
-      throw new Error(`TinyFish HTTP ${response.status}`)
-    }
+        if (!response.ok) {
+          throw new Error(`TinyFish HTTP ${response.status}`)
+        }
 
-    const data = await response.json()
-    console.log('[WebSearch] ✅ TinyFish respondió, resultados:', data?.results?.length || 0)
-    return data?.results || []
-  } catch (error) {
-    clearTimeout(timeoutId)
-    throw error
-  }
+        const data = await response.json()
+        console.log(
+          '[WebSearch] ✅ TinyFish respondió, resultados:',
+          data?.results?.length || 0,
+        )
+        return data?.results || []
+      } catch (error) {
+        clearTimeout(timeoutId)
+        throw error
+      }
+    },
+    { retries: 1, baseDelay: 3000, label: `TinyFish: ${query.substring(0, 50)}` },
+  )
 }
 
 /**
@@ -147,10 +198,17 @@ function tinyFishResultsToMarkdown(results) {
  * @param {string} options.testTitle - Título del test
  * @returns {Promise<{content: string, source: string}>}
  */
-export async function researchWebsite({ testUrl, testDescription, testTitle }) {
+export async function researchWebsite({
+  testUrl,
+  testDescription,
+  testTitle,
+}) {
   console.log('[WebSearch] ===== INICIO INVESTIGACIÓN WEB =====')
   console.log('[WebSearch] URL:', testUrl)
-  console.log('[WebSearch] Descripción:', testDescription?.substring(0, 100))
+  console.log(
+    '[WebSearch] Descripción:',
+    testDescription?.substring(0, 100),
+  )
 
   const queries = []
   if (testUrl) {
@@ -174,9 +232,14 @@ export async function researchWebsite({ testUrl, testDescription, testTitle }) {
     if (testUrl) {
       try {
         const siteContent = await readUrlWithJina(testUrl)
-        allContent.push(`=== CONTENIDO DEL SITIO EVALUADO (${testUrl}) ===\n${siteContent}`)
+        allContent.push(
+          `=== CONTENIDO DEL SITIO EVALUADO (${testUrl}) ===\n${siteContent}`,
+        )
       } catch (readError) {
-        console.warn('[WebSearch] ⚠️ No se pudo leer la URL con Jina:', readError.message)
+        console.warn(
+          '[WebSearch] ⚠️ No se pudo leer la URL con Jina:',
+          readError.message,
+        )
       }
     }
 
@@ -184,20 +247,32 @@ export async function researchWebsite({ testUrl, testDescription, testTitle }) {
     for (const query of uniqueQueries.slice(0, 2)) {
       try {
         const searchResults = await searchWithJina(query)
-        allContent.push(`=== RESULTADOS DE BÚSQUEDA: "${query}" ===\n${searchResults}`)
+        allContent.push(
+          `=== RESULTADOS DE BÚSQUEDA: "${query}" ===\n${searchResults}`,
+        )
       } catch (searchError) {
-        console.warn('[WebSearch] ⚠️ Búsqueda Jina falló:', searchError.message)
+        console.warn(
+          '[WebSearch] ⚠️ Búsqueda Jina falló:',
+          searchError.message,
+        )
       }
     }
 
     if (allContent.length > 0) {
       const combined = allContent.join('\n\n')
-      console.log('[WebSearch] ✅ Investigación web completada con Jina AI, total:', combined.length, 'caracteres')
+      console.log(
+        '[WebSearch] ✅ Investigación web completada con Jina AI, total:',
+        combined.length,
+        'caracteres',
+      )
       console.log('[WebSearch] ===== FIN INVESTIGACIÓN WEB (Jina) =====')
       return { content: combined, source: 'jina' }
     }
   } catch (jinaError) {
-    console.warn('[WebSearch] ⚠️ Jina AI falló completamente:', jinaError.message)
+    console.warn(
+      '[WebSearch] ⚠️ Jina AI falló completamente:',
+      jinaError.message,
+    )
   }
 
   // 2. Fallback: TinyFish
@@ -216,12 +291,19 @@ export async function researchWebsite({ testUrl, testDescription, testTitle }) {
 
     if (tinyFishResults.length > 0) {
       const markdown = tinyFishResultsToMarkdown(tinyFishResults)
-      console.log('[WebSearch] ✅ Investigación web completada con TinyFish')
-      console.log('[WebSearch] ===== FIN INVESTIGACIÓN WEB (TinyFish) =====')
+      console.log(
+        '[WebSearch] ✅ Investigación web completada con TinyFish',
+      )
+      console.log(
+        '[WebSearch] ===== FIN INVESTIGACIÓN WEB (TinyFish) =====',
+      )
       return { content: markdown, source: 'tinyfish' }
     }
   } catch (tinyFishError) {
-    console.warn('[WebSearch] ⚠️ TinyFish también falló:', tinyFishError.message)
+    console.warn(
+      '[WebSearch] ⚠️ TinyFish también falló:',
+      tinyFishError.message,
+    )
   }
 
   // 3. Sin resultados

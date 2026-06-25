@@ -5,6 +5,10 @@ module.exports = {
   css: { sourceMap: false },
 
   devServer: {
+    headers: {
+      'Cross-Origin-Opener-Policy': 'unsafe-none',
+      'Cross-Origin-Embedder-Policy': 'unsafe-none',
+    },
     proxy: {
       '/storage-proxy': {
         target: 'https://firebasestorage.googleapis.com',

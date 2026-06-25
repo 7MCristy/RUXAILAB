@@ -739,8 +739,7 @@ function renderHeuristicCommentsTable(
     const commentText = perQuestionComments[qId]
     if (commentText && String(commentText).trim().length > 0) {
       const qLabel = `Q${qIndex + 1}`
-      const qTitle = getQuestionLabel(question, qIndex)
-      commentRows.push([qLabel, qTitle, stripHtml(String(commentText))])
+      commentRows.push([qLabel, stripHtml(String(commentText))])
     }
   })
 
@@ -749,7 +748,7 @@ function renderHeuristicCommentsTable(
   ensureSpace(commentRows.length * 12 + 30)
   autoTable(doc, {
     startY: y,
-    head: [['Pregunta', 'Descripción', 'Comentario']],
+    head: [['Pregunta', 'Comentario']],
     body: commentRows,
     styles: {
       fontSize: 8,
@@ -768,9 +767,8 @@ function renderHeuristicCommentsTable(
     margin: { left: margin + 6, right: margin },
     theme: 'grid',
     columnStyles: {
-      0: { halign: 'center', cellWidth: 30 },
-      1: { cellWidth: 'auto', overflow: 'linebreak' },
-      2: { overflow: 'linebreak' },
+      0: { halign: 'center', cellWidth: 40 },
+      1: { overflow: 'linebreak' },
     },
   })
 
@@ -1207,6 +1205,91 @@ export async function generateHeuristicPdf(reportData, options = {}) {
   })
   y = doc.lastAutoTable.finalY + 18
 
+  // ─── TABLA: TIPOS DE RESPUESTA POR USO ────────────────────────────────────
+  if (allOptions && allOptions.length > 0 && allAnswers && allAnswers.length > 0) {
+    const usageCount = {}
+    allOptions.forEach((opt) => {
+      if (opt.value != null) usageCount[opt.value] = 0
+    })
+
+    let totalAnswered = 0
+    allAnswers.forEach((answer) => {
+      const heuristics = answer?.heuristicQuestions || []
+      heuristics.forEach((h) => {
+        const questions = h?.heuristicQuestions || []
+        questions.forEach((q) => {
+          const val = q?.heuristicAnswer?.value
+          if (val != null && Object.prototype.hasOwnProperty.call(usageCount, val)) {
+            usageCount[val]++
+            totalAnswered++
+          }
+        })
+      })
+    })
+
+    const totalQuestionsPerEvaluator = (reportData?.testStructure || []).reduce(
+      (sum, h) => sum + (h.questions?.length || h.heuristicQuestions?.length || 0),
+      0,
+    )
+    const evaluatorCount = Math.max(
+      (reportData?.statisticsTable?.items?.[0]
+        ? Object.keys(reportData.statisticsTable.items[0]).filter((k) => k.startsWith('Ev')).length
+        : 0),
+      1,
+    )
+    const totalPossible = totalQuestionsPerEvaluator * evaluatorCount
+
+    const sortedOptions = [...allOptions]
+      .filter((opt) => opt.value != null)
+      .sort((a, b) => (usageCount[b.value] || 0) - (usageCount[a.value] || 0))
+
+    if (sortedOptions.length > 0) {
+      ensureSpace(60)
+      const optionsRows = sortedOptions.map((opt) => [
+        String(opt.value),
+        opt.text || opt.label || 'Sin nombre',
+        String(usageCount[opt.value] || 0),
+      ])
+
+      const contentW = CONTENT_W
+      autoTable(doc, {
+        startY: y,
+        head: [['Valor', 'Tipo de Respuesta', 'Usos']],
+        body: optionsRows,
+        styles: { fontSize: 8, cellPadding: 4 },
+        headStyles: { fillColor: COLORS.accent, textColor: COLORS.white },
+        alternateRowStyles: { fillColor: COLORS.zebra },
+        margin: { left: M, right: M },
+        theme: 'grid',
+        columnStyles: {
+          0: { cellWidth: Math.round(contentW * 0.1), halign: 'center', fontStyle: 'bold' },
+          1: { cellWidth: Math.round(contentW * 0.7), overflow: 'linebreak' },
+          2: { cellWidth: Math.round(contentW * 0.2), halign: 'center' },
+        },
+      })
+      y = doc.lastAutoTable.finalY + 14
+
+      // ── Cuadro resumen: total preguntas aplicables ──────────────────────
+      ensureSpace(50)
+      const boxH = 30
+      const boxW = CONTENT_W * 0.5
+      const boxX = M + (CONTENT_W - boxW) / 2
+      doc.setFillColor(240, 244, 248)
+      doc.setDrawColor(...COLORS.accent)
+      doc.setLineWidth(0.5)
+      doc.roundedRect(boxX, y, boxW, boxH, 4, 4, 'FD')
+      doc.setFont(FONT, 'bold')
+      doc.setFontSize(9)
+      doc.setTextColor(...COLORS.accent)
+      doc.text('Total preguntas respondidas:', boxX + 8, y + 12)
+      doc.text('Total preguntas posibles:', boxX + 8, y + 22)
+      doc.setFont(FONT, 'normal')
+      doc.text(String(totalAnswered), boxX + boxW - 8, y + 12, { align: 'right' })
+      doc.text(String(totalPossible), boxX + boxW - 8, y + 22, { align: 'right' })
+      y += boxH + 14
+    }
+  }
+
   // ─── 4. ANALISIS DETALLADO ────────────────────────────────────────────────
   doc.addPage()
   pageNum += 1
@@ -1276,6 +1359,90 @@ export async function generateHeuristicPdf(reportData, options = {}) {
       y = doc.lastAutoTable.finalY + 10
     }
 
+    // ── Renderizar imágenes de evaluadores ───────────────────────────────
+    const heuristicIndex = (item.position || 1) - 1
+    const imgUrls = getAllImagesForHeuristic(
+      allAnswers,
+      heuristicIndex,
+      testStructure,
+    )
+    if (imgUrls.length > 0) {
+      writeParagraph(`Evidencias visuales (${imgUrls.length}):`, {
+        bold: true,
+        size: 10,
+        spacing: 3,
+      })
+      const maxImgs = Math.min(imgUrls.length, 4)
+      for (let ii = 0; ii < maxImgs; ii++) {
+        try {
+          const base64 = await loadImageAsBase64(imgUrls[ii])
+          if (base64) {
+            ensureSpace(400)
+            const imgWidth = Math.min(CONTENT_W - 12, 400)
+            const imgHeight = 300
+            doc.addImage(base64, 'JPEG', M + 50, y, imgWidth, imgHeight)
+            y += imgHeight + 15
+          }
+        } catch {
+          ensureSpace(12)
+          doc.setFont(FONT, 'normal')
+          doc.setFontSize(8)
+          doc.setTextColor(...COLORS.sub)
+          doc.text(`Imagen: ${imgUrls[ii]}`, M + 6, y)
+          y += 11
+        }
+      }
+    }
+
+    // ── Comentarios del investigador por pregunta ─────────────────────────
+    const perQComments = item.perQuestionComments || {}
+    const hasPerQuestionComments = Object.keys(perQComments).some(
+      (k) => perQComments[k] && String(perQComments[k]).trim().length > 0,
+    )
+    const fallbackComment = normalizeText(item.comments)
+
+    if (hasPerQuestionComments || fallbackComment) {
+      ensureSpace(40)
+      writeParagraph('Comentarios del investigador:', {
+        bold: true,
+        size: 10,
+        spacing: 3,
+      })
+
+      if (hasPerQuestionComments) {
+        const questionDefs = item.questionSummaries || []
+        y = renderHeuristicCommentsTable(doc, perQComments, questionDefs, y, {
+          FONT,
+          M,
+          CONTENT_W,
+          COLORS,
+          ensureSpace,
+        })
+      } else if (fallbackComment) {
+        const commentRows = [[fallbackComment]]
+        ensureSpace(commentRows.length * 12 + 30)
+        autoTable(doc, {
+          startY: y,
+          head: [[]],
+          body: commentRows,
+          styles: {
+            fontSize: 9,
+            cellPadding: 4,
+            font: FONT,
+            lineColor: COLORS.border,
+            lineWidth: 0.1,
+          },
+          margin: { left: M + 6, right: M },
+          theme: 'plain',
+          columnStyles: {
+            0: { overflow: 'linebreak' },
+          },
+        })
+        y = doc.lastAutoTable.finalY + 8
+      }
+      y += 8
+    }
+
     // ── Desviación típica por heurística ─────────────────────────────────
     const sdValue = item.sd
     let sdInterpretation = ''
@@ -1343,13 +1510,6 @@ export async function generateHeuristicPdf(reportData, options = {}) {
       writeParagraph(
         `Se ${pluralize(img, 'adjuntó', 'adjuntaron')} ${img} ${pluralize(img, 'evidencia visual', 'evidencias visuales')} que documentan los hallazgos de esta heurística.`,
         { size: 9, spacing: 3 },
-      )
-    }
-
-    if (normalizeText(item.comments)) {
-      writeParagraph(
-        `Comentarios del investigador: ${stripHtml(item.comments)}`,
-        { size: 9, color: COLORS.sub, spacing: 3 },
       )
     }
 
@@ -1587,6 +1747,8 @@ export async function generateHeuristicPdf(reportData, options = {}) {
   return { fileName, blob }
 }
 
+const generateHeuristicPdfWithAi = generateHeuristicPdf
+
 export {
   loadLogo,
   addFooter,
@@ -1627,4 +1789,5 @@ export {
   getQuestionImageUrls,
   getAllImagesForHeuristic,
   loadImageAsBase64,
+  generateHeuristicPdfWithAi,
 }

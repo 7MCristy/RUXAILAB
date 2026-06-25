@@ -176,7 +176,11 @@ const updateTestDescription = (value) => {
 }
 
 const updateEnglishWebUrl = (value) => {
-  emit('update:test', { ...props.test, englishWebUrl: value })
+  emit('update:test', {
+    ...props.test,
+    englishWebUrl: value,
+    websiteUrl: value,
+  })
   store.commit('SET_LOCAL_CHANGES', true)
 }
 

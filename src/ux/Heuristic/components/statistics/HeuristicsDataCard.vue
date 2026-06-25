@@ -69,14 +69,14 @@
             <!-- Sub-tab 0: Answers by Evaluator -->
             <v-col v-if="localInd == 0" cols="12">
               <v-data-table
-                :headers="heuristicsEvaluator.header"
-                :items="heuristicsEvaluator.items"
+                :headers="enrichedEvaluator.header"
+                :items="enrichedEvaluator.items"
                 :items-per-page="15"
                 class="elevation-0 cardStyle mx-2 mt-3 mb-6"
                 density="compact"
               >
                 <template
-                  v-for="header in heuristicsEvaluator.header"
+                  v-for="header in enrichedEvaluator.header"
                   :key="header.value"
                   #[`item.${header.value}`]="{ item }"
                 >
@@ -104,8 +104,8 @@
             <!-- Sub-tab 1: Answers by Heuristics -->
             <v-col v-if="localInd == 1" cols="12">
               <v-data-table
-                :headers="heuristicsStatistics.header"
-                :items="heuristicsStatistics.items"
+                :headers="enrichedStatistics.header"
+                :items="enrichedStatistics.items"
                 :items-per-page="15"
                 class="elevation-0 cardStyle mx-2 mt-3 mb-6"
                 density="compact"
@@ -241,14 +241,14 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import BarChart from '@/ux/Heuristic/components/charts/BarChart.vue'
 import RadarWeight from '@/ux/Heuristic/components/weights_evaluation/RadarWeight.vue'
 
 // Local tab index — independent from parent ind to avoid collision
 const localInd = ref(0)
 
-defineProps({
+const props = defineProps({
   hasEnoughData: {
     type: Boolean,
     required: true,
@@ -296,6 +296,89 @@ defineProps({
 })
 
 defineEmits(['go-to-heuristic'])
+
+const evaluatorKeys = computed(() => {
+  if (!props.heuristicsEvaluator?.items?.length) return []
+  return Object.keys(props.heuristicsEvaluator.items[0])
+    .filter((k) => k.includes('Ev'))
+    .sort((a, b) => {
+      const numA = parseInt(a.replace('Ev', ''), 10) || 0
+      const numB = parseInt(b.replace('Ev', ''), 10) || 0
+      return numA - numB
+    })
+})
+
+const enrichedEvaluator = computed(() => {
+  const headers = [
+    { title: 'HEURISTICS', align: 'start', value: 'heuristic' },
+    ...evaluatorKeys.value.map((key, i) => ({
+      text: `Evaluator ${i + 1}`,
+      title: `Evaluator ${i + 1}`,
+      align: 'center',
+      value: key,
+    })),
+    {
+      title: 'Averages answers',
+      align: 'center',
+      value: 'avgScore',
+      sortable: false,
+    },
+  ]
+
+  const items = (props.heuristicsEvaluator?.items || []).map((item) => {
+    const scores = evaluatorKeys.value
+      .map((key) => Number(item[key]))
+      .filter((v) => Number.isFinite(v))
+    const avg = scores.length
+      ? (scores.reduce((sum, v) => sum + v, 0) / scores.length).toFixed(2)
+      : '0.00'
+    return { ...item, avgScore: avg }
+  })
+
+  return { header: headers, items }
+})
+
+const enrichedStatistics = computed(() => {
+  const evHeaders = evaluatorKeys.value.map((key, i) => ({
+    title: `Evaluator ${i + 1} (%)`,
+    value: `ev_${key}`,
+    align: 'center',
+    sortable: false,
+  }))
+
+  const headers = [
+    { title: 'HEURISTICS', align: 'start', sortable: false, value: 'name' },
+    {
+      title: 'Percentage (%)',
+      value: 'percentage',
+      align: 'center',
+      sortable: false,
+    },
+    { title: 'SD', value: 'sd', align: 'center', sortable: false },
+    { title: 'Average', value: 'average', align: 'center', sortable: false },
+    ...evHeaders,
+    { title: 'Max', value: 'max', align: 'center', sortable: false },
+    { title: 'Min', value: 'min', align: 'center', sortable: false },
+  ]
+
+  const items = (props.heuristicsStatistics?.items || []).map((item) => {
+    const enriched = { ...item }
+    for (const key of evaluatorKeys.value) {
+      const val = item[key]
+      if (val != null && item.max && item.min && item.max !== item.min) {
+        enriched[`ev_${key}`] = (
+          ((val - item.min) / (item.max - item.min)) *
+          100
+        ).toFixed(2)
+      } else {
+        enriched[`ev_${key}`] = '0.00'
+      }
+    }
+    return enriched
+  })
+
+  return { header: headers, items }
+})
 
 const getColor = (value, max, min) => {
   const numericValue = Number(value)

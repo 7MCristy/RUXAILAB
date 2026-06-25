@@ -455,19 +455,6 @@ function statistics() {
         let totalComments = 0
         let res = heuristic.heuristicQuestions.reduce(
           (SumOfValues, question) => {
-            // LOG TEMPORAL DE DIAGNÓSTICO
-            console.log(
-              '[DEBUG] heuristicAnswer completo:',
-              JSON.stringify(question.heuristicAnswer),
-            )
-            console.log(
-              '[DEBUG] warning field:',
-              question.heuristicAnswer?.warning,
-            )
-            console.log(
-              '[DEBUG] typeof warning:',
-              typeof question.heuristicAnswer?.warning,
-            )
             if (
               question.heuristicAnswer?.value === null &&
               question.heuristicAnswer?.warning !== true
@@ -774,7 +761,7 @@ function buildHeuristicsEvaluator(resultEvaluator, testOptions) {
     const headerExists = table.header.find((h) => h.value === evaluator.id)
     if (!headerExists) {
       table.header.push({
-        text: evaluator.id,
+        text: `Evaluator ${evaluatorIndex}`,
         align: 'center',
         value: evaluator.id,
       })
@@ -880,7 +867,20 @@ function buildHeuristicsEvaluator(resultEvaluator, testOptions) {
  * NOTA: Un SD bajo en una heurística significa que los evaluadores están alineados (validación fuerte).
  *       Un SD alto significa discrepancia entre evaluadores (tal vez la heurística es ambigua).
  */
+function getEvaluatorKeys(heuristicsEvaluator) {
+  if (!heuristicsEvaluator?.items?.length) return []
+  return Object.keys(heuristicsEvaluator.items[0])
+    .filter((k) => k.includes('Ev'))
+    .sort((a, b) => {
+      const numA = parseInt(a.replace('Ev', ''), 10) || 0
+      const numB = parseInt(b.replace('Ev', ''), 10) || 0
+      return numA - numB
+    })
+}
+
 function buildHeuristicsStatistics(heuristicsEvaluator) {
+  const evaluatorKeys = getEvaluatorKeys(heuristicsEvaluator)
+
   const table = {
     header: [
       { title: 'HEURISTICS', align: 'start', sortable: false, value: 'name' },
@@ -897,6 +897,12 @@ function buildHeuristicsStatistics(heuristicsEvaluator) {
         sortable: false,
       },
       { title: 'Average', value: 'average', align: 'center', sortable: false },
+      ...evaluatorKeys.map((key) => ({
+        title: `${key} (%)`,
+        value: key,
+        align: 'center',
+        sortable: false,
+      })),
       { title: 'Max', value: 'max', align: 'center', sortable: false },
       { title: 'Min', value: 'min', align: 'center', sortable: false },
     ],
@@ -920,6 +926,16 @@ function buildHeuristicsStatistics(heuristicsEvaluator) {
         ? (((average - item.min) / (item.max - item.min)) * 100).toFixed(2)
         : '0.00'
 
+    const evaluatorPercentages = {}
+    for (const key of evaluatorKeys) {
+      const val = item[key]
+      if (val != null && item.max && item.min && item.max !== item.min) {
+        evaluatorPercentages[key] = (((val - item.min) / (item.max - item.min)) * 100).toFixed(2)
+      } else {
+        evaluatorPercentages[key] = '0.00'
+      }
+    }
+
     table.items.push({
       name: item.heuristic || 'Unknown',
       max: item.max ? Number(item.max).toFixed(2) : '0.00',
@@ -927,6 +943,7 @@ function buildHeuristicsStatistics(heuristicsEvaluator) {
       percentage,
       sd: results.length ? standardDeviation(results).toFixed(2) : '0.00',
       average,
+      ...evaluatorPercentages,
     })
   }
 

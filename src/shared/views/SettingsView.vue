@@ -632,6 +632,11 @@ const submit = async () => {
         status: localDraft.status,
         isPublic: localDraft.isPublic,
         endDate: localDraft.endDate,
+        websiteUrl:
+          localDraft.websiteUrl ||
+          localDraft.englishWebUrl ||
+          latestStudy.websiteUrl ||
+          '',
       }
 
       const study = instantiateStudyByType(

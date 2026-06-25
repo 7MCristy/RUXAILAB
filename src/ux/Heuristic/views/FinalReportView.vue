@@ -303,7 +303,7 @@ const saveHeuristicComments = async () => {
   const rawData = { ...test.value, ...object.value }
   const updatedTest = instantiateStudyByType(rawData.testType, rawData)
   await store.dispatch('updateStudy', updatedTest)
-  await store.dispatch('Answer/saveHeuristicComments', { ...heuristicComments })
+  await store.dispatch('saveHeuristicComments', { ...heuristicComments })
   await store.dispatch('getStudy', { id: test.value.id })
   
   console.log('[FinalReportView] ✅ Comentarios guardados correctamente')

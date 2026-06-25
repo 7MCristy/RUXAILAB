@@ -17,11 +17,23 @@ import { researchWebsite } from './webSearchService'
 // Configuración desde variables de entorno
 const GEMINI_API_KEY = process.env.VUE_APP_GEMINI_API_KEY
 const GEMINI_MODEL = process.env.VUE_APP_GEMINI_MODEL || 'gemini-1.5-flash'
-const GEMINI_TIMEOUT = 30000 // 30 segundos
+const GEMINI_TIMEOUT = 45000
 const ENABLE_WEB_RESEARCH = process.env.VUE_APP_ENABLE_WEB_RESEARCH !== 'false'
 
 // Instancia del cliente Gemini (inicialización lazy)
 let geminiClient = null
+
+async function checkOllamaAvailable(url = 'http://localhost:11434') {
+  try {
+    const response = await fetch(`${url}/api/tags`, {
+      method: 'GET',
+      signal: AbortSignal.timeout(3000),
+    })
+    return response.ok
+  } catch {
+    return false
+  }
+}
 
 /**
  * Inicializa el cliente de Gemini con la API key
@@ -127,77 +139,83 @@ export async function generateAiReportWithGemini(finalReportItem) {
       },
     }
 
-    console.log('[Gemini] Enviando solicitud a Google AI Studio...')
-    console.log('[Gemini] Configuración:', {
-      model: GEMINI_MODEL,
-      temperature: 0.35,
-      maxOutputTokens: 4000,
-      timeout: GEMINI_TIMEOUT + 'ms',
-    })
+    // Retry loop para errores 429/503
+    const MAX_RETRIES = 2
+    const RETRY_DELAY_MS = 45000
 
-    // Usar la librería oficial con timeout manual
-    const controller = new AbortController()
-    const timeoutId = setTimeout(() => {
-      console.warn('[Gemini] ⏱️ Timeout alcanzado, abortando solicitud...')
-      controller.abort()
-    }, GEMINI_TIMEOUT)
+    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+      try {
+        console.log('[Gemini] Enviando solicitud a Google AI Studio...')
+        if (attempt > 0) {
+          console.log(`[Gemini] 🔄 Retry attempt ${attempt}/${MAX_RETRIES}`)
+        }
 
-    try {
-      const response = await client.models.generateContent(config, {
-        signal: controller.signal,
-      })
+        const controller = new AbortController()
+        const timeoutId = setTimeout(() => {
+          console.warn('[Gemini] ⏱️ Timeout alcanzado, abortando solicitud...')
+          controller.abort()
+        }, GEMINI_TIMEOUT)
 
-      clearTimeout(timeoutId)
+        try {
+          const response = await client.models.generateContent(config, {
+            signal: controller.signal,
+          })
 
-      console.log('[Gemini] ✅ Respuesta recibida')
+          clearTimeout(timeoutId)
 
-      // Extraer el texto de la respuesta
-      const content = response?.text || ''
+          console.log('[Gemini] ✅ Respuesta recibida')
 
-      console.log('[Gemini] 🔍 Estructura de respuesta completa:', {
-        tieneTexto: !!response?.text,
-        tipoTexto: typeof response?.text,
-        tieneCandidates: Array.isArray(response?.candidates),
-        cantidadCandidates: response?.candidates?.length || 0,
-      })
+          const content = response?.text || ''
 
-      if (!content || typeof content !== 'string') {
-        console.error('[Gemini] ❌ Respuesta inválida - content:', typeof content, 'valor:', JSON.stringify(content).substring(0, 200))
-        throw new Error('Respuesta vacía o formato inválido de Gemini API')
+          if (!content || typeof content !== 'string') {
+            console.error('[Gemini] ❌ Respuesta inválida')
+            throw new Error('Respuesta vacía o formato inválido de Gemini API')
+          }
+
+          console.log(
+            '[Gemini] ✅ Informe generado exitosamente, longitud:',
+            content.length,
+          )
+          return { content, webResearch: webResearchContent || '' }
+        } catch (fetchError) {
+          clearTimeout(timeoutId)
+
+          const errMsg = fetchError?.message || ''
+          if (
+            errMsg.includes('message channel closed') ||
+            errMsg.includes('A listener indicated an asynchronous response') ||
+            errMsg.includes('Extension context invalidated')
+          ) {
+            console.warn('[Gemini] ⚠️ Error de extensión Chrome detectado')
+            throw new Error('Error de extensión Chrome. Reintenta.')
+          }
+
+          throw fetchError
+        }
+      } catch (retryError) {
+        const is429 =
+          retryError.message.includes('429') ||
+          retryError.message.includes('RESOURCE_EXHAUSTED') ||
+          retryError.message.includes('quota')
+        const is503 =
+          retryError.message.includes('503') ||
+          retryError.message.includes('UNAVAILABLE')
+
+        if ((is429 || is503) && attempt < MAX_RETRIES) {
+          const delay = is429 ? RETRY_DELAY_MS : 5000 * (attempt + 1)
+          console.warn(
+            `[Gemini] ⏳ Error ${is429 ? '429' : '503'}, retry ${attempt + 1}/${MAX_RETRIES} en ${delay}ms...`,
+          )
+          await new Promise((r) => setTimeout(r, delay))
+          continue
+        }
+
+        throw retryError
       }
-
-      console.log(
-        '[Gemini] ✅ Informe generado exitosamente, longitud:',
-        content.length,
-        'caracteres',
-      )
-      console.log('[Gemini] 📄 Preview del informe (primeros 200 chars):', content.substring(0, 200))
-      return { content, webResearch: webResearchContent || '' }
-    } catch (fetchError) {
-      clearTimeout(timeoutId)
-      console.error('[Gemini] ❌ Error en la solicitud fetch:', {
-        nombre: fetchError.name,
-        mensaje: fetchError.message,
-        tipo: typeof fetchError,
-      })
-
-      // Detecta errores de extensión de Chrome (no son errores reales de la app)
-      const errMsg = fetchError?.message || ''
-      if (
-        errMsg.includes('message channel closed') ||
-        errMsg.includes('A listener indicated an asynchronous response') ||
-        errMsg.includes('Extension context invalidated')
-      ) {
-        console.warn('[Gemini] ⚠️ Error de extensión Chrome detectado, ignorando...')
-        throw new Error('Error de comunicación con extensión de Chrome. Reintenta la operación.')
-      }
-
-      throw fetchError
     }
   } catch (error) {
     console.error('[Gemini] ❌ Error al generar informe:', error.message)
 
-    // Interpreta errores específicos
     if (error.message.includes('API key') || error.message.includes('403')) {
       throw new Error(
         'API Key de Gemini inválida. Verifica VUE_APP_GEMINI_API_KEY en .env',
@@ -212,7 +230,7 @@ export async function generateAiReportWithGemini(finalReportItem) {
 
     if (error.message.includes('404') || error.message.includes('not found')) {
       throw new Error(
-        `Modelo ${GEMINI_MODEL} no encontrado. Verifica que el nombre del modelo sea correcto.`,
+        `Modelo ${GEMINI_MODEL} no encontrado.`,
       )
     }
 
@@ -220,7 +238,6 @@ export async function generateAiReportWithGemini(finalReportItem) {
       throw new Error(`Gemini API timeout después de ${GEMINI_TIMEOUT}ms`)
     }
 
-    // Re-lanza error genérico con más detalles
     throw new Error(`Gemini API error: ${error.message}`)
   }
 }
@@ -238,6 +255,13 @@ export async function generateAiReportWithOllama(
 ) {
   try {
     console.log('[Ollama] ⏳ Generando informe con Ollama local...')
+
+    const baseUrl = ollamaUrl.replace('/api/chat', '')
+    const isAvailable = await checkOllamaAvailable(baseUrl)
+    if (!isAvailable) {
+      console.warn('[Ollama] ⚠️ Ollama no está disponible en', baseUrl)
+      throw new Error('Ollama no está disponible')
+    }
 
     const body = buildOllamaRequestBody(finalReportItem)
 

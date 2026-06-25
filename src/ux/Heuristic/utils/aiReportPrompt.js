@@ -111,8 +111,63 @@ function getQuestionSummaries(reportItem, heuristicIndex) {
       question?.name ||
       `Pregunta ${questionIndex + 1}`
 
+    const questionLabel = `Q${questionIndex + 1}`
+
+    const descriptions = (question.descriptions || [])
+      .map((d) => (d.title ? `${d.title}: ${d.text || ''}` : d.text || ''))
+      .filter(Boolean)
+      .join('; ')
+
+    const questionText = stripHtml(question?.text || '')
+
+    const imageUrls = allAnswers
+      .flatMap((answer) => {
+        const qData =
+          answer?.heuristicQuestions?.[heuristicIndex]?.heuristicQuestions?.[
+            questionIndex
+          ]
+        if (!qData) return []
+        const imgs = Array.isArray(qData.images) ? qData.images : []
+        const fromLegacy = qData.answerImageUrl
+          ? [qData.answerImageUrl]
+          : []
+        return [
+          ...imgs.map((img) => img.url).filter(Boolean),
+          ...fromLegacy,
+        ]
+      })
+      .filter(Boolean)
+
+    const commentDetails = []
+    allAnswers.forEach((answer, answerIdx) => {
+      const qData =
+        answer?.heuristicQuestions?.[heuristicIndex]?.heuristicQuestions?.[
+          questionIndex
+        ]
+      if (!qData) return
+      const texts = []
+      if (Array.isArray(qData.comments)) {
+        qData.comments.forEach((c) => {
+          if (c?.text) texts.push(c.text)
+        })
+      }
+      if (texts.length === 0 && qData.heuristicComment) {
+        texts.push(qData.heuristicComment)
+      }
+      texts.forEach((text) => {
+        commentDetails.push({
+          evaluator: `Evaluador ${answerIdx + 1}`,
+          text,
+          questionIndex: questionIndex + 1,
+        })
+      })
+    })
+
     return {
       title: stripHtml(title),
+      questionLabel,
+      descriptions: descriptions || null,
+      text: questionText,
       average: avg != null ? avg : null,
       averagePercent:
         avg != null && maxPossible > 0
@@ -122,6 +177,9 @@ function getQuestionSummaries(reportItem, heuristicIndex) {
       evaluatorCount: values.length,
       warnings,
       values: values.map((v) => v.toFixed(1)),
+      imageUrls: [...new Set(imageUrls)].slice(0, 5),
+      imageCount: imageUrls.length,
+      commentDetails,
     }
   })
 }
@@ -129,12 +187,17 @@ function getQuestionSummaries(reportItem, heuristicIndex) {
 function formatQuestionSummary(questions) {
   if (!questions.length) return '  No hay datos de preguntas disponibles.'
   return questions
-    .map((q, i) => {
+    .map((q) => {
       const warningTag =
         q.warnings > 0
           ? ` ⚠️ (${q.warnings} warning${q.warnings > 1 ? 's' : ''})`
           : ''
-      return `  ${i + 1}. "${q.title}" → Media: ${q.average != null ? q.average.toFixed(2) + '/' + q.maxPossible + ' (' + q.averagePercent + ')' : 'N/D'}${warningTag}`
+      const imageTag =
+        q.imageCount > 0
+          ? ` 📷 [${q.questionLabel}: ${q.imageCount} evidencia(s)]`
+          : ''
+      const descTag = q.descriptions ? ` — ${q.descriptions}` : ''
+      return `  ${q.questionLabel}. "${q.title}"${descTag} → Media: ${q.average != null ? q.average.toFixed(2) + '/' + q.maxPossible + ' (' + q.averagePercent + ')' : 'N/D'}${warningTag}${imageTag}`
     })
     .join('\n')
 }
@@ -175,6 +238,15 @@ function buildHeuristicDetailData(reportItem, heuristicStats) {
       warnings: getWarningsByHeuristic(reportItem, item?.name),
       questionSummary: formatQuestionSummary(questions),
       questions,
+      imageSummary:
+        questions
+          .filter((q) => q.imageCount > 0)
+          .map(
+            (q) =>
+              `${q.questionLabel} (${q.title}): ${q.imageCount} imagen(es)`,
+          )
+          .join('; ') || null,
+      allComments: questions.flatMap((q) => q.commentDetails || []),
       manualComment: (() => {
         const heuId = reportItem?.testStructure?.[index]?.id
         const heuComments = reportItem?.heuristicComments?.[heuId]
@@ -241,6 +313,18 @@ export function buildHeuristicReportPrompt(
   const heuristicsDetailText = sortedByImpact
     .map((h, i) => {
       const rank = i + 1
+      const imageLine = h.imageSummary
+        ? `  Evidencias visuales: ${h.imageSummary}`
+        : ''
+      const commentsBlock =
+        h.allComments && h.allComments.length > 0
+          ? `  Comentarios de evaluadores:\n${h.allComments
+              .map(
+                (c) =>
+                  `    - [${c.evaluator}] Q${c.questionIndex}: "${c.text}"`,
+              )
+              .join('\n')}`
+          : `  Comentarios de evaluadores: ${h.manualComment ? `"${h.manualComment}"` : 'Sin comentarios'}`
       return `
 --- Heurística #${rank}: ${h.title} (${h.compliance != null ? h.compliance.toFixed(2) + '%' : 'N/D'}) ---
   Severidad: ${h.severity}
@@ -249,7 +333,8 @@ export function buildHeuristicReportPrompt(
   Warnings: ${h.warnings}
   Preguntas:
 ${h.questionSummary}
-  Comentarios de evaluadores: ${h.manualComment ? `"${h.manualComment}"` : 'Sin comentarios'}
+${imageLine}
+${commentsBlock}
 `.trim()
     })
     .join('\n\n')
@@ -273,6 +358,69 @@ ${h.questionSummary}
         .join('\n')
     : '  No disponibles'
 
+  const testStructureText = (reportItem?.testStructure || [])
+    .map((h, i) => {
+      const questions = h.questions || h.heuristicQuestions || []
+      const qTitles = questions
+        .map(
+          (q, qi) =>
+            `    Q${qi + 1}: ${stripHtml(q.title || q.name || 'Sin título')}`,
+        )
+        .join('\n')
+      return `  H${i + 1}: ${stripHtml(h.title || h.name || 'Sin título')}\n${qTitles}`
+    })
+    .join('\n') || '  No disponible'
+
+  const avgQuestionsPerHeuristic = Math.round(
+    (reportItem?.testStructure || []).reduce(
+      (sum, h) =>
+        sum + (h.questions?.length || h.heuristicQuestions?.length || 0),
+      0,
+    ) / Math.max((reportItem?.testStructure || []).length, 1),
+  )
+
+  const allOptions = reportItem?.allOptions || []
+  const allAnswers = reportItem?.allAnswers || []
+  let responseTypesText = ''
+  if (allOptions.length > 0 && allAnswers.length > 0) {
+    const usageCount = {}
+    allOptions.forEach((opt) => {
+      if (opt.value != null) usageCount[opt.value] = 0
+    })
+    let totalAnswered = 0
+    allAnswers.forEach((answer) => {
+      const heuristics = answer?.heuristicQuestions || []
+      heuristics.forEach((h) => {
+        const questions = h?.heuristicQuestions || []
+        questions.forEach((q) => {
+          const val = q?.heuristicAnswer?.value
+          if (val != null && Object.prototype.hasOwnProperty.call(usageCount, val)) {
+            usageCount[val]++
+            totalAnswered++
+          }
+        })
+      })
+    })
+    const totalQuestionsPerEvaluator = (reportItem?.testStructure || []).reduce(
+      (sum, h) => sum + (h.questions?.length || h.heuristicQuestions?.length || 0),
+      0,
+    )
+    const evaluatorCount = Math.max(
+      (reportItem?.statisticsTable?.items?.[0]
+        ? Object.keys(reportItem.statisticsTable.items[0]).filter((k) => k.startsWith('Ev')).length
+        : 0),
+      1,
+    )
+    const totalPossible = totalQuestionsPerEvaluator * evaluatorCount
+    const sortedOptions = [...allOptions]
+      .filter((opt) => opt.value != null)
+      .sort((a, b) => (usageCount[b.value] || 0) - (usageCount[a.value] || 0))
+    responseTypesText = sortedOptions
+      .map((opt) => `  - ${opt.text || opt.label || 'Sin nombre'}: ${usageCount[opt.value] || 0} usos`)
+      .join('\n')
+    responseTypesText += `\n  Total respondidas: ${totalAnswered} / ${totalPossible} preguntas posibles`
+  }
+
   return `
 Genera un INFORME DE EVALUACIÓN HEURÍSTICA profesional con las 5 secciones que se indican a continuación.
 
@@ -292,8 +440,24 @@ DATOS DEL SISTEMA EVALUADO:
 - Severidad global: ${globalSeverity}
 - Total de warnings: ${globalWarnings}
 
+ESTRUCTURA DE LA EVALUACIÓN:
+- Cada heurística contiene ${avgQuestionsPerHeuristic} preguntas evaluadas
+- Los evaluadores puntuaron cada pregunta en la escala definida en el test
+- Los warnings indican preguntas que requieren análisis profundo
+
+ESTRUCTURA DE HEURÍSTICAS Y PREGUNTAS:
+${testStructureText}
+
 PUNTUACIONES POR EVALUADOR:
 ${evaluatorSummary}
+
+INSTRUCCIONES PARA ANÁLISIS CUALITATIVO:
+- Para cada heurística, analiza la media y la desviación típica.
+- Outliers: si algún evaluador puntúa más de 1 desviación típica por encima o por debajo de la media, consíderalo un "voto discrepante". Menciónalo pero NO lo incluyas en el análisis principal de tendencia.
+- Comentarios atípicos: si un comentario se desvía significativamente del consenso (por ejemplo, un elogio cuando el resto reporta problemas graves, o viceversa), menciónalo separadamente como comentario atípico.
+- Base tu análisis principalmente en la tendencia central (media) y en el consenso entre la mayoría de evaluadores.
+- Cuando cites datos numéricos, usa la media redondeada a 1 decimal.
+- Si hay alta dispersión (desviación típica > 0.5), señala que la experiencia puede variar según el perfil del usuario.
 
 ================================================================
 SECCION 1 - INTRODUCCION
@@ -322,6 +486,24 @@ Redacta un único párrafo denso de 6-8 frases que:
 ${evaluatorSummary}
 
 Sin viñetas. Párrafo continuo.
+
+${
+  responseTypesText
+    ? `
+===============================================================
+SECCION 2B - TIPOS DE RESPUESTA POR USO
+===============================================================
+Redacta 2-3 frases que expliquen:
+1. Qué representan los tipos de respuesta (las opciones de puntuación disponibles en el test).
+2. Cuáles son los tipos más y menos utilizados y qué sugiere eso sobre el comportamiento de los evaluadores.
+3. El total de preguntas respondidas frente al total posible, y qué indica esa cobertura sobre la exhaustividad del estudio.
+
+Datos de tipos de respuesta (ordenados de mayor a menor uso):
+${responseTypesText}
+
+Sin viñetas. Párrafo continuo y analítico.`
+    : ''
+}
 
 ================================================================
 SECCION 3 - PRIORIDAD Y ANALISIS DETALLADO POR HEURISTICA

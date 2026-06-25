@@ -28,7 +28,7 @@
 
           <v-checkbox
             v-model="pdfConfig.includeHeuristicComments"
-            label="Comentarios por heurística"
+            label="Comments by heuristic"
             density="comfortable"
             hide-details
             class="mb-2"
@@ -189,7 +189,7 @@ import {
 } from '@/ux/Heuristic/utils/statistics'
 import { buildOllamaRequestBody } from '@/ux/Heuristic/utils/aiReportPrompt'
 import { STUDY_TYPES } from '@/shared/constants/methodDefinitions'
-import { generateAiReportWithFallback } from '@/app/services/geminiReportService'
+import { generateAiReportWithFallback, correctCommentsWithAI } from '@/app/services/geminiReportService'
 
 const store = useStore()
 const { t } = useI18n()
@@ -211,6 +211,8 @@ const previewFileName = ref('informe_heuristica_evaluacion.pdf')
 const previewTitle = ref('Vista previa del informe')
 const previewStatus = ref('Generando vista previa...')
 const previewError = ref('')
+const correctedHeuristicComments = ref(null)
+const isCorrectingComments = ref(false)
 
 // Configuración de PDF (para UI, pero NO filtra datos en buildFinalReportItem)
 const pdfConfig = reactive({
@@ -223,6 +225,50 @@ const pdfConfig = reactive({
   includeGroupedAnswers: true,
   anonymizeEvaluators: false,
 })
+
+// Corregir comentarios con IA
+const correctComments = async () => {
+  if (!props.heuristicComments || Object.keys(props.heuristicComments).length === 0) {
+    console.log('[FinalReportSelectionBox] No hay comentarios para corregir')
+    correctedHeuristicComments.value = null
+    return
+  }
+  
+  if (correctedHeuristicComments.value) {
+    console.log('[FinalReportSelectionBox] Comentarios ya corregidos anteriormente')
+    return
+  }
+  
+  isCorrectingComments.value = true
+  console.log('[FinalReportSelectionBox] Corrigiendo comentarios con IA...')
+  console.log('[FinalReportSelectionBox] Comentarios originales:', props.heuristicComments)
+  
+  try {
+    // Convertir de Proxy a objeto plano
+    const plainComments = JSON.parse(JSON.stringify(props.heuristicComments))
+    
+    // Detectar idioma (buscar palabras clave en catalán)
+    const sampleText = Object.values(plainComments)
+      .flatMap(h => Object.values(h))
+      .filter(t => t && typeof t === 'string')
+      .join(' ')
+    
+    const isCatalan = sampleText.includes('per') || sampleText.includes('que') || sampleText.includes('la') || sampleText.includes('el')
+    const language = isCatalan ? 'ca' : 'es'
+    
+    console.log('[FinalReportSelectionBox] Idioma detectado:', language)
+    
+    const corrected = await correctCommentsWithAI(plainComments, language)
+    correctedHeuristicComments.value = corrected
+    console.log('[FinalReportSelectionBox] ✅ Comentarios corregidos:', corrected)
+    
+  } catch (error) {
+    console.error('[FinalReportSelectionBox] ❌ Error corrigiendo comentarios:', error)
+    correctedHeuristicComments.value = null
+  } finally {
+    isCorrectingComments.value = false
+  }
+}
 
 const testAnswerDocument = computed(() => store.state.Answer.testAnswerDocument)
 
@@ -508,8 +554,17 @@ const buildFinalReportItem = () => {
     statisticsTable: store.state.Answer.evaluatorStatistics,
     evaluatorTimeItems: store.state.Answer.evaluatorStatistics?.items || [],
     type: testAnswerDocument.value?.type || STUDY_TYPES.HEURISTIC,
-    // SIEMPRE incluir comentarios (versión recuperada)
-    heuristicComments: props.heuristicComments,
+    // SIEMPRE incluir comentarios (usar corregidos si disponibles)
+    heuristicComments: correctedHeuristicComments.value || props.heuristicComments,
+    // Log para verificar comentarios
+    _commentDebug: (() => {
+      const commentsToUse = correctedHeuristicComments.value || props.heuristicComments
+      console.log('[buildFinalReportItem] 🎯 heuristicComments a incluir:', commentsToUse)
+      console.log('[buildFinalReportItem] 📊 Número de heurísticas con comentarios:', 
+        Object.keys(commentsToUse || {}).length)
+      console.log('[buildFinalReportItem] ⚡ Usando comentarios:', correctedHeuristicComments.value ? 'CORREGIDOS' : 'ORIGINALES')
+      return null
+    })(),
     evaluatorPercentages: evaluatorPercentages.value,
     heuristicRanking: {
       items: heuristicRankingItems,
@@ -652,13 +707,23 @@ const openPdfPreview = async (
 
 const previewPdf = async () => {
   isLoading.value = true
+  console.log('[previewPdf] 🚀 Iniciando previsualización SIN IA')
+  console.log('[previewPdf] 📝 Comentarios en props:', props.heuristicComments)
+  
+  // Corregir comentarios con IA
+  await correctComments()
+  
   startPreview('Vista previa del informe sin IA', 'Construyendo PDF...')
   try {
-    await openPdfPreview(buildFinalReportItem(), '', {
+    const reportItem = buildFinalReportItem()
+    console.log('[previewPdf] ✅ buildFinalReportItem completado')
+    console.log('[previewPdf] 📦 heuristicComments en reportItem:', reportItem.heuristicComments)
+    await openPdfPreview(reportItem, '', {
       showQuickSummary: false,
     })
+    console.log('[previewPdf] ✅ PDF generado exitosamente (sin IA)')
   } catch (error) {
-    console.error('PDF preview failed:', error)
+    console.error('[previewPdf] ❌ Error:', error)
     showPreviewError(error, 'No se pudo generar la vista previa sin IA.')
   } finally {
     isLoading.value = false
@@ -668,13 +733,23 @@ const previewPdf = async () => {
 const previewPdfWithAi = async () => {
   isLoading.value = true
   console.log('[previewPdfWithAi] 🚀 INICIO - Vista previa con IA')
+  console.log('[previewPdfWithAi] 📝 Comentarios en props:', props.heuristicComments)
+  
+  // Corregir comentarios con IA
+  await correctComments()
+  
   startPreview(
     'Vista previa del informe con IA',
     'Generando informe con IA...',
   )
   try {
     const finalReportItem = buildFinalReportItem()
-    console.log('[previewPdfWithAi] 📦 finalReportItem construido, llamando a generateAiFinalReport...')
+    console.log('[previewPdfWithAi] 📦 finalReportItem construido')
+    console.log('[previewPdfWithAi] 📦 heuristicComments en finalReportItem:', finalReportItem.heuristicComments)
+    console.log('[previewPdfWithAi] 📦 Número de heurísticas con comentarios:', 
+      Object.keys(finalReportItem.heuristicComments || {}).length)
+    console.log('[previewPdfWithAi] 📦 Contenido de comentarios:', JSON.stringify(finalReportItem.heuristicComments, null, 2))
+    console.log('[previewPdfWithAi] 📦 Llamando a generateAiFinalReport...')
     const aiContent = await generateAiFinalReport(finalReportItem)
     console.log('[previewPdfWithAi] ✅ Contenido IA recibido, asignando a finalReportItem...')
     finalReportItem.finalReport = aiContent
@@ -690,6 +765,7 @@ const previewPdfWithAi = async () => {
 
     try {
       const fallbackItem = buildFinalReportItem()
+      console.log('[previewPdfWithAi] 📦 heuristicComments en fallbackItem:', fallbackItem.heuristicComments)
       fallbackItem.finalReport = buildFallbackConclusion()
       fallbackItem.studyConclusion = fallbackItem.finalReport
       console.log('[previewPdfWithAi] Generando PDF de respaldo (sin IA)...')

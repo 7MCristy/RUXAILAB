@@ -1,233 +1,807 @@
-/* eslint-disable no-console */
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
 import { formatTimeSpentFromMs } from '@/ux/Heuristic/utils/statistics'
-import {
-  loadLogo,
-  normalizeText,
-  pluralize,
-  stripHtml,
-  getNumber,
-  getEvaluatorLabel,
-  formatDecimal,
-  getHeuristicsCellColor,
-  getContrastingTextColor,
-  parseMmSsToMs,
-  getMaxQuestionScore,
-  buildHeuristicEvidence,
-  renderCommentsTable,
-  renderHeuristicCommentsTable,
-  getAllImagesForHeuristic,
-  loadImageAsBase64,
-} from './pdfGenerator'
 
 const FONT = 'helvetica'
-const M = 56
+const M = 52
 const PAGE_W = 595.28
 const PAGE_H = 841.89
 const CONTENT_W = PAGE_W - M * 2
 const LH = 14
-
 const COLORS = {
-  primary: [30, 45, 60],
-  secondary: [58, 85, 110],
-  accent: [41, 128, 185],
-  text: [44, 48, 52],
-  sub: [130, 140, 150],
-  muted: [220, 225, 230],
-  bg: [248, 249, 250],
+  text: [34, 34, 34],
+  sub: [120, 120, 120],
+  accent: [38, 50, 56],
+  tableHead: [38, 50, 56],
+  zebra: [246, 246, 246],
+  border: [230, 230, 230],
   white: [255, 255, 255],
-  green: [39, 174, 96],
-  yellow: [241, 170, 50],
-  orange: [225, 130, 40],
-  red: [200, 60, 50],
-  tableHead: [41, 128, 185],
-  tableStripe: [245, 248, 250],
-  tableBorder: [220, 225, 230],
+  green: [111, 175, 148],
+  yellow: [196, 160, 60],
+  red: [180, 70, 60],
 }
-
 const SEVERITY_COLORS = {
-  Leve: [39, 174, 96],
-  Moderado: [241, 170, 50],
-  Grave: [225, 130, 40],
-  Crítico: [200, 60, 50],
+  Leve: [111, 175, 148],
+  Moderado: [196, 160, 60],
+  Grave: [219, 136, 40],
+  Crítico: [180, 70, 60],
 }
 
-const SECTION_NAMES = [
-  'introducción',
-  'resumen ejecutivo',
-  'prioridad',
-  'comparativa de puntuaciones',
-  'conclusión',
-]
-
-const SECTION_PATTERNS = [
-  /^SECCI[OÓ]N\s+\d+\s*[-–—]\s*(.+)/im,
-  /^\d+[\.\)]\s*(Introducción|Resumen ejecutivo|Prioridad|Análisis detallado|Comparativa|Conclusión)/im,
-  /^##+\s*(.+)/im,
-  /^\*{1,2}(SECCI[OÓ]N\s+\d+\s*[-–—]\s*.+)\*{1,2}/im,
-  /^\*{1,2}(\d+[\.\)]\s*.+)\*{1,2}/im,
-  /^(?:SECCI[OÓ]N\s+\d+\s*:?\s*)?(Introducción|Resumen ejecutivo|Prioridad(?: y análisis detallado)?(?: de mejora)?|Análisis detallado|Comparativa|Conclusión)\s*:?\s*$/im,
-]
-
-function parseAiSections(aiText) {
-  const lines = aiText.split('\n')
-  const sections = []
-  let currentSection = null
-  let currentContent = []
-
-  for (const line of lines) {
-    const trimmed = line.trim()
-    let matched = false
-
-    for (const pattern of SECTION_PATTERNS) {
-      const match = trimmed.match(pattern)
-      if (match) {
-        if (currentSection) {
-          sections.push({
-            title: currentSection,
-            content: currentContent.join('\n').trim(),
-          })
-          currentContent = []
-        }
-        currentSection = match[1] || trimmed
-        matched = true
-        break
+function loadLogo(url, maxHeight) {
+  return new Promise((resolve) => {
+    const img = new Image()
+    img.crossOrigin = 'anonymous'
+    img.onload = () => {
+      try {
+        const aspect = img.width / img.height
+        const w = maxHeight * aspect
+        resolve({ img, width: w, height: maxHeight })
+      } catch {
+        resolve(null)
       }
     }
+    img.onerror = () => resolve(null)
+    img.src = url
+  })
+}
 
-    if (!matched) {
-      const lower = trimmed.toLowerCase()
-      for (let i = 0; i < SECTION_NAMES.length; i++) {
-        if (
-          lower.startsWith(SECTION_NAMES[i]) ||
-          lower.includes(SECTION_NAMES[i])
-        ) {
-          if (currentSection) {
-            sections.push({
-              title: currentSection,
-              content: currentContent.join('\n').trim(),
-            })
-            currentContent = []
-          }
-          currentSection = trimmed
-          matched = true
-          break
-        }
-      }
-    }
-
-    if (!matched) {
-      currentContent.push(line)
-    }
-  }
-
-  if (currentSection) {
-    sections.push({
-      title: currentSection,
-      content: currentContent.join('\n').trim(),
-    })
-  }
-
-  if (sections.length === 0 && aiText.trim()) {
-    sections.push({ title: '', content: aiText.trim() })
-  }
-
-  return sections
+function addFooter(doc, pageNum) {
+  const y = PAGE_H - 20
+  doc.setFont(FONT, 'normal')
+  doc.setFontSize(8)
+  doc.setTextColor(...COLORS.sub)
+  doc.text(
+    `INFORME DE EVALUACIÓN HEURÍSTICA - Pág. ${pageNum}`,
+    PAGE_W / 2,
+    y,
+    { align: 'center' },
+  )
 }
 
 function getSeverityFromPercentage(value) {
   const n = getNumber(value, Number.NaN)
-  if (!Number.isFinite(n)) return '—'
-  if (n < 50) return 'Crítico'
-  if (n < 75) return 'Moderado'
-  if (n < 90) return 'Leve'
-  return 'Óptimo'
+  if (!Number.isFinite(n)) return 'Crítico'
+  if (n >= 75) return 'Leve'
+  if (n >= 50) return 'Moderado'
+  if (n >= 25) return 'Grave'
+  return 'Crítico'
 }
 
-/**
- * Parse numbered heuristic analysis blocks from AI text.
- * Matches patterns like:
- *   1. [Heuristic Name]
- *   2. [Heuristic Name]
- *
- * Returns array of { index, name, text } where text is the paragraph content.
- */
-function parseNumberedHeuristicBlocks(text) {
-  if (!text) return []
-  const blocks = []
-  const regex = /^(\d+)\.\s*\[([^\]]+)\]\s*$/gm
-  const lines = text.split('\n')
-  let current = null
-
-  for (const line of lines) {
-    regex.lastIndex = 0
-    const trimmed = line.trim()
-
-    const numberedMatch = trimmed.match(/^(\d+)\.\s*\[([^\]]+)\]\s*$/)
-    if (numberedMatch) {
-      if (current) blocks.push(current)
-      current = {
-        index: parseInt(numberedMatch[1], 10),
-        name: numberedMatch[2].trim(),
-        text: '',
-      }
-    } else if (current) {
-      current.text += (current.text ? '\n' : '') + line
-    }
-  }
-  if (current) blocks.push(current)
-
-  return blocks
-}
-
-/**
- * Normalize heuristic name for fuzzy matching.
- */
-function normalizeHeuristicName(name) {
-  return name
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/[^a-z0-9 ]/g, '')
+function normalizeText(value) {
+  return String(value ?? '')
+    .replace(/\s+/g, ' ')
     .trim()
 }
 
-/**
- * Match a numbered block from AI text to an evidence heuristic item by name similarity.
- */
-function matchBlockToEvidenceItem(block, orderedByImpact) {
-  if (!block || !orderedByImpact) return null
-  const blockNorm = normalizeHeuristicName(block.name)
-  for (const item of orderedByImpact) {
-    const itemNorm = normalizeHeuristicName(item.label)
-    if (itemNorm === blockNorm) return item
-    if (itemNorm.includes(blockNorm) || blockNorm.includes(itemNorm))
-      return item
+function pluralize(count, singular, plural) {
+  const n = Number(count)
+  return n === 1 ? singular : plural
+}
+
+function stripHtml(value = '') {
+  return String(value)
+    .replace(/<[^>]*>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+function extractCommentTexts(answer) {
+  const comments = []
+
+  // Array format: answer.comments = [{id, text, createdAt}]
+  if (Array.isArray(answer?.comments)) {
+    comments.push(...answer.comments)
+  }
+
+  // Nested array format
+  if (Array.isArray(answer?.heuristicAnswer?.comments)) {
+    comments.push(...answer.heuristicAnswer.comments)
+  }
+
+  // Legacy string format: answer.heuristicComment = "text"
+  const legacyComment = normalizeText(answer?.heuristicComment)
+  if (legacyComment) {
+    comments.push(legacyComment)
+  }
+
+  // Nested legacy string
+  const legacyNested = normalizeText(answer?.heuristicAnswer?.heuristicComment)
+  if (legacyNested) {
+    comments.push(legacyNested)
+  }
+
+  const result = comments
+    .map((comment) => {
+      if (typeof comment === 'string') return normalizeText(comment)
+      return normalizeText(comment?.text || comment)
+    })
+    .filter(Boolean)
+
+  return result
+}
+
+function getNumber(value, fallback = 0) {
+  const numericValue = Number.parseFloat(
+    String(value ?? '')
+      .replace('%', '')
+      .replace(',', '.'),
+  )
+  return Number.isFinite(numericValue) ? numericValue : fallback
+}
+
+function getHeuristicLabel(heuristic, index) {
+  const id = heuristic?.heuristicId || `H${index + 1}`
+  const title = normalizeText(heuristic?.heuristicTitle || heuristic?.title)
+  return title ? `${id} — ${title}` : id
+}
+
+function getHeuristicShortTitle(heuristic, index) {
+  return (
+    normalizeText(heuristic?.heuristicTitle || heuristic?.title) ||
+    `Heurística ${index + 1}`
+  )
+}
+
+function getEvaluatorLabel(item, index) {
+  return `Evaluador/a ${index + 1}`
+}
+
+function getQuestionLabel(question, index) {
+  const title = normalizeText(question?.title)
+  const text = normalizeText(question?.text)
+  if (title && text && title !== text) return `${index + 1}. ${title} — ${text}`
+  if (title) return `${index + 1}. ${title}`
+  if (text) return `${index + 1}. ${text}`
+  return `${index + 1}. Pregunta sin título`
+}
+
+function getHeuristicDomainWeight(title) {
+  const normalized = normalizeText(title).toLowerCase()
+  if (
+    /(color|legibilidad|est[eé]tico|minimalista|visual|apariencia|tipograf|estilo)/i.test(
+      normalized,
+    )
+  ) {
+    return 0.82
+  }
+  if (
+    /(ayuda|documentaci[oó]n|error|errores|prevenci[oó]n|guardar|latencia|estado|consistencia|control|memoria|autonom[ií]a|met[aá]foras|flexibilidad)/i.test(
+      normalized,
+    )
+  ) {
+    return 1.12
+  }
+  return 1
+}
+
+function getHeuristicPurposeText(title) {
+  const normalized = normalizeText(title).toLowerCase()
+  if (/visibilidad|estado/.test(normalized)) {
+    return 'Comprueba si el sistema informa su estado, progreso y resultados de forma continua para evitar incertidumbre durante la ejecución de tareas.'
+  }
+  if (/relaci|mundo real|lenguaje/.test(normalized)) {
+    return 'Evalúa si la interfaz utiliza lenguaje y conceptos familiares para las personas usuarias, reduciendo interpretaciones ambiguas.'
+  }
+  if (/control|libertad|volver|deshacer/.test(normalized)) {
+    return 'Analiza si la persona usuaria puede avanzar, retroceder o corregir decisiones con facilidad, sin quedarse bloqueada en el flujo.'
+  }
+  if (/consistencia|est[aá]ndar/.test(normalized)) {
+    return 'Valida la coherencia entre etiquetas, componentes y comportamientos para evitar cambios inesperados entre pantallas.'
+  }
+  if (/error|prevenci/.test(normalized)) {
+    return 'Revisa la capacidad de prevenir errores y de guiar decisiones seguras antes de que se produzcan incidencias.'
+  }
+  if (/reconocimiento|memoria/.test(normalized)) {
+    return 'Mide si la interfaz reduce la carga de memoria manteniendo visible la información relevante y las opciones disponibles.'
+  }
+  if (/flexibilidad|eficiencia|atajo/.test(normalized)) {
+    return 'Examina la eficiencia operativa para perfiles noveles y expertos, incluyendo recorridos optimizados y acciones frecuentes.'
+  }
+  if (/est[eé]tico|minimalista|visual|legibilidad|color/.test(normalized)) {
+    return 'Evalúa la calidad visual y legibilidad para facilitar comprensión rápida, jerarquía clara y reducción de ruido en pantalla.'
+  }
+  if (/recuperaci[oó]n|diagnosticar|mensajes/.test(normalized)) {
+    return 'Analiza la claridad de mensajes de error y la facilidad para recuperar el flujo sin pérdida de contexto.'
+  }
+  if (/ayuda|documentaci[oó]n/.test(normalized)) {
+    return 'Valida la disponibilidad de ayuda útil y accesible para resolver dudas puntuales sin interrumpir el trabajo principal.'
+  }
+  return 'Evalúa la calidad de uso para detectar fricciones, reducir errores y mejorar eficacia, eficiencia y satisfacción de las personas usuarias.'
+}
+
+function getQuestionQualitativeLabel(average, max = 1) {
+  const ratio = max > 0 ? average / max : 0
+  if (ratio === 0)
+    return 'No cumplido: ningún evaluador confirmó este criterio.'
+  if (ratio < 0.35)
+    return 'Cumplimiento muy bajo: la mayoría de evaluadores detectaron ausencia o fallo claro.'
+  if (ratio < 0.6)
+    return 'Cumplimiento parcial: los evaluadores mostraron opiniones divididas sobre este criterio.'
+  if (ratio < 0.85)
+    return 'Cumplimiento mayoritario: se cumple en general pero con excepciones observadas.'
+  return 'Cumplimiento sólido: todos o la gran mayoría de evaluadores confirmaron este criterio.'
+}
+
+function buildNegativeImpact(item) {
+  const weakQuestions = item.questionSummaries.filter((q) => q.average < 0.5)
+  const isVisual = /(color|legibilidad|estético|minimalista|visual)/i.test(
+    item.title,
+  )
+  const hasManyWeak = weakQuestions.length >= 3
+
+  if (weakQuestions.length === 0) {
+    return 'No se identifican impactos negativos significativos en esta heurística. Los criterios evaluados muestran un nivel de cumplimiento aceptable.'
+  }
+
+  const weakTitles = weakQuestions
+    .slice(0, 2)
+    .map((q) =>
+      q.title
+        .replace(/^\d+\.\s*/, '')
+        .split(' — ')[0]
+        .substring(0, 60),
+    )
+    .join(' y ')
+
+  if (isVisual) {
+    return `Los criterios con bajo cumplimiento en esta heurística —especialmente "${weakTitles}"— afectan directamente a la comprensión visual y a la jerarquía de la interfaz. Aunque el impacto funcional suele ser más limitado que en heurísticas de flujo, la acumulación de problemas visuales incrementa la carga cognitiva del usuario, dificulta la lectura rápida y puede generar una percepción de baja calidad del producto.`
+  }
+
+  if (hasManyWeak) {
+    return `Varios criterios clave presentan cumplimiento bajo o nulo, entre ellos "${weakTitles}". Esto introduce fricción directa en la ejecución de tareas: el usuario debe compensar con mayor esfuerzo, aumenta la probabilidad de errores y se reduce la confianza en el sistema. En escenarios de uso repetido, esta fricción tiende a generar abandono o búsqueda de alternativas.`
+  }
+
+  return `El criterio "${weakTitles}" presenta un nivel de cumplimiento bajo que puede generar confusión puntual o requerir pasos adicionales por parte del usuario. Aunque el impacto no bloquea el flujo completo, introduce una fricción que puede afectar la percepción global de la experiencia.`
+}
+
+function buildPositiveImpact(item) {
+  const weakQuestions = item.questionSummaries.filter((q) => q.average < 0.5)
+  const isVisual = /(color|legibilidad|estético|minimalista|visual)/i.test(
+    item.title,
+  )
+
+  if (weakQuestions.length === 0) {
+    return 'Mantener el nivel actual de cumplimiento en esta heurística contribuye a una experiencia consistente y predecible. Realizar revisiones periódicas evitará regresiones en futuras iteraciones del diseño.'
+  }
+
+  if (isVisual) {
+    return 'Resolver los criterios visuales identificados mejoraría la legibilidad, reforzaría la jerarquía de la interfaz y aumentaría la percepción de calidad del producto. La ganancia sería gradual y acumulativa: cada mejora visual reduce la carga cognitiva del usuario y mejora la accesibilidad global del sistema.'
+  }
+
+  if (weakQuestions.length >= 3) {
+    return 'Abordar los criterios con bajo cumplimiento en esta heurística tendría un impacto alto y directo sobre la experiencia: reduciría los errores de usuario, simplificaría las decisiones durante la navegación y aumentaría la eficiencia de uso desde las primeras interacciones. Dado que afecta a múltiples criterios del flujo principal, la mejora beneficiaría tanto a usuarios nuevos como a usuarios recurrentes.'
+  }
+
+  return 'Mejorar el criterio o criterios señalados aliviaría los puntos de fricción identificados y estabilizaría la experiencia en esta dimensión. El beneficio sería perceptible de forma inmediata para los usuarios que transiten por los flujos afectados.'
+}
+
+function formatDecimal(value, digits = 2) {
+  const numericValue = getNumber(value, Number.NaN)
+  if (!Number.isFinite(numericValue)) {
+    return `0,${'0'.repeat(digits)}`
+  }
+  return numericValue.toFixed(digits).replace('.', ',')
+}
+
+function getHeuristicsCellColor(value, max, min) {
+  const numericValue = getNumber(value, 0)
+  const numericMax = Number(max)
+  const numericMin = Number(min)
+
+  if (!Number.isFinite(numericMax) || !Number.isFinite(numericMin)) {
+    return { fill: [238, 238, 238], text: [119, 119, 119] }
+  }
+  if (numericMax === numericMin) {
+    if (numericValue === 0)
+      return { fill: [253, 229, 226], text: [255, 42, 26] }
+    if (numericValue > 0) return { fill: [229, 243, 232], text: [37, 168, 58] }
+    return { fill: [238, 238, 238], text: [119, 119, 119] }
+  }
+
+  const normalized = (numericValue - numericMin) / (numericMax - numericMin)
+  if (normalized < 0.25) return { fill: [253, 229, 226], text: [255, 42, 26] }
+  if (normalized < 0.5) return { fill: [255, 239, 217], text: [255, 133, 0] }
+  if (normalized < 0.75) return { fill: [255, 248, 220], text: [255, 208, 0] }
+  return { fill: [229, 243, 232], text: [37, 168, 58] }
+}
+
+function getContrastingTextColor(rgb) {
+  if (!Array.isArray(rgb) || rgb.length < 3) return COLORS.text
+  const [r, g, b] = rgb
+  const brightness = (r * 299 + g * 587 + b * 114) / 1000
+  return brightness < 128 ? COLORS.white : COLORS.text
+}
+
+function parseMmSsToMs(value) {
+  const text = normalizeText(value)
+  if (!text || !text.includes(':')) return 0
+  const [minutes = '0', seconds = '0'] = text.split(':')
+  const m = Number(minutes)
+  const s = Number(seconds)
+  if (!Number.isFinite(m) || !Number.isFinite(s)) return 0
+  return (m * 60 + s) * 1000
+}
+
+function getTimeColor(valueMs, maxMs) {
+  if (
+    !Number.isFinite(valueMs) ||
+    valueMs <= 0 ||
+    !Number.isFinite(maxMs) ||
+    maxMs <= 0
+  ) {
+    return { fill: [245, 245, 245], text: [90, 90, 90] }
+  }
+  const ratio = valueMs / maxMs
+  if (ratio < 0.33) return { fill: [229, 243, 232], text: [30, 125, 50] }
+  if (ratio < 0.66) return { fill: [255, 248, 220], text: [163, 126, 0] }
+  return { fill: [255, 239, 217], text: [176, 96, 0] }
+}
+
+function getMaxQuestionScore(testOptions = []) {
+  const values = Array.isArray(testOptions)
+    ? testOptions
+        .map((item) => getNumber(item?.value, Number.NaN))
+        .filter((value) => Number.isFinite(value))
+    : []
+  return values.length ? Math.max(...values) : 0
+}
+
+function calculateHeuristicCompliance(
+  evaluatorHeuristics = [],
+  maxQuestionScore,
+) {
+  const evaluatorPercentages = evaluatorHeuristics
+    .map((heuristicAnswer) => {
+      const values = (heuristicAnswer?.heuristicQuestions || [])
+        .map((questionAnswer) =>
+          getNumber(questionAnswer?.heuristicAnswer?.value, Number.NaN),
+        )
+        .filter((value) => Number.isFinite(value))
+      const maxPossible = values.length * maxQuestionScore
+      if (!values.length || maxPossible <= 0) return Number.NaN
+      const total = values.reduce((sum, value) => sum + value, 0)
+      return (total * 100) / maxPossible
+    })
+    .filter((value) => Number.isFinite(value))
+
+  if (!evaluatorPercentages.length) return Number.NaN
+  return (
+    evaluatorPercentages.reduce((sum, value) => sum + value, 0) /
+    evaluatorPercentages.length
+  )
+}
+
+function calcStandardDeviation(values) {
+  if (!values || values.length < 2) return 0
+  const mean = values.reduce((sum, v) => sum + v, 0) / values.length
+  const variance =
+    values.reduce((sum, v) => sum + Math.pow(v - mean, 2), 0) / values.length
+  return Math.sqrt(variance)
+}
+
+function buildHeuristicEvidence({
+  allAnswers = [],
+  testStructure = [],
+  heuristicsStatistics = [],
+  heuristicComments = {},
+  testOptions = [],
+}) {
+  const maxQuestionScore = getMaxQuestionScore(testOptions)
+
+  const heuristics = testStructure.map((heuristic, heuristicIndex) => {
+    const evaluatorHeuristics = allAnswers
+      .map((answer) => answer?.heuristicQuestions?.[heuristicIndex])
+      .filter(Boolean)
+
+    const questionDefinitions = Array.isArray(heuristic?.questions)
+      ? heuristic.questions
+      : Array.isArray(heuristic?.heuristicQuestions)
+        ? heuristic.heuristicQuestions
+        : []
+
+    const questionSummaries = questionDefinitions.map(
+      (question, questionIndex) => {
+        const questionAnswers = evaluatorHeuristics.map(
+          (answer) => answer?.heuristicQuestions?.[questionIndex] || null,
+        )
+        const values = questionAnswers
+          .map((answer) => getNumber(answer?.heuristicAnswer?.value, NaN))
+          .filter((value) => Number.isFinite(value))
+        const warnings = questionAnswers.filter(
+          (answer) => answer?.heuristicAnswer?.warning === true,
+        ).length
+        const images = questionAnswers.reduce(
+          (total, answer) =>
+            total +
+            (Array.isArray(answer?.images)
+              ? answer.images.length
+              : answer?.answerImageUrl
+                ? 1
+                : 0),
+          0,
+        )
+        const commentDetails = []
+        questionAnswers.forEach((answer, answerIndex) => {
+          if (!answer) return
+          const evaluatorName = getEvaluatorLabel(
+            evaluatorHeuristics[answerIndex],
+            answerIndex,
+          )
+          const texts = extractCommentTexts(answer)
+          texts.forEach((text) => {
+            commentDetails.push({
+              evaluatorName,
+              text,
+              questionIndex: questionIndex + 1,
+            })
+          })
+        })
+
+        if (commentDetails.length === 0) {
+          evaluatorHeuristics.forEach((heuristicAnswer, answerIndex) => {
+            if (!heuristicAnswer) return
+            const evaluatorName = getEvaluatorLabel(
+              evaluatorHeuristics[answerIndex],
+              answerIndex,
+            )
+            const texts = extractCommentTexts(heuristicAnswer)
+            texts.forEach((text) => {
+              if (!commentDetails.some((c) => c.text === text)) {
+                commentDetails.push({
+                  evaluatorName,
+                  text,
+                  questionIndex: questionIndex + 1,
+                })
+              }
+            })
+          })
+        }
+
+        const comments = commentDetails.length
+        const average = values.length
+          ? values.reduce((sum, value) => sum + value, 0) / values.length
+          : 0
+
+        return {
+          title: getQuestionLabel(question, questionIndex),
+          values,
+          average,
+          warnings,
+          images,
+          comments,
+          commentDetails,
+        }
+      },
+    )
+
+    const heuristicStat =
+      heuristicsStatistics.find(
+        (item) =>
+          item.name === getHeuristicShortTitle(heuristic, heuristicIndex),
+      ) ||
+      heuristicsStatistics[heuristicIndex] ||
+      {}
+
+    const calculatedPercentage = calculateHeuristicCompliance(
+      evaluatorHeuristics,
+      maxQuestionScore,
+    )
+    const percentage = Number.isFinite(calculatedPercentage)
+      ? calculatedPercentage
+      : getNumber(heuristicStat.percentage)
+
+    const sdFromStats = getNumber(heuristicStat.sd, Number.NaN)
+    const responseValues = questionSummaries.flatMap((item) => item.values)
+    const sdCalculated = calcStandardDeviation(responseValues)
+    const sd =
+      Number.isFinite(sdFromStats) && sdFromStats > 0
+        ? sdFromStats
+        : sdCalculated
+
+    const averagePoints = getNumber(heuristicStat.average)
+    const maxPoints = getNumber(heuristicStat.max)
+    const minPoints = getNumber(heuristicStat.min)
+    const totalWarnings = questionSummaries.reduce(
+      (total, item) => total + item.warnings,
+      0,
+    )
+    const totalImages = questionSummaries.reduce(
+      (total, item) => total + item.images,
+      0,
+    )
+    const totalComments = questionSummaries.reduce(
+      (total, item) => total + item.comments,
+      0,
+    )
+    const responseAverage = responseValues.length
+      ? responseValues.reduce((sum, value) => sum + value, 0) /
+        responseValues.length
+      : 0
+    const responseMin = responseValues.length ? Math.min(...responseValues) : 0
+    const responseMax = responseValues.length ? Math.max(...responseValues) : 0
+    const responseSpread = responseMax - responseMin
+    const completionGap = Math.max(0, 100 - percentage)
+    const warningWeight = 1 + Math.min(0.45, totalWarnings * 0.08)
+    const evidenceWeight =
+      1 + Math.min(0.18, totalComments * 0.03 + totalImages * 0.02)
+    const domainWeight = getHeuristicDomainWeight(
+      getHeuristicShortTitle(heuristic, heuristicIndex),
+    )
+    const impactScore =
+      completionGap * warningWeight * evidenceWeight * domainWeight
+
+    return {
+      id: heuristic?.heuristicId || `H${heuristicIndex + 1}`,
+      position: heuristicIndex + 1,
+      label: getHeuristicLabel(heuristic, heuristicIndex),
+      title: getHeuristicShortTitle(heuristic, heuristicIndex),
+      percentage,
+      averagePoints,
+      maxPoints,
+      minPoints,
+      sd,
+      totalWarnings,
+      totalImages,
+      totalComments,
+      questionSummaries,
+      responseAverage,
+      responseMin,
+      responseMax,
+      responseSpread,
+      impactScore,
+      severity: getSeverityFromPercentage(percentage),
+      comments: (() => {
+        const heuComments =
+          heuristicComments?.[
+            heuristic?.heuristicId || `H${heuristicIndex + 1}`
+          ]
+        if (!heuComments) return ''
+        if (typeof heuComments === 'string')
+          return normalizeText(stripHtml(heuComments))
+        if (typeof heuComments === 'object') {
+          return Object.values(heuComments)
+            .filter((t) => t && String(t).trim().length > 0)
+            .map((t) => normalizeText(stripHtml(String(t))))
+            .join('\n')
+        }
+        return ''
+      })(),
+      perQuestionComments: (() => {
+        const heuComments =
+          heuristicComments?.[
+            heuristic?.heuristicId || `H${heuristicIndex + 1}`
+          ]
+        if (!heuComments || typeof heuComments !== 'object') return {}
+        return heuComments
+      })(),
+    }
+  })
+
+  return {
+    heuristics,
+    orderedByPercentage: [...heuristics].sort(
+      (left, right) => left.percentage - right.percentage,
+    ),
+    orderedByImpact: [...heuristics].sort(
+      (left, right) => right.impactScore - left.impactScore,
+    ),
+  }
+}
+
+function getQuestionImageUrls(allAnswers, heuristicIndex, questionIndex) {
+  return allAnswers.flatMap((answer) => {
+    const q =
+      answer?.heuristicQuestions?.[heuristicIndex]?.heuristicQuestions?.[
+        questionIndex
+      ]
+    if (!q) return []
+    const imgs = Array.isArray(q?.images)
+      ? q.images
+      : Array.isArray(q?.heuristicAnswer?.images)
+        ? q.heuristicAnswer.images
+        : []
+    const urls = imgs
+      .map((img) => img?.url || img?.imageUrl || img)
+      .filter(Boolean)
+    const legacyUrl =
+      q?.answerImageUrl || q?.heuristicAnswer?.answerImageUrl || ''
+    if (legacyUrl && !urls.includes(legacyUrl)) {
+      urls.push(legacyUrl)
+    }
+    return urls
+  })
+}
+
+function getAllImagesForHeuristic(allAnswers, heuristicIndex, testStructure) {
+  const heuristic = testStructure?.[heuristicIndex]
+  if (!heuristic) return []
+  const questions = heuristic?.questions || heuristic?.heuristicQuestions || []
+  const urls = []
+  questions.forEach((_, qIdx) => {
+    const imgUrls = getQuestionImageUrls(allAnswers, heuristicIndex, qIdx)
+    urls.push(...imgUrls)
+  })
+  return urls
+}
+
+function blobToBase64(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onloadend = () => resolve(reader.result)
+    reader.onerror = () => reject(new Error('FileReader error'))
+    reader.readAsDataURL(blob)
+  })
+}
+
+async function loadImageAsBase64(url) {
+  if (!url) return null
+  try {
+    const proxyUrl = url.replace(
+      'https://firebasestorage.googleapis.com',
+      '/storage-proxy',
+    )
+    const response = await fetch(proxyUrl)
+    if (response.ok) {
+      const blob = await response.blob()
+      const base64 = await blobToBase64(blob)
+      return base64
+    }
+  } catch {
+    // proxy failed, try direct
+  }
+  try {
+    const response = await fetch(url)
+    if (response.ok) {
+      const blob = await response.blob()
+      const base64 = await blobToBase64(blob)
+      return base64
+    }
+  } catch {
+    // direct fetch also failed
   }
   return null
 }
 
-export async function generateHeuristicPdfWithAi(reportData, options = {}) {
+function renderCommentsTable(doc, questionSummaries, y, options = {}) {
+  const {
+    FONT = 'helvetica',
+    M: margin = 14,
+    COLORS: colors = {},
+    ensureSpace = () => {},
+  } = options
+
+  const commentRows = []
+  questionSummaries.forEach((q, qIdx) => {
+    const details = q.commentDetails || []
+    details.forEach((cd) => {
+      commentRows.push([
+        String(qIdx + 1),
+        cd.evaluatorName || '—',
+        stripHtml(cd.text || ''),
+      ])
+    })
+  })
+
+  if (commentRows.length === 0) return y
+
+  ensureSpace(commentRows.length * 12 + 30)
+  autoTable(doc, {
+    startY: y,
+    head: [['# Pregunta', 'Evaluador/a', 'Comentario']],
+    body: commentRows,
+    styles: {
+      fontSize: 8,
+      cellPadding: 3,
+      font: FONT,
+      lineColor: colors.tableBorder || [220, 220, 220],
+      lineWidth: 0.1,
+    },
+    headStyles: {
+      fillColor: colors.tableHead || [63, 81, 181],
+      textColor: colors.white || [255, 255, 255],
+      fontStyle: 'bold',
+      fontSize: 8,
+    },
+    alternateRowStyles: { fillColor: colors.tableStripe || [245, 247, 250] },
+    margin: { left: margin + 6, right: margin },
+    theme: 'grid',
+    columnStyles: {
+      0: { halign: 'center', cellWidth: 35 },
+      1: { cellWidth: 80, overflow: 'linebreak' },
+      2: { overflow: 'linebreak' },
+    },
+  })
+
+  return doc.lastAutoTable.finalY + 12
+}
+
+function renderHeuristicCommentsTable(
+  doc,
+  perQuestionComments,
+  questionDefinitions,
+  y,
+  options = {},
+) {
+  const {
+    FONT = 'helvetica',
+    M: margin = 14,
+    COLORS: colors = {},
+    ensureSpace = () => {},
+  } = options
+
+  if (!perQuestionComments || typeof perQuestionComments !== 'object') {
+    return y
+  }
+
+  const commentRows = []
+  questionDefinitions.forEach((question, qIndex) => {
+    const qId = question?.id || String(qIndex)
+    const commentText = perQuestionComments[qId]
+    if (commentText && String(commentText).trim().length > 0) {
+      const qLabel = `Q${qIndex + 1}`
+      const qTitle = getQuestionLabel(question, qIndex)
+      commentRows.push([qLabel, qTitle, stripHtml(String(commentText))])
+    }
+  })
+
+  if (commentRows.length === 0) return y
+
+  ensureSpace(commentRows.length * 12 + 30)
+  autoTable(doc, {
+    startY: y,
+    head: [['Pregunta', 'Descripción', 'Comentario']],
+    body: commentRows,
+    styles: {
+      fontSize: 8,
+      cellPadding: 3,
+      font: FONT,
+      lineColor: colors.tableBorder || [220, 220, 220],
+      lineWidth: 0.1,
+    },
+    headStyles: {
+      fillColor: colors.tableHead || [63, 81, 181],
+      textColor: colors.white || [255, 255, 255],
+      fontStyle: 'bold',
+      fontSize: 8,
+    },
+    alternateRowStyles: { fillColor: colors.tableStripe || [245, 247, 250] },
+    margin: { left: margin + 6, right: margin },
+    theme: 'grid',
+    columnStyles: {
+      0: { halign: 'center', cellWidth: 30 },
+      1: { cellWidth: 'auto', overflow: 'linebreak' },
+      2: { overflow: 'linebreak' },
+    },
+  })
+
+  return doc.lastAutoTable.finalY + 12
+}
+
+export async function generateHeuristicPdf(reportData, options = {}) {
   const {
     testTitle,
+    testDescription,
     testUrl,
     evaluatorPercentages,
     heuristicsEvaluator: rawHeuristicsEvaluator,
     heuristicsStatistics: rawHeuristicsStatistics,
     statisticsByHeuristics,
-    finalResultData,
+    finalResultData: finalResultData,
     heuristicComments,
+    studyConclusion,
     testStructure,
     allOptions,
     allAnswers,
     statisticsTable,
     statisticsByEvaluatorAnswer,
     timeByHeuristics,
-    finalReport: aiReportText,
-    webResearch,
   } = reportData
+
   const mode = options?.mode || 'download'
+  const showQuickSummary = options?.showQuickSummary === true
+  const useWarningTerm = showQuickSummary
+  const cleanTestDescription = stripHtml(testDescription)
+  const cleanStudyConclusion = stripHtml(studyConclusion)
 
   const doc = new jsPDF({ unit: 'pt', format: 'a4' })
   const logo = await loadLogo('/brand/logo_full.png', 30)
@@ -242,11 +816,15 @@ export async function generateHeuristicPdfWithAi(reportData, options = {}) {
     (statisticsByHeuristics?.header && statisticsByHeuristics?.items
       ? statisticsByHeuristics
       : null)
+
   const heuristicStatsItems = Array.isArray(heuristicsStatistics?.items)
     ? heuristicsStatistics.items
     : []
   const heuristicMatrixItems = Array.isArray(heuristicsEvaluator?.items)
     ? heuristicsEvaluator.items
+    : []
+  const evaluatorSummaryItems = Array.isArray(evaluatorPercentages?.items)
+    ? evaluatorPercentages.items
     : []
   const evaluatorTimeItems = Array.isArray(statisticsTable?.items)
     ? statisticsTable.items
@@ -257,6 +835,7 @@ export async function generateHeuristicPdfWithAi(reportData, options = {}) {
   const evidence = buildHeuristicEvidence({
     allAnswers: Array.isArray(allAnswers) ? allAnswers : [],
     testStructure: Array.isArray(testStructure) ? testStructure : [],
+    finalResultData: finalResultData || {},
     heuristicsStatistics: heuristicStatsItems,
     heuristicComments: heuristicComments || {},
     testOptions: allOptions,
@@ -275,881 +854,723 @@ export async function generateHeuristicPdfWithAi(reportData, options = {}) {
     0,
   )
 
+  const globalSd = normalizeText(finalResultData?.sd || '0.00')
+  const globalMax = normalizeText(finalResultData?.max || '0.00')
+  const globalMin = normalizeText(finalResultData?.min || '0.00')
+
   let pageNum = 1
   let y = M
   const tocEntries = []
 
-  function addFooter() {
-    const fy = PAGE_H - 22
-    doc.setDrawColor(...COLORS.muted)
-    doc.setLineWidth(0.3)
-    doc.line(M, fy - 10, PAGE_W - M, fy - 10)
-    doc.setFont(FONT, 'normal')
-    doc.setFontSize(7.5)
-    doc.setTextColor(...COLORS.sub)
-    doc.text(
-      `INFORME DE EVALUACIÓN HEURÍSTICA — ${testTitle || 'Sistema evaluado'}`,
-      M,
-      fy,
-      { align: 'left' },
-    )
-    doc.text(`Pág. ${pageNum}`, PAGE_W - M, fy, { align: 'right' })
+  const addPageHeader = () => {
+    addFooter(doc, pageNum)
   }
 
-  function ensureSpace(needed) {
-    if (y + needed > PAGE_H - M - 20) {
+  const ensureSpace = (needed) => {
+    if (y + needed > PAGE_H - M) {
       doc.addPage()
       pageNum += 1
-      y = M + 6
-      addFooter()
+      y = M
+      addPageHeader()
     }
   }
 
-  function startSection(title, size = 16) {
-    ensureSpace(50)
-    y += 10
-    doc.setDrawColor(...COLORS.accent)
-    doc.setFillColor(...COLORS.accent)
-    doc.rect(M, y, 4, size + 6, 'F')
+  const startSection = (title, size = 18) => {
+    const lh = size + 4
+    ensureSpace(40)
+    y += 8
     doc.setFont(FONT, 'bold')
     doc.setFontSize(size)
-    doc.setTextColor(...COLORS.primary)
-    doc.text(title, M + 14, y + size - 2)
+    doc.setTextColor(...COLORS.accent)
+    const titleLines = doc.splitTextToSize(title, CONTENT_W)
+    ensureSpace(titleLines.length * lh + 20)
     tocEntries.push({ title, page: pageNum })
-    y += size + 18
-    doc.setDrawColor(...COLORS.muted)
-    doc.setLineWidth(0.3)
-    doc.line(M, y, PAGE_W - M, y)
-    y += 12
+    doc.text(titleLines, M, y)
+    y += titleLines.length * lh
+    doc.setDrawColor(...COLORS.accent)
+    doc.setLineWidth(0.4)
+    const lineLen = Math.min(size * 3.5, CONTENT_W * 0.4)
+    doc.line(M, y, M + lineLen, y)
+    y += size === 18 ? 28 : 22
     doc.setFont(FONT, 'normal')
-    doc.setFontSize(10.5)
+    doc.setFontSize(11)
     doc.setTextColor(...COLORS.text)
   }
 
-  function writeParagraph(text, opts = {}) {
+  const writeParagraph = (text, opts = {}) => {
     const lh = opts.lineHeight || LH
     const x = opts.x || M
     const width = opts.width || CONTENT_W
     doc.setFont(FONT, opts.bold ? 'bold' : 'normal')
-    doc.setFontSize(opts.size || 10.5)
+    doc.setFontSize(opts.size || 11)
     doc.setTextColor(...(opts.color || COLORS.text))
-    const raw = String(text ?? '')
-    const lines = doc.splitTextToSize(normalizeText(raw), width)
+    const lines = doc.splitTextToSize(normalizeText(text), width)
+    const fontSize = doc.getFontSize()
+    const scaleFactor = doc.internal.scaleFactor
+    const getTextWidth = (t) =>
+      (doc.getStringUnitWidth(t) * fontSize) / scaleFactor
 
     for (let i = 0; i < lines.length; i++) {
-      ensureSpace(lh + 2)
-      doc.text(lines[i], x, y, { align: 'left' })
+      ensureSpace(lh + 4)
+      const line = lines[i]
+      const words = line.split(' ').filter(Boolean)
+
+      if (words.length <= 1) {
+        doc.text(line, x, y, { align: 'left' })
+      } else {
+        const wordsWidth = words.reduce((sum, w) => sum + getTextWidth(w), 0)
+        const availableSpace = width - wordsWidth
+        const spaceWidth = availableSpace / (words.length - 1)
+
+        if (spaceWidth > 18 || words.length < 4) {
+          doc.text(line, x, y, { align: 'left' })
+        } else {
+          let cx = x
+          words.forEach((word) => {
+            doc.text(word, cx, y)
+            cx += getTextWidth(word) + spaceWidth
+          })
+        }
+      }
       y += lh
     }
-    y += opts.spacing || 5
+
+    y += opts.spacing || 6
+    doc.setFont(FONT, 'normal')
+    doc.setFontSize(11)
+    doc.setTextColor(...COLORS.text)
   }
 
-  // ─── SIDEBAR ACCENT ON FIRST PAGE ──────────────────────────────────────
-  doc.setFillColor(...COLORS.primary)
-  doc.rect(0, 0, 18, PAGE_H, 'F')
-  doc.setFillColor(...COLORS.accent)
-  doc.rect(18, 0, 3, PAGE_H, 'F')
-
-  // ─── PORTADA ────────────────────────────────────────────────────────────
-  y = M + 40
-
+  // ─── PORTADA ──────────────────────────────────────────────────────────────
   if (logo) {
-    doc.addImage(logo.img, 'PNG', M + 20, y, logo.width, logo.height)
-    y += logo.height + 30
+    doc.addImage(
+      logo.img,
+      'PNG',
+      PAGE_W / 2 - logo.width / 2,
+      y,
+      logo.width,
+      logo.height,
+    )
+    y += logo.height + 28
   }
 
   doc.setDrawColor(...COLORS.accent)
-  doc.setLineWidth(1.2)
-  doc.line(M + 20, y, M + 160, y)
-  y += 30
+  doc.setLineWidth(0.8)
+  doc.line(M + 60, y, PAGE_W - M - 60, y)
+  y += 32
 
   doc.setFont(FONT, 'bold')
-  doc.setFontSize(30)
-  doc.setTextColor(...COLORS.primary)
-  doc.text('INFORME DE', M + 20, y)
-  y += 26
-  doc.text('EVALUACIÓN HEURÍSTICA', M + 20, y)
-  y += 40
+  doc.setFontSize(28)
+  doc.setTextColor(...COLORS.accent)
+  doc.text('INFORME DE EVALUACIÓN', PAGE_W / 2, y, { align: 'center' })
+  y += 22
+  doc.text('HEURÍSTICA', PAGE_W / 2, y, { align: 'center' })
+  y += 36
+
+  doc.setDrawColor(...COLORS.border)
+  doc.setLineWidth(0.4)
+  doc.line(M + 100, y, PAGE_W - M - 100, y)
+  y += 28
 
   doc.setFont(FONT, 'normal')
-  doc.setFontSize(14)
-  doc.setTextColor(...COLORS.secondary)
-  const titleWrapped = doc.splitTextToSize(
+  doc.setFontSize(15)
+  doc.setTextColor(...COLORS.text)
+  const titleLines = doc.splitTextToSize(
     testTitle || 'Sistema evaluado',
-    CONTENT_W - 60,
+    CONTENT_W,
   )
-  doc.text(titleWrapped, M + 20, y)
-  y += titleWrapped.length * 20 + 10
+  doc.text(titleLines, PAGE_W / 2, y, { align: 'center' })
+  y += titleLines.length * 22 + 8
 
   if (testUrl) {
     doc.setFontSize(10)
     doc.setTextColor(...COLORS.sub)
-    doc.text(testUrl, M + 20, y)
-    y += 18
+    const urlLines = doc.splitTextToSize(testUrl, CONTENT_W)
+    doc.text(urlLines, PAGE_W / 2, y, { align: 'center' })
+    y += urlLines.length * 16 + 8
   }
 
-  doc.setDrawColor(...COLORS.muted)
-  doc.setLineWidth(0.4)
-  doc.line(M + 20, y, PAGE_W - M, y)
-  y += 18
-
-  doc.setFont(FONT, 'normal')
   doc.setFontSize(10)
   doc.setTextColor(...COLORS.sub)
-  const metaLines = [
-    `Metodología: 15 Heurísticas de Usabilidad — Nielsen + ISO 9241-110`,
-    `Cumplimiento global: ${globalPct} — Severidad: ${globalSeverity}`,
-  ]
-  if (evaluatorTimeItems.length) {
-    const labels = evaluatorTimeItems
-      .map((item, i) => getEvaluatorLabel(item, i))
-      .filter(Boolean)
-      .join(' · ')
-    metaLines.push(`Evaluadores: ${labels}`)
+  const evaluatorLabels = evaluatorTimeItems
+    .map((item, index) => getEvaluatorLabel(item, index))
+    .filter(Boolean)
+    .join(' · ')
+  if (evaluatorLabels) {
+    const evalLines = doc.splitTextToSize(
+      `Evaluadores: ${evaluatorLabels}`,
+      CONTENT_W,
+    )
+    doc.text(evalLines, PAGE_W / 2, y, { align: 'center' })
+    y += evalLines.length * 16 + 6
   }
-  metaLines.forEach((line) => {
-    doc.text(line, M + 20, y)
-    y += 14
-  })
+  doc.text(
+    'Metodología: 15 Heurísticas de Usabilidad - Nielsen + ISO 9241-110',
+    PAGE_W / 2,
+    y,
+    { align: 'center' },
+  )
 
-  y = PAGE_H - M - 30
-  doc.setFont(FONT, 'normal')
+  if (showQuickSummary) {
+    const coverMetricsY = y + 22
+    const coverMetricsH = 80
+    doc.setDrawColor(...COLORS.border)
+    doc.setFillColor(250, 252, 255)
+    doc.roundedRect(M, coverMetricsY, CONTENT_W, coverMetricsH, 8, 8, 'FD')
+    doc.setFont(FONT, 'bold')
+    doc.setFontSize(10)
+    doc.setTextColor(...COLORS.accent)
+    doc.text('Resumen rápido', M + 14, coverMetricsY + 18)
+    doc.setFont(FONT, 'normal')
+    doc.setFontSize(10)
+    doc.setTextColor(...COLORS.text)
+    const evaluatorCount =
+      evaluatorSummaryItems.length || evaluatorTimeItems.length || 0
+    const coverMetricLines = [
+      `Cumplimiento global: ${globalPct}`,
+      `Severidad: ${globalSeverity}`,
+      `Evaluadores: ${evaluatorCount}`,
+    ]
+    if (testUrl) {
+      coverMetricLines.push(`URL evaluada: ${testUrl}`)
+    }
+    coverMetricLines.forEach((line, index) => {
+      const rowY = coverMetricsY + 36 + index * 12
+      doc.text(line, M + 14, rowY)
+    })
+  }
+
+  y = PAGE_H - M
   doc.setFontSize(8)
   doc.setTextColor(...COLORS.sub)
-  doc.text('RUXAILAB — Informe generado con inteligencia artificial', M + 20, y)
+  doc.text('RUXAILAB - Informe generado automáticamente', PAGE_W / 2, y, {
+    align: 'center',
+  })
 
-  // ─── INDICE ─────────────────────────────────────────────────────────────
+  // ─── INDICE ───────────────────────────────────────────────────────────────
   doc.addPage()
   pageNum += 1
-  y = M + 6
-  addFooter()
-
-  doc.setDrawColor(...COLORS.accent)
-  doc.setFillColor(...COLORS.accent)
-  doc.rect(M, y, 4, 24, 'F')
+  y = M
+  addPageHeader()
   doc.setFont(FONT, 'bold')
-  doc.setFontSize(20)
-  doc.setTextColor(...COLORS.primary)
-  doc.text('ÍNDICE', M + 14, y + 18)
-  doc.setDrawColor(...COLORS.muted)
-  doc.setLineWidth(0.3)
-  doc.line(M, y + 30, PAGE_W - M, y + 30)
-  y += 40
+  doc.setFontSize(22)
+  doc.setTextColor(...COLORS.accent)
+  doc.text('ÍNDICE', M, y)
+  doc.setDrawColor(...COLORS.accent)
+  doc.setLineWidth(0.5)
+  doc.line(M, y + 4, M + 60, y + 4)
+  y += 30
 
-  const tocEntriesLocal = [...tocEntries]
-  tocEntriesLocal.forEach((entry) => {
-    if (y > PAGE_H - M - 20) return
-    doc.setFont(FONT, 'normal')
-    doc.setFontSize(11)
-    doc.setTextColor(...COLORS.text)
+  // ─── 1. INTRODUCCION ─────────────────────────────────────────────────────
+  doc.addPage()
+  pageNum += 1
+  y = M
+  addPageHeader()
+  startSection('1. Introducción')
+
+  writeParagraph(
+    `Este informe recoge los resultados de la evaluación heurística realizada al sistema "${testTitle || 'Sistema evaluado'}".`,
+  )
+  if (cleanTestDescription) {
+    writeParagraph(cleanTestDescription)
+  }
+  const evaluatorCount =
+    evaluatorTimeItems.length || evaluatorSummaryItems.length || 0
+  writeParagraph(
+    `La evaluación ha sido completada por ${evaluatorCount} ${pluralize(evaluatorCount, 'evaluador', 'evaluadores')} y se apoya en el promedio de respuestas, los avisos de warning, los comentarios y las evidencias visuales recogidas durante el test.`,
+  )
+  writeParagraph(
+    `El resultado global de la evaluación se interpreta con un margen de mejora ${globalSeverity}, con un promedio de cumplimiento entre evaluadores del ${Number(getNumber(evaluatorPercentages?.globalAverage || 0)).toFixed(2)}%. Este dato se calcula sumando los porcentajes individuales de cumplimiento y dividiendo entre el número total de evaluadores.`,
+  )
+
+  writeParagraph(
+    `La desviación estándar global de las puntuaciones es ${globalSd}, lo que refleja el grado de consenso entre los evaluadores: valores bajos indican alta coincidencia y valores altos señalan mayor divergencia en la percepción de la usabilidad del sistema. El valor máximo (${globalMax}) corresponde al mayor porcentaje de cumplimiento obtenido por un evaluador, mientras que el valor mínimo (${globalMin}) corresponde al menor porcentaje de cumplimiento obtenido por otro evaluador.`,
+  )
+
+  if (totalWarnings > 0 || totalComments > 0 || totalImages > 0) {
+    const metadataBits = []
+    if (totalWarnings > 0) {
+      const w = totalWarnings
+      if (useWarningTerm) {
+        metadataBits.push(
+          `${w} ${pluralize(w, 'respuesta con warning', 'respuestas con warning')}`,
+        )
+      } else {
+        metadataBits.push(
+          `${w} ${pluralize(w, 'pregunta que requiere un análisis más profundo', 'preguntas que requieren un análisis más profundo')}`,
+        )
+      }
+    }
+    if (totalComments > 0) {
+      const c = totalComments
+      metadataBits.push(`${c} ${pluralize(c, 'comentario', 'comentarios')}`)
+    }
+    if (totalImages > 0) {
+      const i = totalImages
+      metadataBits.push(`${i} ${pluralize(i, 'imagen', 'imágenes')}`)
+    }
+    if (useWarningTerm) {
+      writeParagraph(
+        `La evaluación general incorpora ${metadataBits.join(', y ')}. Los warnings son indicadores de posibles mejoras internas pero que no afectan directamente al porcentaje de cumplimiento. En cambio, los comentarios y las evidencias visuales aportan contexto cualitativo que ayuda a interpretar los resultados cuantitativos y a priorizar las áreas de mejora identificadas.`,
+      )
+    } else {
+      writeParagraph(
+        `La evaluación general incorpora ${metadataBits.join(', y ')}. Estas preguntas señalan aspectos que no pueden verificarse únicamente con la navegación superficial de la web, sino que requieren una revisión más profunda del sistema. Los comentarios y las evidencias visuales aportan contexto cualitativo que ayuda a interpretar los resultados cuantitativos y a priorizar las áreas de mejora identificadas.`,
+      )
+    }
+  }
+
+  // ─── 2. RESUMEN EJECUTIVO ─────────────────────────────────────────────────
+  startSection('2. Resumen ejecutivo')
+  writeParagraph(
+    'La tabla siguiente muestra el porcentaje global de cumplimiento obtenido por cada evaluador. El valor se calcula a partir de las respuestas aplicables y permite comparar la percepción general de usabilidad entre participantes.',
+  )
+
+  const evaluatorRows = evaluatorSummaryItems.map((item, index) => {
+    const percentage = getNumber(item?.percentage)
+    return [getEvaluatorLabel(item, index), `${formatDecimal(percentage)}%`]
+  })
+
+  if (evaluatorRows.length) {
+    evaluatorRows.push([
+      'MEDIA GLOBAL',
+      `${formatDecimal(evaluatorPercentages?.globalAverage)}%`,
+    ])
+    ensureSpace(60)
+    autoTable(doc, {
+      startY: y,
+      head: [['Evaluador', '% Cumplimiento']],
+      body: evaluatorRows,
+      styles: { fontSize: 9, cellPadding: 5 },
+      headStyles: { fillColor: COLORS.tableHead, textColor: COLORS.white },
+      alternateRowStyles: { fillColor: COLORS.zebra },
+      margin: { left: M, right: M },
+      theme: 'grid',
+      didParseCell(data) {
+        if (data.section !== 'body') return
+        if (data.column.index === 1) {
+          const percentage = getNumber(data.cell.raw)
+          const severity = getSeverityFromPercentage(percentage)
+          const color = SEVERITY_COLORS[severity] || COLORS.zebra
+          data.cell.styles.fillColor = color
+          data.cell.styles.textColor = getContrastingTextColor(color)
+          data.cell.styles.fontStyle = 'bold'
+        }
+      },
+    })
+    y = doc.lastAutoTable.finalY + 18
+  }
+
+  // ─── 3. PRIORIDAD DE MEJORA ───────────────────────────────────────────────
+  startSection('3. Prioridad de mejora por impacto negativo')
+  writeParagraph(
+    useWarningTerm
+      ? 'La priorización combina el porcentaje de cumplimiento con las señales de riesgo recogidas durante la evaluación, como warnings, comentarios y evidencias visuales.'
+      : 'La priorización combina el porcentaje de cumplimiento con las señales de riesgo recogidas durante la evaluación, como las preguntas que requieren un análisis más profundo, los comentarios y las evidencias visuales.',
+  )
+  writeParagraph(
+    'La tabla siguiente presenta el cumplimiento calculado por heurística. Para cada evaluador se suman las puntuaciones de las preguntas aplicables, se multiplican por 100 y se dividen entre el número de preguntas aplicables multiplicado por la puntuación máxima. Después se promedian esos porcentajes entre evaluadores.',
+  )
+
+  const summaryRows = evidence.orderedByPercentage.map((item) => [
+    item.position,
+    item.label,
+    `${formatDecimal(item.percentage)}%`,
+    item.severity,
+  ])
+
+  autoTable(doc, {
+    startY: y,
+    head: [['#', 'Heurística', '% Cumplimiento', 'Severidad']],
+    body: summaryRows,
+    styles: { fontSize: 9, cellPadding: 5 },
+    headStyles: { fillColor: COLORS.tableHead, textColor: COLORS.white },
+    alternateRowStyles: { fillColor: COLORS.zebra },
+    margin: { left: M, right: M },
+    theme: 'grid',
+    didParseCell(data) {
+      if (data.section !== 'body') return
+      if (data.column.index === 2) {
+        const severity = data.row.raw?.[3]
+        const color = SEVERITY_COLORS[severity] || COLORS.zebra
+        data.cell.styles.fillColor = color
+        data.cell.styles.textColor = getContrastingTextColor(color)
+        data.cell.styles.fontStyle = 'bold'
+      }
+      if (data.column.index === 3) {
+        const color = SEVERITY_COLORS[data.cell.raw] || COLORS.zebra
+        data.cell.styles.fillColor = color
+        data.cell.styles.textColor = getContrastingTextColor(color)
+        data.cell.styles.fontStyle = 'bold'
+      }
+    },
+  })
+  y = doc.lastAutoTable.finalY + 18
+
+  // ─── 4. ANALISIS DETALLADO ────────────────────────────────────────────────
+  doc.addPage()
+  pageNum += 1
+  y = M
+  addPageHeader()
+  startSection('4. Análisis detallado por heurística')
+
+  for (const item of evidence.orderedByImpact) {
+    ensureSpace(110)
+
+    writeParagraph(item.label, { bold: true, size: 13, spacing: 2 })
+    writeParagraph(
+      `Nivel: ${item.severity}  |  Desviación típica: ${formatDecimal(item.sd)}`,
+      {
+        bold: false,
+        size: 10,
+        color: SEVERITY_COLORS[item.severity] || COLORS.sub,
+        spacing: 6,
+      },
+    )
+
+    const heuristicTitle = getHeuristicShortTitle(
+      { heuristicTitle: item.title },
+      0,
+    )
+    const purposeText = getHeuristicPurposeText(heuristicTitle)
+
+    writeParagraph(`Esta heurística evalúa: ${purposeText}`, {
+      size: 10,
+      spacing: 6,
+    })
+
+    // ── Tabla de criterios evaluados ─────────────────────────────────────
+    if (item.questionSummaries.length > 0) {
+      writeParagraph('Criterios evaluados:', {
+        bold: true,
+        size: 10,
+        spacing: 3,
+      })
+
+      const maxQuestionScore = getMaxQuestionScore(allOptions)
+      const questionRows = item.questionSummaries.map((q) => {
+        const avg = q.average
+        const maxVal = maxQuestionScore || 1
+        const formattedAvg =
+          typeof avg === 'number'
+            ? `${((avg / maxVal) * 100).toFixed(2).replace('.', ',')}%`
+            : '—'
+        return [q.title, formattedAvg]
+      })
+
+      ensureSpace(questionRows.length * 14 + 30)
+      autoTable(doc, {
+        startY: y,
+        head: [['Pregunta', 'Media']],
+        body: questionRows,
+        styles: { fontSize: 8, cellPadding: 3 },
+        headStyles: { fillColor: COLORS.accent, textColor: COLORS.white },
+        alternateRowStyles: { fillColor: COLORS.zebra },
+        margin: { left: M + 6, right: M },
+        theme: 'grid',
+        columnStyles: {
+          0: { cellWidth: CONTENT_W - 60, overflow: 'linebreak' },
+          1: { halign: 'center', cellWidth: 40 },
+        },
+      })
+      y = doc.lastAutoTable.finalY + 10
+    }
+
+    // ── Desviación típica por heurística ─────────────────────────────────
+    const sdValue = item.sd
+    let sdInterpretation = ''
+    if (sdValue < 0.2) {
+      sdInterpretation = `La desviación típica de las respuestas en esta heurística es baja (${formatDecimal(sdValue)}), lo que indica que los evaluadores coincidieron ampliamente en sus valoraciones.`
+    } else if (sdValue < 0.5) {
+      sdInterpretation = `La desviación típica es moderada (${formatDecimal(sdValue)}), lo que refleja cierta divergencia entre evaluadores en algunos criterios, aunque sin llegar a ser contradictoria.`
+    } else {
+      sdInterpretation = `La desviación típica es alta (${formatDecimal(sdValue)}), lo que señala una percepción muy dispar entre evaluadores. Esto puede indicar que la experiencia varía notablemente según el perfil del usuario o el contexto de uso.`
+    }
+    writeParagraph(sdInterpretation, { size: 10, spacing: 5 })
+
+    // ── Diagnostico global cualitativo ───────────────────────────────────
+    const weakQuestions = item.questionSummaries.filter((q) => q.average < 0.5)
+    const strongQuestions = item.questionSummaries.filter(
+      (q) => q.average >= 0.85,
+    )
+
+    let globalDiagnosis = ''
+    if (weakQuestions.length > item.questionSummaries.length / 2) {
+      globalDiagnosis =
+        'El diagnóstico global de esta heurística es desfavorable. La mayoría de los criterios evaluados presentan cumplimiento bajo o nulo, lo que indica que esta área representa una fricción real y consistente para el usuario. Se recomienda priorizar su revisión en el siguiente ciclo de diseño.'
+    } else if (strongQuestions.length > item.questionSummaries.length / 2) {
+      globalDiagnosis =
+        'El diagnóstico global de esta heurística es favorable. La mayoría de criterios evaluados obtienen confirmación positiva por parte de los evaluadores, lo que indica que el sistema resuelve bien esta dimensión de uso.'
+    } else {
+      globalDiagnosis =
+        'El diagnóstico global de esta heurística es mixto. Conviven criterios bien resueltos con otros que presentan margen claro de mejora, lo que sugiere una implementación parcial o inconsistente dentro del flujo.'
+    }
+    writeParagraph(globalDiagnosis, { size: 10, spacing: 5 })
+
+    // ── Impacto negativo ─────────────────────────────────────────────────
+    writeParagraph('Impacto negativo actual:', {
+      bold: true,
+      size: 10,
+      spacing: 2,
+    })
+    writeParagraph(buildNegativeImpact(item), { size: 10, spacing: 5 })
+
+    // ── Beneficio si mejora ──────────────────────────────────────────────
+    writeParagraph('Beneficio esperado si se mejora:', {
+      bold: true,
+      size: 10,
+      spacing: 2,
+    })
+    writeParagraph(buildPositiveImpact(item), { size: 10, spacing: 5 })
+
+    // ── Metadata (warnings / images / comments) ──────────────────────────
+    if (item.totalWarnings > 0) {
+      const w = item.totalWarnings
+      if (useWarningTerm) {
+        writeParagraph(
+          `Durante la evaluación, ${w} ${pluralize(w, 'respuesta fue marcada', 'respuestas fueron marcadas')} con warning, lo que refuerza la necesidad de revisión específica en los criterios señalados.`,
+          { size: 9, color: COLORS.sub, spacing: 3 },
+        )
+      } else {
+        writeParagraph(
+          `Durante la evaluación, ${w} ${pluralize(w, 'pregunta requiere un análisis más profundo al no poder verificarse solo con la navegación superficial', 'preguntas requieren un análisis más profundo al no poder verificarse solo con la navegación superficial')}, lo que refuerza la necesidad de revisión específica en los criterios señalados.`,
+          { size: 9, color: COLORS.sub, spacing: 3 },
+        )
+      }
+    }
+    if (item.totalImages > 0) {
+      const img = item.totalImages
+      writeParagraph(
+        `Se ${pluralize(img, 'adjuntó', 'adjuntaron')} ${img} ${pluralize(img, 'evidencia visual', 'evidencias visuales')} que documentan los hallazgos de esta heurística.`,
+        { size: 9, spacing: 3 },
+      )
+    }
+
+    if (normalizeText(item.comments)) {
+      writeParagraph(
+        `Comentarios del investigador: ${stripHtml(item.comments)}`,
+        { size: 9, color: COLORS.sub, spacing: 3 },
+      )
+    }
+
+    y += 14
+  }
+
+  // ─── 5. COMPARATIVA POR EVALUADOR ────────────────────────────────────────
+  doc.addPage()
+  pageNum += 1
+  y = M
+  addPageHeader()
+  startSection('5. Comparativa de puntuaciones por evaluador')
+  writeParagraph(
+    'La matriz siguiente muestra los valores medios de respuesta por heurística y evaluador. Los colores facilitan detectar respuestas bajas, medias y altas de forma visual.',
+  )
+
+  const matrixHeaders = Array.isArray(heuristicsEvaluator?.header)
+    ? heuristicsEvaluator.header.map(
+        (header) => header.title || header.text || header.value || '',
+      )
+    : []
+  const heuristicNameByIndex = Array.isArray(testStructure)
+    ? testStructure.map((heuristic, index) => {
+        const heuristicId = normalizeText(
+          heuristic?.id || heuristic?.heuristicId || `H${index + 1}`,
+        )
+        const heuristicTitle = normalizeText(
+          heuristic?.title || heuristic?.heuristicTitle || heuristic?.name,
+        )
+        return heuristicTitle
+          ? `${heuristicId} - ${heuristicTitle}`
+          : heuristicId
+      })
+    : []
+  const matrixRows = heuristicMatrixItems.map((item, rowIndex) => ({
+    heuristic: heuristicNameByIndex[rowIndex] || item.heuristic || '—',
+    max: Number(item.max),
+    min: Number(item.min),
+    values: matrixHeaders.map((_, index) => {
+      if (index === 0)
+        return heuristicNameByIndex[rowIndex] || item.heuristic || '—'
+      const key = heuristicsEvaluator.header?.[index]?.value
+      const val = item?.[key]
+      return val != null ? formatDecimal(val) : '0,00'
+    }),
+  }))
+  const matrixBody = matrixRows.map((row) => row.values)
+  const heuristicColumnWidth = Math.max(190, Math.min(CONTENT_W * 0.44, 260))
+  const evaluatorColumnCount = Math.max(1, matrixHeaders.length - 1)
+  const evaluatorColumnWidth =
+    (CONTENT_W - heuristicColumnWidth) / evaluatorColumnCount
+  const matrixColumnStyles = {
+    0: {
+      halign: 'left',
+      fontStyle: 'bold',
+      textColor: COLORS.accent,
+      cellWidth: heuristicColumnWidth,
+      overflow: 'linebreak',
+    },
+  }
+  for (let index = 1; index < matrixHeaders.length; index += 1) {
+    matrixColumnStyles[index] = {
+      halign: 'center',
+      cellWidth: evaluatorColumnWidth,
+    }
+  }
+
+  if (matrixHeaders.length > 1) {
+    ensureSpace(40)
+    autoTable(doc, {
+      startY: y,
+      head: [matrixHeaders],
+      body: matrixBody,
+      styles: {
+        fontSize: 8,
+        cellPadding: 5,
+        halign: 'center',
+        valign: 'middle',
+      },
+      columnStyles: matrixColumnStyles,
+      headStyles: {
+        fillColor: COLORS.tableHead,
+        textColor: COLORS.white,
+        fontStyle: 'bold',
+      },
+      alternateRowStyles: { fillColor: [250, 252, 255] },
+      tableWidth: CONTENT_W,
+      margin: { left: M, right: M },
+      theme: 'grid',
+      didParseCell(data) {
+        if (data.section !== 'body' || data.column.index === 0) return
+        const row = matrixRows[data.row.index]
+        const color = getHeuristicsCellColor(data.cell.raw, row?.max, row?.min)
+        data.cell.styles.fillColor = color.fill
+        data.cell.styles.textColor = color.text
+        data.cell.styles.fontStyle = 'bold'
+      },
+    })
+    y = doc.lastAutoTable.finalY + 18
+  }
+
+  writeParagraph(
+    'La tabla siguiente muestra tiempos por heurística, total y promedio por evaluador.',
+  )
+
+  const timeByHeuristicsHeader = Array.isArray(timeByHeuristics?.header)
+    ? timeByHeuristics.header
+    : []
+  const timeByHeuristicsItems = Array.isArray(timeByHeuristics?.items)
+    ? timeByHeuristics.items
+    : []
+  const filteredTimeHeader = timeByHeuristicsHeader.filter(
+    (header) => (header?.value || '') !== 'timeSd',
+  )
+  const timeHeaderLabels = filteredTimeHeader.map(
+    (header) => header?.title || header?.text || header?.value || '',
+  )
+  const timeRows = timeByHeuristicsItems.map((item) =>
+    filteredTimeHeader.map((header) => {
+      const key = header?.value
+      return item?.[key] != null ? String(item[key]) : '—'
+    }),
+  )
+  const maxTimeMs = Math.max(
+    ...timeByHeuristicsItems.map((item) =>
+      Math.max(
+        parseMmSsToMs(item?.totalTime),
+        parseMmSsToMs(item?.averageTime),
+      ),
+    ),
+    0,
+  )
+
+  if (timeHeaderLabels.length > 1 && timeRows.length) {
+    ensureSpace(40)
+    autoTable(doc, {
+      startY: y,
+      head: [timeHeaderLabels],
+      body: timeRows,
+      styles: { fontSize: 8, cellPadding: 4 },
+      headStyles: { fillColor: COLORS.tableHead, textColor: COLORS.white },
+      alternateRowStyles: { fillColor: COLORS.zebra },
+      margin: { left: M, right: M },
+      theme: 'grid',
+      didParseCell(data) {
+        if (data.section !== 'body' || data.column.index === 0) return
+        const headerKey = filteredTimeHeader[data.column.index]?.value
+        const rawMs = parseMmSsToMs(data.cell.raw)
+        if (
+          headerKey?.startsWith('Ev') ||
+          headerKey === 'totalTime' ||
+          headerKey === 'averageTime'
+        ) {
+          const color = getTimeColor(rawMs, maxTimeMs)
+          data.cell.styles.fillColor = color.fill
+          data.cell.styles.textColor = color.text
+          data.cell.styles.fontStyle = 'bold'
+        }
+      },
+    })
+    y = doc.lastAutoTable.finalY + 16
+  }
+
+  writeParagraph(`Tiempo medio de ejecución global: ${averageTime}.`)
+
+  // ─── 6. CONCLUSION ────────────────────────────────────────────────────────
+  startSection('6. Conclusión')
+  if (cleanStudyConclusion) {
+    writeParagraph(cleanStudyConclusion)
+  }
+  const warningText = useWarningTerm
+    ? pluralize(totalWarnings, 'warning', 'warnings')
+    : pluralize(
+        totalWarnings,
+        'pregunta que requiere un análisis más profundo',
+        'preguntas que requieren un análisis más profundo',
+      )
+  const commentText = pluralize(totalComments, 'comentario', 'comentarios')
+  const imageText = pluralize(totalImages, 'imagen', 'imágenes')
+  writeParagraph(
+    `En conjunto, el informe muestra un cumplimiento global de ${globalPct}, con ${totalWarnings} ${warningText}, ${totalComments} ${commentText} y ${totalImages} ${imageText} registradas como evidencias.`,
+  )
+  writeParagraph(
+    'Las heurísticas con peor posición en el ranking de impacto son las que combinan bajo cumplimiento y señales de riesgo operativo, por lo que deben priorizarse en la hoja de ruta de mejora.',
+  )
+
+  // ─── INDICE (completar páginas reales) ───────────────────────────────────
+  doc.setPage(2)
+  let tocY = M + 28
+  doc.setFont(FONT, 'normal')
+  doc.setFontSize(11)
+  doc.setTextColor(...COLORS.text)
+  tocEntries.forEach((entry) => {
+    if (tocY > PAGE_H - M) return
     const title = normalizeText(entry.title)
     const titleWidth =
       (doc.getStringUnitWidth(title) * doc.getFontSize()) /
       doc.internal.scaleFactor
-    doc.text(title, M, y)
+    doc.text(title, M, tocY)
     const dotStart = M + titleWidth + 8
-    const dotEnd = PAGE_W - M - 24
+    const dotEnd = PAGE_W - M - 20
     if (dotEnd > dotStart) {
-      const dotWidth =
-        (doc.getStringUnitWidth('.') * doc.getFontSize()) /
-        doc.internal.scaleFactor
-      const dotCount = Math.max(3, Math.floor((dotEnd - dotStart) / dotWidth))
-      const dots = '.'.repeat(dotCount)
-      doc.text(dots, dotStart, y)
-    }
-    doc.setFont(FONT, 'bold')
-    doc.setTextColor(...COLORS.accent)
-    doc.text(String(entry.page), PAGE_W - M, y, { align: 'right' })
-    y += 18
-  })
-
-  // ─── PARSE AI TEXT ──────────────────────────────────────────────────────
-  const aiSections = parseAiSections(aiReportText || '')
-  const sectionTitles = [
-    '1. Introducción',
-    '2. Resumen ejecutivo',
-    '3. Prioridad de mejora y análisis detallado por heurística',
-    '4. Comparativa de puntuaciones por evaluador',
-    '5. Conclusión',
-  ]
-
-  function getSectionContent(sectionIndex) {
-    if (aiSections[sectionIndex] && aiSections[sectionIndex].content) {
-      return aiSections[sectionIndex].content
-    }
-    if (aiSections.length === 1 && aiSections[0].content) {
-      const paras = aiSections[0].content.split('\n').filter((p) => p.trim())
-      const chunkSize = Math.max(
-        1,
-        Math.floor(paras.length / sectionTitles.length),
-      )
-      const start = sectionIndex * chunkSize
-      if (start < paras.length) {
-        return paras.slice(start, start + chunkSize).join('\n')
-      }
-    }
-    return ''
-  }
-
-  // ─── RENDER SECTIONS ────────────────────────────────────────────────────
-  for (let i = 0; i < sectionTitles.length; i++) {
-    doc.addPage()
-    pageNum += 1
-    y = M + 6
-    addFooter()
-
-    const title = sectionTitles[i] || `Sección ${i + 1}`
-    startSection(title)
-
-    const sectionContent = getSectionContent(i)
-
-    // ── Section 3: INTERLEAVED AI text + tables ──────────────────────────
-    if (i === 2) {
-      const section3AiText = sectionContent || ''
-      const numberedBlocks = parseNumberedHeuristicBlocks(section3AiText)
-
-      // Render ranking table first
-      const summaryRows = evidence.orderedByPercentage.map((item) => [
-        item.position,
-        item.label,
-        `${formatDecimal(item.percentage)}%`,
-        item.severity,
-      ])
-
-      ensureSpace(40)
-      writeParagraph(
-        'La tabla siguiente presenta el ranking completo de heurísticas ordenado por cumplimiento, utilizado como base para el análisis.',
-        { size: 10, spacing: 10, color: COLORS.sub },
-      )
-
-      autoTable(doc, {
-        startY: y,
-        head: [['#', 'Heurística', '%', 'Severidad']],
-        body: summaryRows,
-        styles: {
-          fontSize: 8.5,
-          cellPadding: 5,
-          font: FONT,
-          lineColor: COLORS.tableBorder,
-          lineWidth: 0.2,
-        },
-        headStyles: {
-          fillColor: COLORS.tableHead,
-          textColor: COLORS.white,
-          fontStyle: 'bold',
-          fontSize: 8.5,
-          halign: 'center',
-        },
-        bodyStyles: {
-          textColor: COLORS.text,
-        },
-        alternateRowStyles: { fillColor: COLORS.tableStripe },
-        margin: { left: M, right: M },
-        theme: 'grid',
-        columnStyles: {
-          0: { halign: 'center', cellWidth: 30 },
-          1: { cellWidth: CONTENT_W - 120, overflow: 'linebreak' },
-          2: { halign: 'center', cellWidth: 45 },
-          3: { halign: 'center', cellWidth: 45 },
-        },
-        didParseCell(data) {
-          if (data.section !== 'body') return
-          if (data.column.index === 2) {
-            const severity = data.row.raw?.[3]
-            const color = SEVERITY_COLORS[severity] || COLORS.tableStripe
-            data.cell.styles.fillColor = color
-            data.cell.styles.textColor = getContrastingTextColor(color)
-            data.cell.styles.fontStyle = 'bold'
-          }
-          if (data.column.index === 3) {
-            const color = SEVERITY_COLORS[data.cell.raw] || COLORS.tableStripe
-            data.cell.styles.fillColor = color
-            data.cell.styles.textColor = getContrastingTextColor(color)
-            data.cell.styles.fontStyle = 'bold'
-          }
-        },
-      })
-      y = doc.lastAutoTable.finalY + 16
-
-      // Interleave: for each heuristic, render table → comments → images → AI text
-      const unmatchedBlocks = [...numberedBlocks]
-      for (const item of evidence.orderedByImpact) {
-        ensureSpace(110)
-
-        // Heuristic sub-header
-        doc.setDrawColor(...COLORS.secondary)
-        doc.setFillColor(...COLORS.secondary)
-        doc.rect(M, y, 3, 16, 'F')
-        doc.setFont(FONT, 'bold')
-        doc.setFontSize(12)
-        doc.setTextColor(...COLORS.primary)
-        doc.text(item.label, M + 10, y + 12)
-        y += 22
-
-        // Severity badge inline
-        const sv = item.severity
-        const svColor = SEVERITY_COLORS[sv] || COLORS.sub
-        doc.setFont(FONT, 'normal')
-        doc.setFontSize(9)
-        doc.setTextColor(...svColor)
-        doc.text(
-          `Nivel: ${sv}  |  ${formatDecimal(item.percentage)}%  |  Desv. típica: ${formatDecimal(item.sd)}`,
-          M + 10,
-          y,
-        )
-        y += 16
-
-        // 1. Question table
-        if (item.questionSummaries.length > 0) {
-          const maxScore = getMaxQuestionScore(allOptions)
-          const qRows = item.questionSummaries.map((q) => {
-            const avg = q.average
-            const maxVal = maxScore || 1
-            const pct =
-              typeof avg === 'number'
-                ? ((avg / maxVal) * 100).toFixed(2).replace('.', ',') + '%'
-                : '—'
-            return [q.title, pct]
-          })
-
-          ensureSpace(qRows.length * 12 + 30)
-          autoTable(doc, {
-            startY: y,
-            head: [['Criterio evaluado', 'Media']],
-            body: qRows,
-            styles: {
-              fontSize: 8,
-              cellPadding: 3,
-              font: FONT,
-              lineColor: COLORS.tableBorder,
-              lineWidth: 0.1,
-            },
-            headStyles: {
-              fillColor: COLORS.tableHead,
-              textColor: COLORS.white,
-              fontStyle: 'bold',
-              fontSize: 8,
-            },
-            alternateRowStyles: { fillColor: COLORS.tableStripe },
-            margin: { left: M + 8, right: M },
-            theme: 'grid',
-            columnStyles: {
-              0: { overflow: 'linebreak' },
-              1: { halign: 'center', cellWidth: 40 },
-            },
-          })
-          y = doc.lastAutoTable.finalY + 12
-        }
-
-        // 2. Images
-        const hIndex = (item.position || 1) - 1
-        const imgUrls = getAllImagesForHeuristic(
-          allAnswers,
-          hIndex,
-          testStructure,
-        )
-        if (imgUrls.length > 0) {
-          doc.setFont(FONT, 'bold')
-          doc.setFontSize(9)
-          doc.setTextColor(...COLORS.primary)
-          doc.text(`Evidencias visuales (${imgUrls.length}):`, M + 8, y)
-          y += 13
-          const maxImgs = Math.min(imgUrls.length, 4)
-          for (let ii = 0; ii < maxImgs; ii++) {
-            try {
-              const base64 = await loadImageAsBase64(imgUrls[ii])
-              if (base64) {
-                ensureSpace(400)
-                const imgWidth = Math.min(CONTENT_W - 24, 400)
-                const imgHeight = 300
-                doc.addImage(base64, 'JPEG', M + 45, y, imgWidth, imgHeight)
-                y += imgHeight + 20
-              }
-            } catch {
-              ensureSpace(12)
-              doc.setFont(FONT, 'normal')
-              doc.setFontSize(8)
-              doc.setTextColor(...COLORS.sub)
-              doc.text(`Imagen: ${imgUrls[ii]}`, M + 12, y)
-              y += 11
-            }
-          }
-        }
-
-        // 3. Comments table
-        console.log(
-          `[DEBUG AI PDF] H${item.position} questionSummaries:`,
-          item.questionSummaries?.length,
-        )
-        item.questionSummaries?.forEach((q, i) => {
-          console.log(
-            `[DEBUG AI PDF] H${item.position} Q${i + 1} commentDetails:`,
-            q.commentDetails?.length || 0,
-          )
-        })
-        const hasAnyComments = item.questionSummaries.some(
-          (q) => (q.commentDetails || []).length > 0,
-        )
-        console.log(
-          `[DEBUG AI PDF] H${item.position} hasAnyComments:`,
-          hasAnyComments,
-        )
-        if (hasAnyComments) {
-          writeParagraph('Comentarios de evaluadores:', {
-            bold: true,
-            size: 10,
-            spacing: 3,
-          })
-          y = renderCommentsTable(doc, item.questionSummaries, y, {
-            FONT,
-            M,
-            CONTENT_W,
-            COLORS,
-            ensureSpace,
-          })
-        }
-
-        // 4. AI analysis text for this heuristic (from numbered blocks)
-        const matchedBlockIndex = unmatchedBlocks.findIndex((b) =>
-          matchBlockToEvidenceItem(b, [item]),
-        )
-        if (matchedBlockIndex >= 0) {
-          const block = unmatchedBlocks.splice(matchedBlockIndex, 1)[0]
-          const analysisParagraphs = block.text
-            .split('\n')
-            .filter((p) => p.trim())
-            .map((p) => p.trim())
-          for (const p of analysisParagraphs) {
-            writeParagraph(p, { spacing: 6 })
-          }
-        }
-
-        // Metadata: warnings, images
-        const metaBits = []
-        if (item.totalWarnings > 0) {
-          metaBits.push(
-            `${item.totalWarnings} ${pluralize(item.totalWarnings, 'warning', 'warnings')}`,
-          )
-        }
-        if (item.totalImages > 0) {
-          metaBits.push(
-            `${item.totalImages} ${pluralize(item.totalImages, 'evidencia visual', 'evidencias visuales')}`,
-          )
-        }
-        if (metaBits.length) {
-          doc.setFont(FONT, 'normal')
-          doc.setFontSize(9)
-          doc.setTextColor(...COLORS.sub)
-          doc.text(`Datos registrados: ${metaBits.join(', ')}.`, M + 8, y)
-          y += 13
-        }
-        // ── Comentarios del investigador por pregunta (estilo tarjeta profesional) ──
-        const perQComments = item.perQuestionComments || {}
-        const hasPerQuestionComments = Object.keys(perQComments).some(
-          (k) => perQComments[k] && String(perQComments[k]).trim().length > 0,
-        )
-        const fallbackComment = normalizeText(item.comments)
-
-        if (hasPerQuestionComments || fallbackComment) {
-          ensureSpace(40)
-          writeParagraph('Comentarios del investigador:', {
-            bold: true,
-            size: 10,
-            spacing: 3,
-          })
-
-          // Use table format for per-question comments
-          if (hasPerQuestionComments) {
-            const questionDefs = item.questionSummaries || []
-            y = renderHeuristicCommentsTable(doc, perQComments, questionDefs, y, {
-              FONT,
-              M,
-              CONTENT_W,
-              COLORS,
-              ensureSpace,
-            })
-          } else if (fallbackComment) {
-            // If no per-question comments, show the generic heuristic comment
-            const commentRows = [[fallbackComment]]
-            ensureSpace(commentRows.length * 12 + 30)
-            autoTable(doc, {
-              startY: y,
-              head: [[]],
-              body: commentRows,
-              styles: {
-                fontSize: 9,
-                cellPadding: 4,
-                font: FONT,
-                lineColor: COLORS.tableBorder,
-                lineWidth: 0.1,
-              },
-              margin: { left: M + 8, right: M },
-              theme: 'plain',
-              columnStyles: {
-                0: { overflow: 'linebreak' },
-              },
-            })
-            y = doc.lastAutoTable.finalY + 8
-          }
-
-          y += 8
-        }      }
-
-      // Render any unmatched AI text blocks as fallback
-      for (const block of unmatchedBlocks) {
-        ensureSpace(40)
-        writeParagraph(`${block.name}:`, { bold: true, spacing: 6 })
-        const paragraphs = block.text.split('\n').filter((p) => p.trim())
-        for (const p of paragraphs) {
-          writeParagraph(p.trim(), { spacing: 6 })
-        }
-      }
-    }
-
-    // ── Other sections: render AI text paragraphs ─────────────────────────
-    if (i !== 2 && sectionContent) {
-      const paragraphs = sectionContent
-        .split('\n')
-        .filter((p) => p.trim())
-        .map((p) => p.trim())
-      for (const p of paragraphs) {
-        writeParagraph(p, { spacing: 6 })
-      }
-    }
-
-    // ── Section 4: evaluator matrix + time stats ─────────────────────────
-    if (i === 3) {
-      const matrixHeaders = Array.isArray(heuristicsEvaluator?.header)
-        ? heuristicsEvaluator.header.map(
-            (h) => h.title || h.text || h.value || '',
-          )
-        : []
-      const heuristicNameByIndex = Array.isArray(testStructure)
-        ? testStructure.map((h, idx) => {
-            const id = normalizeText(h?.id || h?.heuristicId || `H${idx + 1}`)
-            const title = normalizeText(
-              h?.title || h?.heuristicTitle || h?.name,
-            )
-            return title ? `${id} — ${title}` : id
-          })
-        : []
-      const matrixRows = heuristicMatrixItems.map((item, rowIndex) => ({
-        heuristic: heuristicNameByIndex[rowIndex] || item.heuristic || '—',
-        max: Number(item.max),
-        min: Number(item.min),
-        values: matrixHeaders.map((_, colIdx) => {
-          if (colIdx === 0)
-            return heuristicNameByIndex[rowIndex] || item.heuristic || '—'
-          const key = heuristicsEvaluator.header?.[colIdx]?.value
-          const val = item?.[key]
-          return val != null ? formatDecimal(val) : '0,00'
-        }),
-      }))
-      const matrixBody = matrixRows.map((row) => row.values)
-      const heurColW = Math.max(180, Math.min(CONTENT_W * 0.44, 250))
-      const evCount = Math.max(1, matrixHeaders.length - 1)
-      const evColW = (CONTENT_W - heurColW) / evCount
-      const matrixColStyles = {
-        0: {
-          halign: 'left',
-          fontStyle: 'bold',
-          textColor: COLORS.primary,
-          cellWidth: heurColW,
-          overflow: 'linebreak',
-        },
-      }
-      for (let idx = 1; idx < matrixHeaders.length; idx += 1) {
-        matrixColStyles[idx] = { halign: 'center', cellWidth: evColW }
-      }
-
-      if (matrixHeaders.length > 1) {
-        writeParagraph(
-          'Matriz de puntuaciones medias por heurística y evaluador. Los colores reflejan el nivel relativo dentro de cada fila.',
-          { size: 10, spacing: 8, color: COLORS.sub },
-        )
-
-        ensureSpace(matrixBody.length * 12 + 30)
-        autoTable(doc, {
-          startY: y,
-          head: [matrixHeaders],
-          body: matrixBody,
-          styles: {
-            fontSize: 7.5,
-            cellPadding: 4,
-            font: FONT,
-            halign: 'center',
-            valign: 'middle',
-            lineColor: COLORS.tableBorder,
-            lineWidth: 0.1,
-          },
-          columnStyles: matrixColStyles,
-          headStyles: {
-            fillColor: COLORS.tableHead,
-            textColor: COLORS.white,
-            fontStyle: 'bold',
-            fontSize: 7.5,
-          },
-          alternateRowStyles: { fillColor: COLORS.tableStripe },
-          tableWidth: CONTENT_W,
-          margin: { left: M, right: M },
-          theme: 'grid',
-          didParseCell(data) {
-            if (data.section !== 'body' || data.column.index === 0) return
-            const row = matrixRows[data.row.index]
-            const color = getHeuristicsCellColor(
-              data.cell.raw,
-              row?.max,
-              row?.min,
-            )
-            data.cell.styles.fillColor = color.fill
-            data.cell.styles.textColor = color.text
-            data.cell.styles.fontStyle = 'bold'
-          },
-        })
-        y = doc.lastAutoTable.finalY + 14
-      }
-
-      // ── Time stats ────────────────────────────────────────────────────
-      const timeHeader = Array.isArray(timeByHeuristics?.header)
-        ? timeByHeuristics.header
-        : []
-      const timeItems = Array.isArray(timeByHeuristics?.items)
-        ? timeByHeuristics.items
-        : []
-      const filteredTimeHeader = timeHeader.filter(
-        (h) => (h?.value || '') !== 'timeSd',
-      )
-      const timeLabels = filteredTimeHeader.map(
-        (h) => h?.title || h?.text || h?.value || '',
-      )
-      const timeRows = timeItems.map((item) =>
-        filteredTimeHeader.map((h) => {
-          const key = h?.value
-          return item?.[key] != null ? String(item[key]) : '—'
-        }),
-      )
-      const maxTimeMs = Math.max(
-        ...timeItems.map((item) =>
-          Math.max(
-            parseMmSsToMs(item?.totalTime),
-            parseMmSsToMs(item?.averageTime),
+      const dots = '.'.repeat(
+        Math.max(
+          3,
+          Math.floor(
+            (dotEnd - dotStart) /
+              ((doc.getStringUnitWidth('.') * doc.getFontSize()) /
+                doc.internal.scaleFactor),
           ),
         ),
-        0,
       )
-
-      if (timeLabels.length > 1 && timeRows.length) {
-        ensureSpace(40)
-        writeParagraph('Tiempos registrados por heurística y evaluador:', {
-          size: 10,
-          spacing: 6,
-          color: COLORS.sub,
-        })
-
-        autoTable(doc, {
-          startY: y,
-          head: [timeLabels],
-          body: timeRows,
-          styles: {
-            fontSize: 7.5,
-            cellPadding: 3,
-            font: FONT,
-            lineColor: COLORS.tableBorder,
-            lineWidth: 0.1,
-          },
-          headStyles: {
-            fillColor: COLORS.tableHead,
-            textColor: COLORS.white,
-            fontStyle: 'bold',
-            fontSize: 7.5,
-          },
-          alternateRowStyles: { fillColor: COLORS.tableStripe },
-          margin: { left: M, right: M },
-          theme: 'grid',
-          didParseCell(data) {
-            if (data.section !== 'body' || data.column.index === 0) return
-            const hk = filteredTimeHeader[data.column.index]?.value
-            const rawMs = parseMmSsToMs(data.cell.raw)
-            if (
-              hk?.startsWith('Ev') ||
-              hk === 'totalTime' ||
-              hk === 'averageTime'
-            ) {
-              const color = getTimeColors(rawMs, maxTimeMs)
-              data.cell.styles.fillColor = color.fill
-              data.cell.styles.textColor = color.text
-              data.cell.styles.fontStyle = 'bold'
-            }
-          },
-        })
-        y = doc.lastAutoTable.finalY + 12
-      }
-
-      doc.setFont(FONT, 'normal')
-      doc.setFontSize(10)
-      doc.setTextColor(...COLORS.sub)
-      doc.text(`Tiempo medio de ejecución global: ${averageTime}.`, M, y)
-      y += 16
+      doc.text(dots, dotStart, tocY)
     }
-
-    // ── Section 5: conclusion metadata ──────────────────────────────────
-    if (i === 4) {
-      ensureSpace(40)
-      doc.setDrawColor(...COLORS.muted)
-      doc.setLineWidth(0.3)
-      doc.line(M, y, PAGE_W - M, y)
-      y += 14
-
-      doc.setFont(FONT, 'bold')
-      doc.setFontSize(9)
-      doc.setTextColor(...COLORS.sub)
-      doc.text('DATOS DEL ESTUDIO', M, y)
-      y += 14
-
-      doc.setFont(FONT, 'normal')
-      doc.setFontSize(9)
-      doc.setTextColor(...COLORS.text)
-
-      const summaryLines = [
-        `Cumplimiento global: ${globalPct} (${globalSeverity})`,
-        `Total de warnings: ${totalWarnings}`,
-        `Comentarios registrados: ${totalComments}`,
-        `Evidencias visuales: ${totalImages}`,
-        `Tiempo medio: ${averageTime}`,
-      ]
-      for (const line of summaryLines) {
-        doc.text(line, M + 8, y)
-        y += 13
-      }
-    }
-  }
-
-  // ─── WEB RESEARCH APPENDIX ──────────────────────────────────────────────
-  if (webResearch && typeof webResearch === 'string' && webResearch.trim()) {
-    doc.addPage()
-    pageNum += 1
-    y = M + 6
-    addFooter()
-
-    // Add to TOC
-    tocEntries.push({ title: 'Análisis Web (RAG)', page: pageNum })
-
-    doc.setDrawColor(...COLORS.accent)
-    doc.setFillColor(...COLORS.accent)
-    doc.rect(M, y, 4, 24, 'F')
-    doc.setFont(FONT, 'bold')
-    doc.setFontSize(20)
-    doc.setTextColor(...COLORS.primary)
-    doc.text('ANÁLISIS WEB (RAG)', M + 14, y + 18)
-    doc.setDrawColor(...COLORS.muted)
-    doc.setLineWidth(0.3)
-    doc.line(M, y + 30, PAGE_W - M, y + 30)
-    y += 40
-
-    doc.setFont(FONT, 'normal')
-    doc.setFontSize(9)
-    doc.setTextColor(...COLORS.sub)
-    doc.text(
-      'Investigación web realizada por Jina AI / TinyFish como contexto adicional para el análisis.',
-      M,
-      y,
-    )
-    y += 14
-
-    // Split web research content into paragraphs and render
-    const webLines = webResearch.split('\n').filter((l) => l.trim())
-    for (const line of webLines) {
-      const trimmed = line.trim()
-      if (trimmed.startsWith('### ')) {
-        ensureSpace(20)
-        doc.setFont(FONT, 'bold')
-        doc.setFontSize(11)
-        doc.setTextColor(...COLORS.primary)
-        doc.text(trimmed.replace(/^#+\s*/, ''), M, y)
-        y += 14
-      } else if (trimmed.startsWith('## ')) {
-        ensureSpace(22)
-        doc.setFont(FONT, 'bold')
-        doc.setFontSize(13)
-        doc.setTextColor(...COLORS.primary)
-        doc.text(trimmed.replace(/^#+\s*/, ''), M, y)
-        y += 16
-      } else if (trimmed.startsWith('# ')) {
-        ensureSpace(24)
-        doc.setFont(FONT, 'bold')
-        doc.setFontSize(15)
-        doc.setTextColor(...COLORS.primary)
-        doc.text(trimmed.replace(/^#+\s*/, ''), M, y)
-        y += 18
-      } else if (trimmed.startsWith('=== ')) {
-        ensureSpace(18)
-        doc.setFont(FONT, 'bold')
-        doc.setFontSize(10)
-        doc.setTextColor(...COLORS.secondary)
-        const sectionLabel = trimmed
-          .replace(/^=+/, '')
-          .replace(/=+$/, '')
-          .trim()
-        doc.text(sectionLabel, M, y)
-        y += 13
-      } else if (trimmed.startsWith('URL:')) {
-        ensureSpace(12)
-        doc.setFont(FONT, 'italic')
-        doc.setFontSize(8)
-        doc.setTextColor(...COLORS.sub)
-        doc.text(trimmed, M + 8, y)
-        y += 10
-      } else {
-        ensureSpace(14)
-        const wrapped = doc.splitTextToSize(trimmed, CONTENT_W)
-        for (const wl of wrapped) {
-          ensureSpace(12)
-          doc.setFont(FONT, 'normal')
-          doc.setFontSize(9)
-          doc.setTextColor(...COLORS.text)
-          doc.text(wl, M, y)
-          y += 11
-        }
-      }
-    }
-  }
-
-  // ─── UPDATE INDEX WITH REAL PAGE NUMBERS ──────────────────────────────
-  doc.setPage(2)
-  let tocY = M + 40
-  doc.setFont(FONT, 'normal')
-  doc.setFontSize(11)
-  doc.setTextColor(...COLORS.text)
-  const renderedTitles = tocEntries.slice(0, sectionTitles.length)
-  renderedTitles.forEach((entry) => {
-    if (tocY > PAGE_H - M - 20) return
-    const title = normalizeText(entry.title)
-    const tw =
-      (doc.getStringUnitWidth(title) * doc.getFontSize()) /
-      doc.internal.scaleFactor
-    doc.text(title, M, tocY)
-    const dotStart = M + tw + 8
-    const dotEnd = PAGE_W - M - 24
-    if (dotEnd > dotStart) {
-      const dw =
-        (doc.getStringUnitWidth('.') * doc.getFontSize()) /
-        doc.internal.scaleFactor
-      const dc = Math.max(3, Math.floor((dotEnd - dotStart) / dw))
-      doc.text('.'.repeat(dc), dotStart, tocY)
-    }
-    doc.setFont(FONT, 'bold')
-    doc.setTextColor(...COLORS.accent)
     doc.text(String(entry.page), PAGE_W - M, tocY, { align: 'right' })
-    doc.setFont(FONT, 'normal')
-    doc.setTextColor(...COLORS.text)
-    tocY += 18
+    tocY += 20
   })
 
-  const fileName = `informe_heurística_IA_${
+  const fileName = `informe_heurística_${
     testTitle ? testTitle.replace(/\s+/g, '_').toLowerCase() : 'evaluación'
   }.pdf`
-
-  doc.deletePage(2)
 
   if (mode === 'download') {
     doc.save(fileName)
@@ -1166,11 +1587,44 @@ export async function generateHeuristicPdfWithAi(reportData, options = {}) {
   return { fileName, blob }
 }
 
-function getTimeColors(valueMs, maxMs) {
-  if (!maxMs || valueMs <= 0)
-    return { fill: [245, 248, 250], text: [44, 48, 52] }
-  const ratio = valueMs / maxMs
-  if (ratio < 0.33) return { fill: [230, 245, 235], text: [39, 174, 96] }
-  if (ratio < 0.66) return { fill: [255, 248, 225], text: [180, 130, 20] }
-  return { fill: [255, 235, 230], text: [200, 60, 50] }
+export {
+  loadLogo,
+  addFooter,
+  getSeverityFromPercentage,
+  normalizeText,
+  pluralize,
+  stripHtml,
+  extractCommentTexts,
+  getNumber,
+  getHeuristicLabel,
+  getHeuristicShortTitle,
+  getEvaluatorLabel,
+  getQuestionLabel,
+  getHeuristicDomainWeight,
+  getHeuristicPurposeText,
+  getQuestionQualitativeLabel,
+  buildNegativeImpact,
+  buildPositiveImpact,
+  formatDecimal,
+  getHeuristicsCellColor,
+  getContrastingTextColor,
+  parseMmSsToMs,
+  getTimeColor,
+  getMaxQuestionScore,
+  calculateHeuristicCompliance,
+  calcStandardDeviation,
+  buildHeuristicEvidence,
+  renderCommentsTable,
+  renderHeuristicCommentsTable,
+  FONT,
+  M,
+  PAGE_W,
+  PAGE_H,
+  CONTENT_W,
+  LH,
+  COLORS,
+  SEVERITY_COLORS,
+  getQuestionImageUrls,
+  getAllImagesForHeuristic,
+  loadImageAsBase64,
 }

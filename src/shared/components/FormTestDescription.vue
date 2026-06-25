@@ -67,6 +67,24 @@
             @update:model-value="updateTestDescription($event)"
           />
         </div>
+
+        <div class="input-group mb-6">
+          <label class="input-label">
+            {{ $t('Web Url') }}
+            <span class="required-star">*</span>
+          </label>
+          <v-text-field
+            :model-value="test.englishWebUrl"
+            :label="$t('Link url from the web')"
+            :rules="urlRequired"
+            variant="outlined"
+            density="comfortable"
+            :placeholder="$t('Web Url')"
+            hide-details="auto"
+            class="modern-input"
+            @update:model-value="updateEnglishWebUrl($event)"
+          />
+        </div>
       </v-col>
     </v-row>
   </v-form>
@@ -108,6 +126,19 @@ const titleRequired = computed(() => [
 ])
 const typeRequired = computed(() => [(v) => !!v || t('errors.fieldRequired')])
 
+const urlRequired = computed(() => [
+  (v) => !!v || t('errors.fieldRequired'),
+  (v) => {
+    if (!v) return true
+    try {
+      new URL(v)
+      return true
+    } catch {
+      return t('studyCreation.details.validation.invalidUrl') || 'URL no válida'
+    }
+  },
+])
+
 const types = computed(() => [
   {
     title: t('studyCreation.methods.test.usability_unmoderated.name'),
@@ -141,6 +172,11 @@ const updateTestTitle = (value) => {
 
 const updateTestDescription = (value) => {
   emit('update:test', { ...props.test, testDescription: value })
+  store.commit('SET_LOCAL_CHANGES', true)
+}
+
+const updateEnglishWebUrl = (value) => {
+  emit('update:test', { ...props.test, englishWebUrl: value })
   store.commit('SET_LOCAL_CHANGES', true)
 }
 
@@ -185,5 +221,11 @@ defineExpose({
 .modern-input :deep(.v-field__input) {
   font-size: 0.875rem;
   padding: 16px;
+}
+
+.required-star {
+  color: #e53935;
+  font-weight: bold;
+  margin-left: 2px;
 }
 </style>

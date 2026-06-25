@@ -48,6 +48,7 @@
               :test-title="testTitle"
               :evaluator-identity="singleEvaluatorIdentity"
               :total-comments="totalComments"
+              :total-images="totalImages"
             />
 
             <!-- Tab 2 - Evaluators -->
@@ -138,6 +139,14 @@ const loading = ref(false) // Note: Check if Vuex getter 'loading' is needed
 const array_scores = ref([])
 
 const showFinalResult = computed(() => finalResult(resultEvaluator.value))
+
+const totalImages = computed(() => {
+  if (!Array.isArray(imageTotalsByHeuristic.value)) return 0
+  return imageTotalsByHeuristic.value.reduce(
+    (sum, item) => sum + (Number(item.totalImages) || 0),
+    0,
+  )
+})
 
 const totalComments = computed(() => {
   if (!Array.isArray(answers.value)) return 0

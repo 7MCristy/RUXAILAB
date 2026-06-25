@@ -1,4 +1,3 @@
-/* eslint-disable no-console */
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
 import { formatTimeSpentFromMs } from '@/ux/Heuristic/utils/statistics'
@@ -88,19 +87,6 @@ function stripHtml(value = '') {
 
 function extractCommentTexts(answer) {
   const comments = []
-  console.log(
-    '[DEBUG extractCommentTexts] answer keys:',
-    answer ? Object.keys(answer) : 'null',
-  )
-  console.log('[DEBUG extractCommentTexts] answer.comments:', answer?.comments)
-  console.log(
-    '[DEBUG extractCommentTexts] answer.heuristicAnswer:',
-    answer?.heuristicAnswer,
-  )
-  console.log(
-    '[DEBUG extractCommentTexts] answer.heuristicComment:',
-    answer?.heuristicComment,
-  )
   // Array format: answer.comments = [{id, text, createdAt}]
   if (Array.isArray(answer?.comments)) {
     comments.push(...answer.comments)
@@ -125,12 +111,6 @@ function extractCommentTexts(answer) {
       return normalizeText(comment?.text || comment)
     })
     .filter(Boolean)
-  console.log(
-    '[DEBUG extractCommentTexts] raw comments:',
-    comments.length,
-    '→ filtered result:',
-    result.length,
-  )
   return result
 }
 
@@ -398,6 +378,25 @@ function calcStandardDeviation(values) {
   return Math.sqrt(variance)
 }
 
+/**
+ * Looks up researcher comments for a given heuristic across multiple key formats.
+ * Handles numeric indices (0, 1), 1-based ("H1", "H2"), and heuristic.id/heuristic.heuristicId.
+ */
+function findHeuristicComments(heuristicComments, heuristic, heuristicIndex) {
+  if (!heuristicComments || typeof heuristicComments !== 'object') return null
+  const keys = [
+    `H${heuristicIndex + 1}`,
+    String(heuristicIndex),
+    String(heuristicIndex + 1),
+    heuristic?.id,
+    heuristic?.heuristicId,
+  ].filter(Boolean)
+  for (const key of keys) {
+    if (heuristicComments[key]) return heuristicComments[key]
+  }
+  return null
+}
+
 function buildHeuristicEvidence({
   allAnswers = [],
   testStructure = [],
@@ -406,42 +405,10 @@ function buildHeuristicEvidence({
   testOptions = [],
 }) {
   const maxQuestionScore = getMaxQuestionScore(testOptions)
-  console.log(
-    '[DEBUG buildHeuristicEvidence] allAnswers count:',
-    allAnswers.length,
-  )
-  console.log(
-    '[DEBUG buildHeuristicEvidence] testStructure count:',
-    testStructure.length,
-  )
-  if (allAnswers.length > 0) {
-    console.log(
-      '[DEBUG buildHeuristicEvidence] allAnswers[0] keys:',
-      Object.keys(allAnswers[0] || {}),
-    )
-    console.log(
-      '[DEBUG buildHeuristicEvidence] allAnswers[0].heuristicQuestions:',
-      allAnswers[0]?.heuristicQuestions?.length,
-    )
-  }
   const heuristics = testStructure.map((heuristic, heuristicIndex) => {
     const evaluatorHeuristics = allAnswers
       .map((answer) => answer?.heuristicQuestions?.[heuristicIndex])
       .filter(Boolean)
-    console.log(
-      `[DEBUG buildHeuristicEvidence] H${heuristicIndex + 1} evaluatorHeuristics count:`,
-      evaluatorHeuristics.length,
-    )
-    if (evaluatorHeuristics.length > 0) {
-      console.log(
-        `[DEBUG buildHeuristicEvidence] H${heuristicIndex + 1} evaluatorHeuristics[0] keys:`,
-        Object.keys(evaluatorHeuristics[0] || {}),
-      )
-      console.log(
-        `[DEBUG buildHeuristicEvidence] H${heuristicIndex + 1} evaluatorHeuristics[0].heuristicQuestions:`,
-        evaluatorHeuristics[0]?.heuristicQuestions?.length,
-      )
-    }
     const questionDefinitions = Array.isArray(heuristic?.questions)
       ? heuristic.questions
       : Array.isArray(heuristic?.heuristicQuestions)
@@ -478,10 +445,6 @@ function buildHeuristicEvidence({
           )
           // Extract comments from question-level answer
           const texts = extractCommentTexts(answer)
-          console.log(
-            `[DEBUG Comments] H${heuristicIndex + 1} Q${questionIndex + 1} Ev${answerIndex + 1} question-level: found ${texts.length} comments`,
-            texts,
-          )
           texts.forEach((text) => {
             commentDetails.push({
               evaluatorName,
@@ -499,10 +462,6 @@ function buildHeuristicEvidence({
               answerIndex,
             )
             const texts = extractCommentTexts(heuristicAnswer)
-            console.log(
-              `[DEBUG Comments] H${heuristicIndex + 1} Q${questionIndex + 1} Ev${answerIndex + 1} heuristic-level fallback: found ${texts.length} comments`,
-              texts,
-            )
             texts.forEach((text) => {
               if (!commentDetails.some((c) => c.text === text)) {
                 commentDetails.push({
@@ -514,11 +473,6 @@ function buildHeuristicEvidence({
             })
           })
         }
-        console.log(
-          `[DEBUG Comments] H${heuristicIndex + 1} Q${questionIndex + 1} total commentDetails:`,
-          commentDetails.length,
-          commentDetails,
-        )
         const comments = commentDetails.length
         const average = values.length
           ? values.reduce((sum, value) => sum + value, 0) / values.length
@@ -614,10 +568,11 @@ function buildHeuristicEvidence({
       impactScore,
       severity: getSeverityFromPercentage(percentage),
       comments: (() => {
-        const heuComments =
-          heuristicComments?.[
-            heuristic?.heuristicId || `H${heuristicIndex + 1}`
-          ]
+        const heuComments = findHeuristicComments(
+          heuristicComments,
+          heuristic,
+          heuristicIndex,
+        )
         if (!heuComments) return ''
         if (typeof heuComments === 'string')
           return normalizeText(stripHtml(heuComments))
@@ -630,10 +585,11 @@ function buildHeuristicEvidence({
         return ''
       })(),
       perQuestionComments: (() => {
-        const heuComments =
-          heuristicComments?.[
-            heuristic?.heuristicId || `H${heuristicIndex + 1}`
-          ]
+        const heuComments = findHeuristicComments(
+          heuristicComments,
+          heuristic,
+          heuristicIndex,
+        )
         if (!heuComments || typeof heuComments !== 'object') return {}
         return heuComments
       })(),
@@ -762,6 +718,7 @@ export async function generateHeuristicPdf(reportData, options = {}) {
     statisticsByEvaluatorAnswer,
     timeByHeuristics,
   } = reportData
+
   const mode = options?.mode || 'download'
   const showQuickSummary = options?.showQuickSummary === true
   const useWarningTerm = showQuickSummary
@@ -796,12 +753,44 @@ export async function generateHeuristicPdf(reportData, options = {}) {
       ? statisticsByEvaluatorAnswer
       : []
 
+  const plainHeuristicComments = (() => {
+    if (!heuristicComments) return {}
+    try {
+      let comments = heuristicComments
+      if (typeof heuristicComments === 'object') {
+        const str = JSON.stringify(heuristicComments)
+        comments = JSON.parse(str)
+      }
+
+      const mappedComments = {}
+      Object.entries(comments).forEach(
+        ([heuristicIndex, questionsComments]) => {
+          const heuId = `H${Number(heuristicIndex) + 1}`
+          mappedComments[heuId] = {}
+          Object.entries(questionsComments || {}).forEach(
+            ([questionIndex, comment]) => {
+              if (comment && typeof comment === 'string') {
+                mappedComments[heuId][questionIndex] = stripHtml(comment)
+              } else {
+                mappedComments[heuId][questionIndex] = comment
+              }
+            },
+          )
+        },
+      )
+
+      return mappedComments
+    } catch {
+      return {}
+    }
+  })()
+
   const evidence = buildHeuristicEvidence({
     allAnswers: Array.isArray(allAnswers) ? allAnswers : [],
     testStructure: Array.isArray(testStructure) ? testStructure : [],
     finalResultData: finalResultData || {},
     heuristicsStatistics: heuristicStatsItems,
-    heuristicComments: heuristicComments || {},
+    heuristicComments: plainHeuristicComments,
     testOptions: allOptions,
   })
 
@@ -1226,7 +1215,7 @@ export async function generateHeuristicPdf(reportData, options = {}) {
         return [q.title, formattedAvg]
       })
 
-      ensureSpace(questionRows.length * 14 + 30)
+      ensureSpace(questionRows.length * 14 + 50)
       autoTable(doc, {
         startY: y,
         head: [['Pregunta', 'Media de puntuación']],
@@ -1234,7 +1223,7 @@ export async function generateHeuristicPdf(reportData, options = {}) {
         styles: { fontSize: 8, cellPadding: 3 },
         headStyles: { fillColor: COLORS.accent, textColor: COLORS.white },
         alternateRowStyles: { fillColor: COLORS.zebra },
-        margin: { left: M + 6, right: M },
+        margin: { left: M + 6, right: M + 5 },
         theme: 'grid',
         columnStyles: {
           0: { overflow: 'linebreak' },
@@ -1281,20 +1270,9 @@ export async function generateHeuristicPdf(reportData, options = {}) {
     }
 
     // ── Renderizar comentarios de evaluadores como tabla ──────────────────
-    console.log(
-      `[DEBUG PDF] H${item.position} questionSummaries:`,
-      item.questionSummaries?.length,
-    )
-    item.questionSummaries?.forEach((q, i) => {
-      console.log(
-        `[DEBUG PDF] H${item.position} Q${i + 1} commentDetails:`,
-        q.commentDetails?.length || 0,
-      )
-    })
     const hasAnyComments = item.questionSummaries.some(
       (q) => (q.commentDetails || []).length > 0,
     )
-    console.log(`[DEBUG PDF] H${item.position} hasAnyComments:`, hasAnyComments)
     if (hasAnyComments) {
       writeParagraph('Comentarios de evaluadores:', {
         bold: true,
@@ -1379,7 +1357,8 @@ export async function generateHeuristicPdf(reportData, options = {}) {
         { size: 10, spacing: 4 },
       )
     }
-    // ── Comentarios del investigador por pregunta (estilo tarjeta profesional) ──
+
+    // ── Comentarios del investigador por pregunta (integrados en esta sección) ──
     const perQComments = item.perQuestionComments || {}
     const hasPerQuestionComments = Object.keys(perQComments).some(
       (k) => perQComments[k] && String(perQComments[k]).trim().length > 0,
@@ -1394,7 +1373,6 @@ export async function generateHeuristicPdf(reportData, options = {}) {
         spacing: 3,
       })
 
-      // Use table format for per-question comments
       if (hasPerQuestionComments) {
         const questionDefs = item.questionSummaries || []
         y = renderHeuristicCommentsTable(doc, perQComments, questionDefs, y, {
@@ -1405,7 +1383,6 @@ export async function generateHeuristicPdf(reportData, options = {}) {
           ensureSpace,
         })
       } else if (fallbackComment) {
-        // If no per-question comments, show the generic heuristic comment
         const commentRows = [[fallbackComment]]
         ensureSpace(commentRows.length * 12 + 30)
         autoTable(doc, {
@@ -1427,235 +1404,240 @@ export async function generateHeuristicPdf(reportData, options = {}) {
         })
         y = doc.lastAutoTable.finalY + 8
       }
-
       y += 8
     }
   }
 
   y += 14
-}
 
-// ─── 5. COMPARATIVA POR EVALUADOR ────────────────────────────────────────
-doc.addPage()
-pageNum += 1
-y = M
-addPageHeader()
-startSection('5. Comparativa de puntuaciones por evaluador')
-writeParagraph(
-  'La matriz siguiente muestra los valores medios de respuesta por heurística y evaluador. Los colores facilitan detectar respuestas bajas, medias y altas de forma visual.',
-)
+  // ─── 5. COMPARATIVA POR EVALUADOR ────────────────────────────────────────
+  doc.addPage()
+  pageNum += 1
+  y = M
+  addPageHeader()
+  startSection('5. Comparativa de puntuaciones por evaluador')
+  writeParagraph(
+    'La matriz siguiente muestra los valores medios de respuesta por heurística y evaluador. Los colores facilitan detectar respuestas bajas, medias y altas de forma visual.',
+  )
 
-const matrixHeaders = Array.isArray(heuristicsEvaluator?.header)
-  ? heuristicsEvaluator.header.map(
-      (header) => header.title || header.text || header.value || '',
-    )
-  : []
-const heuristicNameByIndex = Array.isArray(testStructure)
-  ? testStructure.map((heuristic, index) => {
-      const heuristicId = normalizeText(
-        heuristic?.id || heuristic?.heuristicId || `H${index + 1}`,
+  const matrixHeaders = Array.isArray(heuristicsEvaluator?.header)
+    ? heuristicsEvaluator.header.map(
+        (header) => header.title || header.text || header.value || '',
       )
-      const heuristicTitle = normalizeText(
-        heuristic?.title || heuristic?.heuristicTitle || heuristic?.name,
-      )
-      return heuristicTitle ? `${heuristicId} - ${heuristicTitle}` : heuristicId
-    })
-  : []
-const matrixRows = heuristicMatrixItems.map((item, rowIndex) => ({
-  heuristic: heuristicNameByIndex[rowIndex] || item.heuristic || '—',
-  max: Number(item.max),
-  min: Number(item.min),
-  values: matrixHeaders.map((_, index) => {
-    if (index === 0)
-      return heuristicNameByIndex[rowIndex] || item.heuristic || '—'
-    const key = heuristicsEvaluator.header?.[index]?.value
-    const val = item?.[key]
-    return val != null ? formatDecimal(val) : '0,00'
-  }),
-}))
-const matrixBody = matrixRows.map((row) => row.values)
-const heuristicColumnWidth = Math.max(190, Math.min(CONTENT_W * 0.44, 260))
-const evaluatorColumnCount = Math.max(1, matrixHeaders.length - 1)
-const evaluatorColumnWidth =
-  (CONTENT_W - heuristicColumnWidth) / evaluatorColumnCount
-const matrixColumnStyles = {
-  0: {
-    halign: 'left',
-    fontStyle: 'bold',
-    textColor: COLORS.accent,
-    cellWidth: heuristicColumnWidth,
-    overflow: 'linebreak',
-  },
-}
-for (let index = 1; index < matrixHeaders.length; index += 1) {
-  matrixColumnStyles[index] = {
-    halign: 'center',
-    cellWidth: evaluatorColumnWidth,
-  }
-}
-
-if (matrixHeaders.length > 1) {
-  ensureSpace(40)
-  autoTable(doc, {
-    startY: y,
-    head: [matrixHeaders],
-    body: matrixBody,
-    styles: {
-      fontSize: 8,
-      cellPadding: 5,
-      halign: 'center',
-      valign: 'middle',
-    },
-    columnStyles: matrixColumnStyles,
-    headStyles: {
-      fillColor: COLORS.tableHead,
-      textColor: COLORS.white,
+    : []
+  const heuristicNameByIndex = Array.isArray(testStructure)
+    ? testStructure.map((heuristic, index) => {
+        const heuristicId = normalizeText(
+          heuristic?.id || heuristic?.heuristicId || `H${index + 1}`,
+        )
+        const heuristicTitle = normalizeText(
+          heuristic?.title || heuristic?.heuristicTitle || heuristic?.name,
+        )
+        return heuristicTitle
+          ? `${heuristicId} - ${heuristicTitle}`
+          : heuristicId
+      })
+    : []
+  const matrixRows = heuristicMatrixItems.map((item, rowIndex) => ({
+    heuristic: heuristicNameByIndex[rowIndex] || item.heuristic || '—',
+    max: Number(item.max),
+    min: Number(item.min),
+    values: matrixHeaders.map((_, index) => {
+      if (index === 0)
+        return heuristicNameByIndex[rowIndex] || item.heuristic || '—'
+      const key = heuristicsEvaluator.header?.[index]?.value
+      const val = item?.[key]
+      return val != null ? formatDecimal(val) : '0,00'
+    }),
+  }))
+  const matrixBody = matrixRows.map((row) => row.values)
+  const heuristicColumnWidth = Math.max(190, Math.min(CONTENT_W * 0.44, 260))
+  const evaluatorColumnCount = Math.max(1, matrixHeaders.length - 1)
+  const evaluatorColumnWidth =
+    (CONTENT_W - heuristicColumnWidth) / evaluatorColumnCount
+  const matrixColumnStyles = {
+    0: {
+      halign: 'left',
       fontStyle: 'bold',
+      textColor: COLORS.accent,
+      cellWidth: heuristicColumnWidth,
+      overflow: 'linebreak',
     },
-    alternateRowStyles: { fillColor: [250, 252, 255] },
-    tableWidth: CONTENT_W,
-    margin: { left: M, right: M },
-    theme: 'grid',
-    didParseCell(data) {
-      if (data.section !== 'body' || data.column.index === 0) return
-      const row = matrixRows[data.row.index]
-      const color = getHeuristicsCellColor(data.cell.raw, row?.max, row?.min)
-      data.cell.styles.fillColor = color.fill
-      data.cell.styles.textColor = color.text
-      data.cell.styles.fontStyle = 'bold'
-    },
-  })
-  y = doc.lastAutoTable.finalY + 20
-}
+  }
+  for (let index = 1; index < matrixHeaders.length; index += 1) {
+    matrixColumnStyles[index] = {
+      halign: 'center',
+      cellWidth: evaluatorColumnWidth,
+    }
+  }
 
-writeParagraph(
-  'La tabla siguiente muestra tiempos por heurística, total y promedio por evaluador.',
-)
-
-const timeByHeuristicsHeader = Array.isArray(timeByHeuristics?.header)
-  ? timeByHeuristics.header
-  : []
-const timeByHeuristicsItems = Array.isArray(timeByHeuristics?.items)
-  ? timeByHeuristics.items
-  : []
-const filteredTimeHeader = timeByHeuristicsHeader.filter(
-  (header) => (header?.value || '') !== 'timeSd',
-)
-const timeHeaderLabels = filteredTimeHeader.map(
-  (header) => header?.title || header?.text || header?.value || '',
-)
-const timeRows = timeByHeuristicsItems.map((item) =>
-  filteredTimeHeader.map((header) => {
-    const key = header?.value
-    return item?.[key] != null ? String(item[key]) : '—'
-  }),
-)
-const maxTimeMs = Math.max(
-  ...timeByHeuristicsItems.map((item) =>
-    Math.max(parseMmSsToMs(item?.totalTime), parseMmSsToMs(item?.averageTime)),
-  ),
-  0,
-)
-
-if (timeHeaderLabels.length > 1 && timeRows.length) {
-  ensureSpace(40)
-  autoTable(doc, {
-    startY: y,
-    head: [timeHeaderLabels],
-    body: timeRows,
-    styles: { fontSize: 8, cellPadding: 4 },
-    headStyles: { fillColor: COLORS.tableHead, textColor: COLORS.white },
-    alternateRowStyles: { fillColor: COLORS.zebra },
-    margin: { left: M, right: M },
-    theme: 'grid',
-    didParseCell(data) {
-      if (data.section !== 'body' || data.column.index === 0) return
-      const headerKey = filteredTimeHeader[data.column.index]?.value
-      const rawMs = parseMmSsToMs(data.cell.raw)
-      if (
-        headerKey?.startsWith('Ev') ||
-        headerKey === 'totalTime' ||
-        headerKey === 'averageTime'
-      ) {
-        const color = getTimeColor(rawMs, maxTimeMs)
+  if (matrixHeaders.length > 1) {
+    ensureSpace(40)
+    autoTable(doc, {
+      startY: y,
+      head: [matrixHeaders],
+      body: matrixBody,
+      styles: {
+        fontSize: 8,
+        cellPadding: 5,
+        halign: 'center',
+        valign: 'middle',
+      },
+      columnStyles: matrixColumnStyles,
+      headStyles: {
+        fillColor: COLORS.tableHead,
+        textColor: COLORS.white,
+        fontStyle: 'bold',
+      },
+      alternateRowStyles: { fillColor: [250, 252, 255] },
+      tableWidth: CONTENT_W,
+      margin: { left: M, right: M },
+      theme: 'grid',
+      didParseCell(data) {
+        if (data.section !== 'body' || data.column.index === 0) return
+        const row = matrixRows[data.row.index]
+        const color = getHeuristicsCellColor(data.cell.raw, row?.max, row?.min)
         data.cell.styles.fillColor = color.fill
         data.cell.styles.textColor = color.text
         data.cell.styles.fontStyle = 'bold'
-      }
-    },
-  })
-  y = doc.lastAutoTable.finalY + 20
-}
-
-writeParagraph(`Tiempo medio de ejecución global: ${averageTime}.`)
-
-// ─── 6. CONCLUSION ────────────────────────────────────────────────────────
-startSection('6. Conclusión')
-if (cleanStudyConclusion) {
-  writeParagraph(cleanStudyConclusion)
-}
-const warningText = useWarningTerm
-  ? pluralize(totalWarnings, 'warning', 'warnings')
-  : pluralize(
-      totalWarnings,
-      'pregunta que requiere un análisis más profundo',
-      'preguntas que requieren un análisis más profundo',
-    )
-const commentText = pluralize(totalComments, 'comentario', 'comentarios')
-const imageText = pluralize(totalImages, 'imagen', 'imágenes')
-writeParagraph(
-  `En conjunto, el informe muestra un cumplimiento global de ${globalPct}, con ${totalWarnings} ${warningText}, ${totalComments} ${commentText} y ${totalImages} ${imageText} registradas como evidencias.`,
-)
-writeParagraph(
-  'Las heurísticas con peor posición en el ranking de impacto son las que combinan bajo cumplimiento y señales de riesgo operativo, por lo que deben priorizarse en la hoja de ruta de mejora.',
-)
-
-// ─── INDICE (completar páginas reales) ───────────────────────────────────
-doc.setPage(2)
-let tocY = M + 28
-doc.setFont(FONT, 'normal')
-doc.setFontSize(11)
-doc.setTextColor(...COLORS.text)
-tocEntries.forEach((entry) => {
-  if (tocY > PAGE_H - M) return
-  const title = normalizeText(entry.title)
-  const titleWidth =
-    (doc.getStringUnitWidth(title) * doc.getFontSize()) /
-    doc.internal.scaleFactor
-  doc.text(title, M, tocY)
-  const dotStart = M + titleWidth + 8
-  const dotEnd = PAGE_W - M - 20
-  if (dotEnd > dotStart) {
-    const dots = '.'.repeat(
-      Math.max(
-        3,
-        Math.floor(
-          (dotEnd - dotStart) /
-            ((doc.getStringUnitWidth('.') * doc.getFontSize()) /
-              doc.internal.scaleFactor),
-        ),
-      ),
-    )
-    doc.text(dots, dotStart, tocY)
+      },
+    })
+    y = doc.lastAutoTable.finalY + 20
   }
-  doc.text(String(entry.page), PAGE_W - M, tocY, { align: 'right' })
-  tocY += 20
-})
 
-const fileName = `informe_heurística_${
-  testTitle ? testTitle.replace(/\s+/g, '_').toLowerCase() : 'evaluación'
-}.pdf`
+  writeParagraph(
+    'La tabla siguiente muestra tiempos por heurística, total y promedio por evaluador.',
+  )
 
-if (mode === 'download') {
-  doc.save(fileName)
+  const timeByHeuristicsHeader = Array.isArray(timeByHeuristics?.header)
+    ? timeByHeuristics.header
+    : []
+  const timeByHeuristicsItems = Array.isArray(timeByHeuristics?.items)
+    ? timeByHeuristics.items
+    : []
+  const filteredTimeHeader = timeByHeuristicsHeader.filter(
+    (header) => (header?.value || '') !== 'timeSd',
+  )
+  const timeHeaderLabels = filteredTimeHeader.map(
+    (header) => header?.title || header?.text || header?.value || '',
+  )
+  const timeRows = timeByHeuristicsItems.map((item) =>
+    filteredTimeHeader.map((header) => {
+      const key = header?.value
+      return item?.[key] != null ? String(item[key]) : '—'
+    }),
+  )
+  const maxTimeMs = Math.max(
+    ...timeByHeuristicsItems.map((item) =>
+      Math.max(
+        parseMmSsToMs(item?.totalTime),
+        parseMmSsToMs(item?.averageTime),
+      ),
+    ),
+    0,
+  )
+
+  if (timeHeaderLabels.length > 1 && timeRows.length) {
+    ensureSpace(40)
+    autoTable(doc, {
+      startY: y,
+      head: [timeHeaderLabels],
+      body: timeRows,
+      styles: { fontSize: 8, cellPadding: 4 },
+      headStyles: { fillColor: COLORS.tableHead, textColor: COLORS.white },
+      alternateRowStyles: { fillColor: COLORS.zebra },
+      margin: { left: M, right: M },
+      theme: 'grid',
+      didParseCell(data) {
+        if (data.section !== 'body' || data.column.index === 0) return
+        const headerKey = filteredTimeHeader[data.column.index]?.value
+        const rawMs = parseMmSsToMs(data.cell.raw)
+        if (
+          headerKey?.startsWith('Ev') ||
+          headerKey === 'totalTime' ||
+          headerKey === 'averageTime'
+        ) {
+          const color = getTimeColor(rawMs, maxTimeMs)
+          data.cell.styles.fillColor = color.fill
+          data.cell.styles.textColor = color.text
+          data.cell.styles.fontStyle = 'bold'
+        }
+      },
+    })
+    y = doc.lastAutoTable.finalY + 20
+  }
+
+  writeParagraph(`Tiempo medio de ejecución global: ${averageTime}.`)
+
+  // ─── 6. CONCLUSION ────────────────────────────────────────────────────────
+  startSection('6. Conclusión')
+  if (cleanStudyConclusion) {
+    writeParagraph(cleanStudyConclusion)
+  }
+  const warningText = useWarningTerm
+    ? pluralize(totalWarnings, 'warning', 'warnings')
+    : pluralize(
+        totalWarnings,
+        'pregunta que requiere un análisis más profundo',
+        'preguntas que requieren un análisis más profundo',
+      )
+  const commentText = pluralize(totalComments, 'comentario', 'comentarios')
+  const imageText = pluralize(totalImages, 'imagen', 'imágenes')
+  writeParagraph(
+    `En conjunto, el informe muestra un cumplimiento global de ${globalPct}, con ${totalWarnings} ${warningText}, ${totalComments} ${commentText} y ${totalImages} ${imageText} registradas como evidencias.`,
+  )
+  writeParagraph(
+    'Las heurísticas con peor posición en el ranking de impacto son las que combinan bajo cumplimiento y señales de riesgo operativo, por lo que deben priorizarse en la hoja de ruta de mejora.',
+  )
+
+  // ─── INDICE (completar páginas reales) ───────────────────────────────────
+  doc.setPage(2)
+  let tocY = M + 28
+  doc.setFont(FONT, 'normal')
+  doc.setFontSize(11)
+  doc.setTextColor(...COLORS.text)
+  tocEntries.forEach((entry) => {
+    if (tocY > PAGE_H - M) return
+    const title = normalizeText(entry.title)
+    const titleWidth =
+      (doc.getStringUnitWidth(title) * doc.getFontSize()) /
+      doc.internal.scaleFactor
+    doc.text(title, M, tocY)
+    const dotStart = M + titleWidth + 8
+    const dotEnd = PAGE_W - M - 20
+    if (dotEnd > dotStart) {
+      const dots = '.'.repeat(
+        Math.max(
+          3,
+          Math.floor(
+            (dotEnd - dotStart) /
+              ((doc.getStringUnitWidth('.') * doc.getFontSize()) /
+                doc.internal.scaleFactor),
+          ),
+        ),
+      )
+      doc.text(dots, dotStart, tocY)
+    }
+    doc.text(String(entry.page), PAGE_W - M, tocY, { align: 'right' })
+    tocY += 20
+  })
+
+  const fileName = `informe_heurística_${
+    testTitle ? testTitle.replace(/\s+/g, '_').toLowerCase() : 'evaluación'
+  }.pdf`
+
+  if (mode === 'download') {
+    doc.save(fileName)
+    return { fileName }
+  }
+
+  if (mode === 'preview') {
+    const blob = doc.output('blob')
+    const url = URL.createObjectURL(blob)
+    return { fileName, blob, url }
+  }
+
   return { fileName }
-}
-
-if (mode === 'preview') {
-  const blob = doc.output('blob')
-  const url = URL.createObjectURL(blob)
-}
-  return { fileName, blob, url }
 }
 
 /**
@@ -1673,18 +1655,7 @@ function renderCommentsTable(doc, questionSummaries, y, options = {}) {
     COLORS: colors = {},
     ensureSpace = () => {},
   } = options
-
-  console.log(
-    '[DEBUG renderCommentsTable] questionSummaries count:',
-    questionSummaries.length,
-  )
-  questionSummaries.forEach((q, i) => {
-    console.log(
-      `[DEBUG renderCommentsTable] Q${i + 1} commentDetails:`,
-      q.commentDetails?.length || 0,
-      q.commentDetails,
-    )
-  })
+  questionSummaries.forEach((q, i) => {})
 
   // Collect all comments with question identification
   const commentRows = []
@@ -1698,11 +1669,6 @@ function renderCommentsTable(doc, questionSummaries, y, options = {}) {
       ])
     })
   })
-  console.log(
-    '[DEBUG renderCommentsTable] total commentRows:',
-    commentRows.length,
-  )
-
   if (commentRows.length === 0) return y
 
   ensureSpace(commentRows.length * 12 + 30)

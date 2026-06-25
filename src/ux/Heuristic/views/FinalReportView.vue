@@ -89,10 +89,10 @@
                       <v-expansion-panel-title>
                         <div class="d-flex align-center gap-2">
                           <v-icon
-                            :color="isHeuristicComplete(heuristic) ? 'success' : 'grey'"
+                            :color="getHeuristicCommentCount(heuristic) > 0 ? 'success' : 'grey'"
                             size="small"
                           >
-                            {{ isHeuristicComplete(heuristic) ? 'mdi-check-circle' : 'mdi-circle-outline' }}
+                            {{ getHeuristicCommentCount(heuristic) > 0 ? 'mdi-check-circle' : 'mdi-circle-outline' }}
                           </v-icon>
                           <span class="font-weight-medium">
                             {{ hIndex + 1 }}.
@@ -210,16 +210,6 @@ const totalQuestions = computed(() => {
   return structure.reduce((sum, h) => sum + (h.questions?.length || 0), 0)
 })
 
-const isHeuristicComplete = (heuristic) => {
-  const heuComments = heuristicComments[heuristic.id]
-  if (!heuComments || typeof heuComments !== 'object') return false
-  const questions = heuristic.questions || []
-  return questions.length > 0 && questions.every((q) => {
-    const text = heuComments[q.id]
-    return text && text.trim().length > 0
-  })
-}
-
 const getHeuristicCommentCount = (heuristic) => {
   const heuComments = heuristicComments[heuristic.id]
   if (!heuComments || typeof heuComments !== 'object') return 0
@@ -231,6 +221,7 @@ watch(
   () => test.value,
   (testValue) => {
     if (testValue?.heuristicComments) {
+      console.log('[FinalReportView] 📥 Cargando comentarios existentes del test:', testValue.heuristicComments)
       for (const [heuId, val] of Object.entries(testValue.heuristicComments)) {
         if (val && typeof val === 'object' && !Array.isArray(val)) {
           if (!heuristicComments[heuId]) heuristicComments[heuId] = {}
@@ -240,6 +231,7 @@ watch(
           if (!heuristicComments[heuId]) heuristicComments[heuId] = {}
         }
       }
+      console.log('[FinalReportView] ✅ Comentarios cargados en heuristicComments:', heuristicComments)
     }
   },
   { immediate: true },
@@ -302,12 +294,19 @@ const handleNext = async () => {
 
 const saveHeuristicComments = async () => {
   loading.value = true
+  console.log('[FinalReportView] 💾 Guardando comentarios...')
+  console.log('[FinalReportView] 📝 Comentarios a guardar:', heuristicComments)
+  console.log('[FinalReportView] 📊 Número de heurísticas con comentarios:', 
+    Object.keys(heuristicComments).length)
+  
   object.value.heuristicComments = { ...heuristicComments }
   const rawData = { ...test.value, ...object.value }
   const updatedTest = instantiateStudyByType(rawData.testType, rawData)
   await store.dispatch('updateStudy', updatedTest)
   await store.dispatch('Answer/saveHeuristicComments', { ...heuristicComments })
   await store.dispatch('getStudy', { id: test.value.id })
+  
+  console.log('[FinalReportView] ✅ Comentarios guardados correctamente')
   loading.value = false
 }
 

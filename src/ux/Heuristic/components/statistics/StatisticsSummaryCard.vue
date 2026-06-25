@@ -54,7 +54,8 @@
               variant="flat"
               class="text-amber-900"
             >
-              {{ totalComments }} {{ t('HeuristicsTestAnswer.summary.comments') }}
+              {{ totalComments }}
+              {{ t('HeuristicsTestAnswer.summary.comments') }}
             </v-chip>
           </div>
 
@@ -233,7 +234,17 @@
                 variant="flat"
                 class="text-amber-900 ml-2"
               >
-                {{ totalComments }} {{ t('HeuristicsTestAnswer.summary.comments') }}
+                {{ totalComments }}
+                {{ t('HeuristicsTestAnswer.summary.comments') }}
+              </v-chip>
+              <v-chip
+                size="small"
+                color="#E3F2FD"
+                variant="flat"
+                class="text-blue-900 ml-2"
+              >
+                {{ totalImages }}
+                {{ t('Images') }}
               </v-chip>
             </div>
           </div>
@@ -326,6 +337,10 @@ const props = defineProps({
     default: '',
   },
   totalComments: {
+    type: Number,
+    default: 0,
+  },
+  totalImages: {
     type: Number,
     default: 0,
   },

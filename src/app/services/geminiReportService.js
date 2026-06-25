@@ -385,6 +385,97 @@ export async function useAiReport(finalReportItem, options = {}) {
 }
 
 /**
+ * Corríge los comentarios del investigador usando IA
+ * @param {Object} comments - Objeto con comentarios {heuristicId: {questionId: commentText}}
+ * @param {string} language - Idioma de los comentarios (es, ca, en)
+ * @returns {Promise<Object>} Comentarios corregidos con la misma estructura
+ */
+export async function correctCommentsWithAI(comments, language = 'ca') {
+  if (!comments || Object.keys(comments).length === 0) {
+    return comments
+  }
+
+  try {
+    console.log('[AI] Corrigiendo comentarios con IA...')
+    console.log('[AI] Comentarios a corregir:', comments)
+    
+    const client = getGeminiClient()
+    
+    // Construir prompt para corregir comentarios
+    const langName = language === 'ca' ? 'catalán' : language === 'es' ? 'español' : 'inglés'
+    
+    const commentPairs = []
+    Object.entries(comments).forEach(([heuristicId, questions]) => {
+      Object.entries(questions).forEach(([questionId, comment]) => {
+        if (comment && String(comment).trim().length > 0) {
+          commentPairs.push({
+            heuristicId,
+            questionId,
+            original: comment
+          })
+        }
+      })
+    })
+    
+    if (commentPairs.length === 0) {
+      return comments
+    }
+    
+    // Procesar comentarios en grupos para no exceder el token limit
+    const batchSize = 10
+    const correctedComments = {}
+    
+    for (let i = 0; i < commentPairs.length; i += batchSize) {
+      const batch = commentPairs.slice(i, i + batchSize)
+      
+      const prompt = `
+        Eres un corrector de textos profesional. 
+        CORRIGE los siguientes comentarios en ${langName}, manteniendo su significado original pero mejorando la redacción, gramática y ortografía.
+        Devuelve UNICAMENTE los textos corregidos en el mismo orden, uno por línea, sin números, sin explicaciones, sin formato markdown.
+        
+        Textos a corregir:
+        ${batch.map(c => `- ${c.original}`).join('\n')}
+      `.trim()
+      
+      console.log('[AI] Prompt de corrección:', prompt.substring(0, 200) + '...')
+      
+      const config = {
+        model: GEMINI_MODEL,
+        contents: [{ role: 'user', parts: [{ text: prompt }] }],
+        config: {
+          temperature: 0.2,
+          topP: 0.9,
+          maxOutputTokens: 2000,
+        },
+      }
+      
+      const response = await client.models.generateContent(config)
+      const correctedText = response?.text || ''
+      const correctedLines = correctedText.trim().split('\n').filter(l => l.trim().length > 0)
+      
+      // Asignar comentarios corregidos
+      correctedLines.forEach((corrected, idx) => {
+        if (batch[idx]) {
+          const { heuristicId, questionId } = batch[idx]
+          if (!correctedComments[heuristicId]) {
+            correctedComments[heuristicId] = {}
+          }
+          correctedComments[heuristicId][questionId] = corrected.trim()
+        }
+      })
+    }
+    
+    console.log('[AI] ✅ Comentarios corregidos:', correctedComments)
+    return correctedComments
+    
+  } catch (error) {
+    console.error('[AI] ❌ Error corrigiendo comentarios:', error.message)
+    console.warn('[AI] Devolviendo comentarios originales sin corregir')
+    return comments
+  }
+}
+
+/**
  * Función para probar la conexión con Gemini
  */
 export async function testGeminiConnection() {
@@ -421,4 +512,5 @@ export default {
   useAiReport,
   testGeminiConnection,
   validateApiKey,
+  correctCommentsWithAI,
 }

@@ -13,6 +13,12 @@ import {
   SYSTEM_PROMPT,
 } from '@/ux/Heuristic/utils/aiReportPrompt'
 import { researchWebsite } from './webSearchService'
+import {
+  hasQuota,
+  trackTokens,
+  estimateTokens,
+  getRemaining,
+} from './tokenTracker'
 
 // Configuración desde variables de entorno
 const GEMINI_API_KEY = process.env.VUE_APP_GEMINI_API_KEY
@@ -176,7 +182,7 @@ export async function generateAiReportWithGemini(finalReportItem) {
             '[Gemini] ✅ Informe generado exitosamente, longitud:',
             content.length,
           )
-          return { content, webResearch: webResearchContent || '' }
+          return { content, webResearch: webResearchContent || '', userPrompt }
         } catch (fetchError) {
           clearTimeout(timeoutId)
 
@@ -334,27 +340,39 @@ export async function generateAiReportWithFallback(
     cumplimientoGlobal: finalReportItem?.generalStatistics?.average,
   })
 
-  // Intenta Gemini primero (a menos que se omita)
+  // Intenta Gemini primero (a menos que se omita o no tenga cuota)
   if (!skipGemini) {
-    try {
-      console.log(
-        '[AI] 🚀 Intentando generar informe con Gemini API (librería oficial)...',
+    if (!hasQuota('gemini')) {
+      const geminiRemaining = getRemaining('gemini')
+      console.warn(
+        `[AI] ⚠️ Gemini sin cuota (${geminiRemaining.used}/${geminiRemaining.total} tokens usados). Saltando a Ollama.`,
       )
-      const result = await generateAiReportWithGemini(finalReportItem)
-      console.log('[AI] ✅ Éxito con Gemini API')
-      console.log('[AI] ===== FIN GENERACIÓN (Gemini) =====')
-      // Normalize result format
-      if (typeof result === 'string') {
-        return { content: result, webResearch: '' }
-      }
-      return result
-    } catch (geminiError) {
-      console.warn('[AI] ⚠️ Gemini falló:', geminiError.message)
-      console.warn('[AI] ⚠️ Stack:', geminiError.stack?.substring(0, 300))
+    } else {
+      try {
+        console.log(
+          '[AI] 🚀 Intentando generar informe con Gemini API (librería oficial)...',
+        )
+        const result = await generateAiReportWithGemini(finalReportItem)
+        const inputTokens = estimateTokens(result.userPrompt || '')
+        const outputTokens = estimateTokens(result.content || '')
+        trackTokens('gemini', inputTokens + outputTokens)
+        console.log(`[AI] 📊 Tokens Gemini: ${inputTokens} entrada + ${outputTokens} salida = ${inputTokens + outputTokens} total`)
+        console.log('[AI] ✅ Éxito con Gemini API')
+        console.log('[AI] ===== FIN GENERACIÓN (Gemini) =====')
+        if (typeof result === 'string') {
+          return { content: result, webResearch: '', source: 'gemini' }
+        }
+        return { ...result, source: 'gemini' }
+      } catch (geminiError) {
+        console.warn('[AI] ⚠️ Gemini falló:', geminiError.message)
 
-      // Si no debemos intentar Ollama, lanzamos el error
-      if (skipOllama) {
-        throw geminiError
+        if (geminiError.message.includes('429') || geminiError.message.includes('quota')) {
+          trackTokens('gemini', 250000)
+        }
+
+        if (skipOllama) {
+          throw geminiError
+        }
       }
     }
   }
@@ -367,16 +385,16 @@ export async function generateAiReportWithFallback(
         finalReportItem,
         ollamaUrl,
       )
+      const ollamaTokens = estimateTokens(result.content || '')
+      console.log(`[AI] 📊 Tokens Ollama (local): ~${ollamaTokens} salida`)
       console.log('[AI] ✅ Éxito con Ollama local')
       console.log('[AI] ===== FIN GENERACIÓN (Ollama) =====')
-      // Normalize result format
       if (typeof result === 'string') {
-        return { content: result, webResearch: '' }
+        return { content: result, webResearch: '', source: 'ollama' }
       }
-      return result
+      return { ...result, source: 'ollama' }
     } catch (ollamaError) {
       console.error('[AI] ❌ Ollama también falló:', ollamaError.message)
-      console.error('[AI] ❌ Stack:', ollamaError.stack?.substring(0, 300))
     }
   }
 
@@ -387,7 +405,7 @@ export async function generateAiReportWithFallback(
   const fallbackText = typeof buildFallback === 'function'
     ? buildFallback()
     : buildFallbackConclusionText()
-  return { content: fallbackText, webResearch: '' }
+  return { content: fallbackText, webResearch: '', source: 'fallback' }
 }
 
 /**

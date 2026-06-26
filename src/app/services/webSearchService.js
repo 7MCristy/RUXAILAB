@@ -1,3 +1,10 @@
+import {
+  hasQuota,
+  trackTokens,
+  estimateTokens,
+  getRemaining,
+} from './tokenTracker'
+
 const JINA_SEARCH_URL = 'https://s.jina.ai'
 const JINA_READ_URL = 'https://r.jina.ai'
 const TINYFISH_SEARCH_URL = 'https://api.search.tinyfish.ai'
@@ -225,54 +232,67 @@ export async function researchWebsite({
   const allContent = []
 
   // 1. Intentar Jina AI
-  try {
-    console.log('[WebSearch] 🚀 Usando Jina AI...')
-
-    // Leer la URL del sitio evaluado directamente
-    if (testUrl) {
-      try {
-        const siteContent = await readUrlWithJina(testUrl)
-        allContent.push(
-          `=== CONTENIDO DEL SITIO EVALUADO (${testUrl}) ===\n${siteContent}`,
-        )
-      } catch (readError) {
-        console.warn(
-          '[WebSearch] ⚠️ No se pudo leer la URL con Jina:',
-          readError.message,
-        )
-      }
-    }
-
-    // Buscar información relevante
-    for (const query of uniqueQueries.slice(0, 2)) {
-      try {
-        const searchResults = await searchWithJina(query)
-        allContent.push(
-          `=== RESULTADOS DE BÚSQUEDA: "${query}" ===\n${searchResults}`,
-        )
-      } catch (searchError) {
-        console.warn(
-          '[WebSearch] ⚠️ Búsqueda Jina falló:',
-          searchError.message,
-        )
-      }
-    }
-
-    if (allContent.length > 0) {
-      const combined = allContent.join('\n\n')
-      console.log(
-        '[WebSearch] ✅ Investigación web completada con Jina AI, total:',
-        combined.length,
-        'caracteres',
-      )
-      console.log('[WebSearch] ===== FIN INVESTIGACIÓN WEB (Jina) =====')
-      return { content: combined, source: 'jina' }
-    }
-  } catch (jinaError) {
+  if (!hasQuota('jina')) {
+    const jinaRemaining = getRemaining('jina')
     console.warn(
-      '[WebSearch] ⚠️ Jina AI falló completamente:',
-      jinaError.message,
+      `[WebSearch] ⚠️ Jina sin cuota (${jinaRemaining.used}/${jinaRemaining.total} tokens usados). Saltando a TinyFish.`,
     )
+  } else {
+    try {
+      console.log('[WebSearch] 🚀 Usando Jina AI...')
+
+      // Leer la URL del sitio evaluado directamente
+      if (testUrl) {
+        try {
+          const siteContent = await readUrlWithJina(testUrl)
+          trackTokens('jina', estimateTokens(siteContent))
+          allContent.push(
+            `=== CONTENIDO DEL SITIO EVALUADO (${testUrl}) ===\n${siteContent}`,
+          )
+        } catch (readError) {
+          console.warn(
+            '[WebSearch] ⚠️ No se pudo leer la URL con Jina:',
+            readError.message,
+          )
+        }
+      }
+
+      // Buscar información relevante
+      for (const query of uniqueQueries.slice(0, 2)) {
+        if (!hasQuota('jina')) {
+          console.warn('[WebSearch] ⚠️ Jina sin cuota, omitiendo más búsquedas')
+          break
+        }
+        try {
+          const searchResults = await searchWithJina(query)
+          trackTokens('jina', estimateTokens(searchResults))
+          allContent.push(
+            `=== RESULTADOS DE BÚSQUEDA: "${query}" ===\n${searchResults}`,
+          )
+        } catch (searchError) {
+          console.warn(
+            '[WebSearch] ⚠️ Búsqueda Jina falló:',
+            searchError.message,
+          )
+        }
+      }
+
+      if (allContent.length > 0) {
+        const combined = allContent.join('\n\n')
+        console.log(
+          '[WebSearch] ✅ Investigación web completada con Jina AI, total:',
+          combined.length,
+          'caracteres',
+        )
+        console.log('[WebSearch] ===== FIN INVESTIGACIÓN WEB (Jina) =====')
+        return { content: combined, source: 'jina' }
+      }
+    } catch (jinaError) {
+      console.warn(
+        '[WebSearch] ⚠️ Jina AI falló completamente:',
+        jinaError.message,
+      )
+    }
   }
 
   // 2. Fallback: TinyFish

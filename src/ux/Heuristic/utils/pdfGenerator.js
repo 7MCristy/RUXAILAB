@@ -826,6 +826,9 @@ export async function generateHeuristicPdf(reportData, options = {}) {
       pageNum += 1
       y = M
       addPageHeader()
+      doc.setFont(FONT, 'normal')
+      doc.setFontSize(11)
+      doc.setTextColor(...COLORS.text)
     }
   }
 
@@ -866,6 +869,9 @@ export async function generateHeuristicPdf(reportData, options = {}) {
 
     for (let i = 0; i < lines.length; i++) {
       ensureSpace(lh + 4)
+      doc.setFont(FONT, opts.bold ? 'bold' : 'normal')
+      doc.setFontSize(opts.size || 11)
+      doc.setTextColor(...(opts.color || COLORS.text))
       const line = lines[i]
       const words = line.split(' ').filter(Boolean)
       if (words.length <= 1) {
@@ -1072,8 +1078,12 @@ export async function generateHeuristicPdf(reportData, options = {}) {
     }
   }
 
-  // ─── 2. RESUMEN EJECUTIVO ─────────────────────────────────────────────────
-  startSection('2. Resumen ejecutivo')
+  // ─── 2. PORCENTAJES REPRESENTATIVOS ─────────────────────────────────────────
+  doc.addPage()
+  pageNum += 1
+  y = M
+  addPageHeader()
+  startSection('2. Porcentajes representativos')
   writeParagraph(
     'La tabla siguiente muestra el porcentaje global de cumplimiento obtenido por cada evaluador. El valor se calcula a partir de las respuestas aplicables y permite comparar la percepción general de usabilidad entre participantes.',
   )
@@ -1111,6 +1121,23 @@ export async function generateHeuristicPdf(reportData, options = {}) {
       },
     })
     y = doc.lastAutoTable.finalY + 20
+  }
+
+  if (totalWarnings > 0) {
+    const totalApplicable = evidence.heuristics.reduce(
+      (sum, item) => {
+        const qSummaries = item.questionSummaries || []
+        return sum + qSummaries.reduce((qs, q) => qs + (q.values?.length || 0), 0)
+      },
+      0,
+    )
+    const warningPct = totalApplicable > 0
+      ? ((totalWarnings / totalApplicable) * 100).toFixed(1)
+      : '0.0'
+    writeParagraph(
+      `Preguntas con warning: ${totalWarnings} de ${totalApplicable} aplicables (${warningPct}%). Estas preguntas requieren un análisis más profundo y señalan aspectos que no pueden verificarse solo con la navegación superficial.`,
+      { size: 10, color: COLORS.sub, spacing: 5 },
+    )
   }
 
   // ─── 3. PRIORIDAD DE MEJORA ───────────────────────────────────────────────
@@ -1167,53 +1194,61 @@ export async function generateHeuristicPdf(reportData, options = {}) {
     })
 
     let totalAnswered = 0
+    let totalPossible = 0
+    let totalNoAplica = 0
+    let totalNoComprobar = 0
     allAnswers.forEach((answer) => {
       const heuristics = answer?.heuristicQuestions || []
       heuristics.forEach((h) => {
         const questions = h?.heuristicQuestions || []
         questions.forEach((q) => {
           const val = q?.heuristicAnswer?.value
+          const isWarning = q?.heuristicAnswer?.warning === true
           if (val != null && Object.prototype.hasOwnProperty.call(usageCount, val)) {
             usageCount[val]++
             totalAnswered++
+            totalPossible++
+          } else if (isWarning) {
+            totalPossible++
+            totalNoComprobar++
+          } else {
+            totalNoAplica++
           }
         })
       })
     })
 
-    const totalQuestionsPerEvaluator = (reportData?.testStructure || []).reduce(
-      (sum, h) => sum + (h.questions?.length || h.heuristicQuestions?.length || 0),
-      0,
-    )
-    const evaluatorCount = Math.max(
-      (reportData?.statisticsTable?.items?.[0]
-        ? Object.keys(reportData.statisticsTable.items[0]).filter((k) => k.startsWith('Ev')).length
-        : 0),
-      1,
-    )
-    const totalPossible = totalQuestionsPerEvaluator * evaluatorCount
-
     const sortedOptions = [...allOptions]
       .filter((opt) => opt.value != null)
       .sort((a, b) => (usageCount[b.value] || 0) - (usageCount[a.value] || 0))
 
-    if (sortedOptions.length > 0) {
+    const allRows = sortedOptions.map((opt) => [
+      String(opt.value),
+      opt.text || opt.label || 'Sin nombre',
+      String(usageCount[opt.value] || 0),
+    ])
+
+    const specialRows = []
+    if (totalNoAplica > 0) {
+      specialRows.push(['—', 'No aplica', String(totalNoAplica)])
+    }
+    if (totalNoComprobar > 0) {
+      specialRows.push(['!', 'No es posible de comprobar', String(totalNoComprobar)])
+    }
+    const optionsRows = [...allRows, ...specialRows]
+
+    if (optionsRows.length > 0) {
       writeParagraph('Tipos de respuesta por uso:', {
         bold: true,
         size: 10,
         spacing: 3,
       })
       writeParagraph(
-        'La siguiente tabla muestra los distintos tipos de respuesta utilizados durante la evaluación, ordenados de mayor a menor frecuencia de uso. El cuadro resumen indica el total de preguntas respondidas frente al total de preguntas posibles.',
+        'La siguiente tabla muestra los distintos tipos de respuesta utilizados durante la evaluación, ordenados de mayor a menor frecuencia de uso. Las respuestas "No aplica" y "No es posible de comprobar" se incluyen al final de la tabla.',
         { size: 10, spacing: 5 },
       )
 
       ensureSpace(60)
-      const optionsRows = sortedOptions.map((opt) => [
-        String(opt.value),
-        opt.text || opt.label || 'Sin nombre',
-        String(usageCount[opt.value] || 0),
-      ])
 
       const contentW = CONTENT_W
       autoTable(doc, {
@@ -1234,8 +1269,8 @@ export async function generateHeuristicPdf(reportData, options = {}) {
       y = doc.lastAutoTable.finalY + 14
 
       // ── Cuadro resumen: total preguntas aplicables ──────────────────────
-      ensureSpace(50)
-      const boxH = 30
+      ensureSpace(60)
+      const boxH = 40
       const boxW = CONTENT_W * 0.5
       const boxX = M + (CONTENT_W - boxW) / 2
       doc.setFillColor(240, 244, 248)
@@ -1246,10 +1281,12 @@ export async function generateHeuristicPdf(reportData, options = {}) {
       doc.setFontSize(9)
       doc.setTextColor(...COLORS.accent)
       doc.text('Total preguntas respondidas:', boxX + 8, y + 12)
-      doc.text('Total preguntas posibles:', boxX + 8, y + 22)
+      doc.text('Total preguntas no aplica:', boxX + 8, y + 22)
+      doc.text('Total preguntas no comprobables:', boxX + 8, y + 32)
       doc.setFont(FONT, 'normal')
       doc.text(String(totalAnswered), boxX + boxW - 8, y + 12, { align: 'right' })
-      doc.text(String(totalPossible), boxX + boxW - 8, y + 22, { align: 'right' })
+      doc.text(String(totalNoAplica * evaluatorCount), boxX + boxW - 8, y + 22, { align: 'right' })
+      doc.text(String(totalNoComprobar * evaluatorCount), boxX + boxW - 8, y + 32, { align: 'right' })
       y += boxH + 14
     }
   }

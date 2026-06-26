@@ -106,7 +106,17 @@
         >
           {{ $t('buttons.previous') }}
         </v-btn>
-        <div class="d-flex ga-2">
+        <div class="d-flex ga-2 align-center">
+          <div class="text-caption text-grey d-flex ga-3 mr-2">
+            <span>
+              <v-icon size="14" class="mr-1">mdi-robot-outline</v-icon>
+              Gemini: {{ tokenUsage.gemini.remaining.toLocaleString() }} / {{ tokenUsage.gemini.total.toLocaleString() }}
+            </span>
+            <span>
+              <v-icon size="14" class="mr-1">mdi-web</v-icon>
+              Jina: {{ tokenUsage.jina.remaining.toLocaleString() }} / {{ tokenUsage.jina.total.toLocaleString() }}
+            </span>
+          </div>
           <v-btn :disabled="isLoading" color="blue-grey" @click="previewPdf">
             <span v-if="!isLoading">Vista previa sin IA</span>
             <span v-else>{{ $t('pages.finalReport.options.loading') }}</span>
@@ -190,6 +200,7 @@ import {
 import { buildOllamaRequestBody } from '@/ux/Heuristic/utils/aiReportPrompt'
 import { STUDY_TYPES } from '@/shared/constants/methodDefinitions'
 import { generateAiReportWithFallback, correctCommentsWithAI } from '@/app/services/geminiReportService'
+import { getRemaining } from '@/app/services/tokenTracker'
 
 const store = useStore()
 const { t } = useI18n()
@@ -213,6 +224,26 @@ const previewStatus = ref('Generando vista previa...')
 const previewError = ref('')
 const correctedHeuristicComments = ref(null)
 const isCorrectingComments = ref(false)
+const aiSource = ref('')
+const aiSourceLabel = computed(() => {
+  const labels = {
+    gemini: 'Gemini AI',
+    ollama: 'Ollama (local)',
+    fallback: 'Texto de respaldo',
+    jina: 'Jina AI',
+    tinyfish: 'TinyFish',
+    none: 'Sin investigación web',
+  }
+  return labels[aiSource.value] || ''
+})
+
+function refreshTokenUsage() {
+  return {
+    jina: getRemaining('jina'),
+    gemini: getRemaining('gemini'),
+  }
+}
+const tokenUsage = ref(refreshTokenUsage())
 
 // Configuración de PDF (para UI, pero NO filtra datos en buildFinalReportItem)
 const pdfConfig = reactive({
@@ -595,39 +626,31 @@ const buildFinalReportItem = () => {
 // ============================================================================
 const generateAiFinalReport = async (finalReportItem) => {
   console.log('[generateAiFinalReport] 🎯 Iniciando generación de informe con IA...')
-  console.log('[generateAiFinalReport] Datos recibidos:', {
-    titulo: finalReportItem.title,
-    url: finalReportItem.testUrl,
-    heuristicas: finalReportItem.statisticsByHeuristics?.items?.length,
-    evaluadores: finalReportItem.statisticsTable?.items?.length,
-    respuestas: finalReportItem.allAnswers?.length,
-  })
 
   try {
-    // Intenta Gemini primero, fallback a Ollama si está disponible
     const result = await generateAiReportWithFallback(finalReportItem, {
       ollamaUrl: process.env.VUE_APP_OLLAMA_API_URL || 'http://localhost:11434/api/chat',
       buildFallback: buildFallbackConclusion
     })
 
-    // Handle new {content, webResearch} format
     const content = typeof result === 'string' ? result : result.content
     const webResearch = typeof result === 'string' ? '' : (result.webResearch || '')
+    const source = typeof result === 'string' ? '' : (result.source || '')
 
-    console.log('[generateAiFinalReport] ✅ Informe IA generado, longitud:', content?.length)
-    console.log('[generateAiFinalReport] 📄 Preview (primeros 150 chars):', content?.substring(0, 150))
+    if (source) {
+      aiSource.value = source
+      console.log('[generateAiFinalReport] 🔌 Fuente:', source)
+    }
 
-    // Store web research in finalReportItem for PDF rendering
+    tokenUsage.value = refreshTokenUsage()
+
     if (webResearch) {
       finalReportItem.webResearch = webResearch
-      console.log('[generateAiFinalReport] 🌐 Investigación web guardada, longitud:', webResearch.length)
     }
 
     return content
   } catch (error) {
     console.error('[generateAiFinalReport] ❌ Error generando informe con IA:', error)
-    console.warn('[generateAiFinalReport] ⚠️ Usando fallback manual')
-    // Fallback final: conclusión manual
     return finalReportItem.finalReport || buildFallbackConclusion()
   }
 }
@@ -707,35 +730,30 @@ const openPdfPreview = async (
 
 const previewPdf = async () => {
   isLoading.value = true
-  console.log('[previewPdf] 🚀 Iniciando previsualización SIN IA')
-  console.log('[previewPdf] 📝 Comentarios en props:', props.heuristicComments)
+  tokenUsage.value = refreshTokenUsage()
   
-  // Corregir comentarios con IA
   await correctComments()
   
   startPreview('Vista previa del informe sin IA', 'Construyendo PDF...')
   try {
     const reportItem = buildFinalReportItem()
-    console.log('[previewPdf] ✅ buildFinalReportItem completado')
-    console.log('[previewPdf] 📦 heuristicComments en reportItem:', reportItem.heuristicComments)
     await openPdfPreview(reportItem, '', {
       showQuickSummary: false,
     })
-    console.log('[previewPdf] ✅ PDF generado exitosamente (sin IA)')
   } catch (error) {
     console.error('[previewPdf] ❌ Error:', error)
-    showPreviewError(error, 'No se pudo generar la vista previa sin IA.')
+    showPreviewError(error, 'No se pudo generar la vista previa. Verifica que el test tenga datos de evaluación.')
   } finally {
     isLoading.value = false
+    tokenUsage.value = refreshTokenUsage()
   }
 }
 
 const previewPdfWithAi = async () => {
   isLoading.value = true
-  console.log('[previewPdfWithAi] 🚀 INICIO - Vista previa con IA')
-  console.log('[previewPdfWithAi] 📝 Comentarios en props:', props.heuristicComments)
+  aiSource.value = ''
+  tokenUsage.value = refreshTokenUsage()
   
-  // Corregir comentarios con IA
   await correctComments()
   
   startPreview(
@@ -744,45 +762,39 @@ const previewPdfWithAi = async () => {
   )
   try {
     const finalReportItem = buildFinalReportItem()
-    console.log('[previewPdfWithAi] 📦 finalReportItem construido')
-    console.log('[previewPdfWithAi] 📦 heuristicComments en finalReportItem:', finalReportItem.heuristicComments)
-    console.log('[previewPdfWithAi] 📦 Número de heurísticas con comentarios:', 
-      Object.keys(finalReportItem.heuristicComments || {}).length)
-    console.log('[previewPdfWithAi] 📦 Contenido de comentarios:', JSON.stringify(finalReportItem.heuristicComments, null, 2))
-    console.log('[previewPdfWithAi] 📦 Llamando a generateAiFinalReport...')
     const aiContent = await generateAiFinalReport(finalReportItem)
-    console.log('[previewPdfWithAi] ✅ Contenido IA recibido, asignando a finalReportItem...')
     finalReportItem.finalReport = aiContent
     finalReportItem.studyConclusion = aiContent
-    console.log('[previewPdfWithAi] Generando PDF con contenido IA...')
+
+    const sourceLabel = aiSourceLabel.value
+    previewTitle.value = sourceLabel
+      ? `Vista previa del informe con IA (${sourceLabel})`
+      : 'Vista previa del informe con IA'
+
     await openPdfPreview(finalReportItem, '_ai', { showQuickSummary: false }, generateHeuristicPdfWithAi)
-    console.log('[previewPdfWithAi] ✅ PDF con IA generado exitosamente')
   } catch (error) {
     console.error('[previewPdfWithAi] ❌ Error generando PDF con IA:', error)
-    console.warn('[previewPdfWithAi] ⚠️ Intentando fallback sin IA...')
     previewStatus.value =
-      'La IA ha fallado. Generando una vista previa de respaldo...'
+      'La IA no está disponible. Generando vista previa con datos del test...'
 
     try {
       const fallbackItem = buildFinalReportItem()
-      console.log('[previewPdfWithAi] 📦 heuristicComments en fallbackItem:', fallbackItem.heuristicComments)
       fallbackItem.finalReport = buildFallbackConclusion()
       fallbackItem.studyConclusion = fallbackItem.finalReport
-      console.log('[previewPdfWithAi] Generando PDF de respaldo (sin IA)...')
+      previewTitle.value = 'Vista previa del informe (sin IA)'
       await openPdfPreview(fallbackItem, '_ai_fallback', {
         showQuickSummary: false,
       }, generateHeuristicPdf)
-      console.log('[previewPdfWithAi] ✅ PDF de respaldo generado')
     } catch (fallbackError) {
       console.error('[previewPdfWithAi] ❌ Error también en fallback:', fallbackError)
       showPreviewError(
         fallbackError,
-        'No se pudo generar la vista previa con IA ni la vista previa de respaldo.',
+        'No se pudo generar la vista previa. Verifica que el test tenga datos de evaluación.',
       )
     }
   } finally {
     isLoading.value = false
-    console.log('[previewPdfWithAi] 🏁 FIN - Vista previa con IA completada')
+    tokenUsage.value = refreshTokenUsage()
   }
 }
 

@@ -388,30 +388,24 @@ ${commentsBlock}
       if (opt.value != null) usageCount[opt.value] = 0
     })
     let totalAnswered = 0
+    let totalPossible = 0
     allAnswers.forEach((answer) => {
       const heuristics = answer?.heuristicQuestions || []
       heuristics.forEach((h) => {
         const questions = h?.heuristicQuestions || []
         questions.forEach((q) => {
           const val = q?.heuristicAnswer?.value
+          const isWarning = q?.heuristicAnswer?.warning === true
           if (val != null && Object.prototype.hasOwnProperty.call(usageCount, val)) {
             usageCount[val]++
             totalAnswered++
+            totalPossible++
+          } else if (isWarning) {
+            totalPossible++
           }
         })
       })
     })
-    const totalQuestionsPerEvaluator = (reportItem?.testStructure || []).reduce(
-      (sum, h) => sum + (h.questions?.length || h.heuristicQuestions?.length || 0),
-      0,
-    )
-    const evaluatorCount = Math.max(
-      (reportItem?.statisticsTable?.items?.[0]
-        ? Object.keys(reportItem.statisticsTable.items[0]).filter((k) => k.startsWith('Ev')).length
-        : 0),
-      1,
-    )
-    const totalPossible = totalQuestionsPerEvaluator * evaluatorCount
     const sortedOptions = [...allOptions]
       .filter((opt) => opt.value != null)
       .sort((a, b) => (usageCount[b.value] || 0) - (usageCount[a.value] || 0))
@@ -472,7 +466,7 @@ Redacta 4-5 frases en prosa continua que:
 Sin viñetas. Párrafo continuo y fluido.
 
 ================================================================
-SECCION 2 - RESUMEN EJECUTIVO
+SECCION 2 - PORCENTAJES REPRESENTATIVOS
 ================================================================
 Redacta un único párrafo denso de 6-8 frases que:
 - Sintetice el estado de madurez UX del sistema con criterio profesional.

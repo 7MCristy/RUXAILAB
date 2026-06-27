@@ -1208,26 +1208,40 @@ export async function generateHeuristicPdf(reportData, options = {}) {
       .filter((opt) => opt.value != null)
       .sort((a, b) => (usageCount[b.value] || 0) - (usageCount[a.value] || 0))
 
-    const allRows = sortedOptions.map((opt) => [
-      String(opt.value),
-      opt.text || opt.label || 'Sin nombre',
-      String(usageCount[opt.value] || 0),
-    ])
+    const hasDescriptions = sortedOptions.some(
+      (opt) => opt.description && String(opt.description).trim().length > 0,
+    )
+
+    const allRows = sortedOptions.map((opt) => {
+      const row = [
+        String(opt.value),
+        opt.text || opt.label || 'Sin nombre',
+        String(usageCount[opt.value] || 0),
+      ]
+      if (hasDescriptions) {
+        row.push(opt.description || '')
+      }
+      return row
+    })
 
     const specialRows = []
     if (totalNoAplica > 0) {
-      specialRows.push([
+      const row = [
         '—',
         'No aplica',
         String((totalNoAplica - totalNoComprobar) * evaluatorCount),
-      ])
+      ]
+      if (hasDescriptions) row.push('')
+      specialRows.push(row)
     }
     if (totalNoComprobar > 0) {
-      specialRows.push([
+      const row = [
         '!',
         'No es posible de comprobar',
         String(totalNoComprobar),
-      ])
+      ]
+      if (hasDescriptions) row.push('')
+      specialRows.push(row)
     }
     const optionsRows = [...allRows, ...specialRows]
 
@@ -1245,9 +1259,12 @@ export async function generateHeuristicPdf(reportData, options = {}) {
       ensureSpace(60)
 
       const contentW = CONTENT_W
+      const tableHead = hasDescriptions
+        ? [['Valor', 'Tipo de Respuesta', 'Usos', 'Descripción']]
+        : [['Valor', 'Tipo de Respuesta', 'Usos']]
       autoTable(doc, {
         startY: y,
-        head: [['Valor', 'Tipo de Respuesta', 'Usos']],
+        head: tableHead,
         body: optionsRows,
         showHead: 'firstPage',
         styles: { fontSize: 8, cellPadding: 4 },
@@ -1255,15 +1272,26 @@ export async function generateHeuristicPdf(reportData, options = {}) {
         alternateRowStyles: { fillColor: COLORS.zebra },
         margin: { left: M, right: M },
         theme: 'grid',
-        columnStyles: {
-          0: {
-            cellWidth: Math.round(contentW * 0.1),
-            halign: 'center',
-            fontStyle: 'bold',
-          },
-          1: { cellWidth: Math.round(contentW * 0.7), overflow: 'linebreak' },
-          2: { cellWidth: Math.round(contentW * 0.2), halign: 'center' },
-        },
+        columnStyles: hasDescriptions
+          ? {
+              0: {
+                cellWidth: Math.round(contentW * 0.08),
+                halign: 'center',
+                fontStyle: 'bold',
+              },
+              1: { cellWidth: Math.round(contentW * 0.37), overflow: 'linebreak' },
+              2: { cellWidth: Math.round(contentW * 0.1), halign: 'center' },
+              3: { cellWidth: Math.round(contentW * 0.45), overflow: 'linebreak' },
+            }
+          : {
+              0: {
+                cellWidth: Math.round(contentW * 0.1),
+                halign: 'center',
+                fontStyle: 'bold',
+              },
+              1: { cellWidth: Math.round(contentW * 0.7), overflow: 'linebreak' },
+              2: { cellWidth: Math.round(contentW * 0.2), halign: 'center' },
+            },
       })
       y = doc.lastAutoTable.finalY + 14
 
@@ -1471,63 +1499,85 @@ export async function generateHeuristicPdf(reportData, options = {}) {
       y += 8
     }
 
-    // ── Renderizar imágenes de evaluadores ───────────────────────────────
-    const heuristicIndex = (item.position || 1) - 1
-    const imgUrls = getAllImagesForHeuristic(
-      allAnswers,
-      heuristicIndex,
-      testStructure,
-    )
-    if (imgUrls.length > 0) {
-      writeParagraph(`Evidencias visuales (${imgUrls.length})`, {
-        bold: true,
-        size: 10,
-        spacing: 3,
-      })
-      const maxImgs = Math.min(imgUrls.length, 4)
-      for (let ii = 0; ii < maxImgs; ii++) {
-        try {
-          const base64 = await loadImageAsBase64(imgUrls[ii])
-          if (base64) {
-            ensureSpace(400)
-            const imgWidth = Math.min(CONTENT_W - 12, 400)
-            const imgHeight = 45
-            doc.addImage(base64, 'JPEG', M + 50, y, imgWidth, imgHeight)
-            y += imgHeight + 15
-          }
-        } catch {
-          // Si falla la carga, mostrar la URL como texto
-          ensureSpace(12)
-          doc.setFont(FONT, 'normal')
-          doc.setFontSize(8)
-          doc.setTextColor(...COLORS.sub)
-          doc.text(`Imagen: ${imgUrls[ii]}`, M + 6, y)
-          y += 11
-        }
-      }
-    }
-
-    // ── Renderizar comentarios de evaluadores como tabla ──────────────────
+    // ── Comentarios + imágenes de evaluadores por pregunta ────────────────
     const hasAnyComments = item.questionSummaries.some(
       (q) => (q.commentDetails || []).length > 0,
     )
-    if (hasAnyComments) {
-      writeParagraph('Comentarios de evaluadores', {
+    const heuristicIndexForImg = (item.position || 1) - 1
+    const imgUrlsByQuestion = {}
+    const questions = testStructure?.[heuristicIndexForImg]?.questions || testStructure?.[heuristicIndexForImg]?.heuristicQuestions || []
+    questions.forEach((_, qIdx) => {
+      const urls = getQuestionImageUrls(allAnswers, heuristicIndexForImg, qIdx)
+      if (urls.length > 0) imgUrlsByQuestion[qIdx] = urls
+    })
+
+    const hasAnyImages = Object.keys(imgUrlsByQuestion).length > 0
+
+    if (hasAnyComments || hasAnyImages) {
+      writeParagraph('Evidencias y comentarios de evaluadores', {
         bold: true,
         size: 10,
         spacing: 3,
       })
       writeParagraph(
-        'La siguiente tabla recoge los comentarios individuales realizados por cada evaluador durante la revisión de esta heurística. Las preguntas se identifican como Q1, Q2, etc., donde el número corresponde al orden de aparición en la tabla de cumplimiento de esta heurística. Cada fila representa una observación concreta de un evaluador sobre un criterio específico.',
+        'Para cada pregunta se muestran los comentarios de los evaluadores y, cuando existen, las evidencias visuales asociadas.',
         { size: 9, color: COLORS.sub, spacing: 5 },
       )
-      y = renderCommentsTable(doc, item.questionSummaries, y, {
-        FONT,
-        M,
-        CONTENT_W,
-        COLORS,
-        ensureSpace,
-      })
+
+      for (let qIdx = 0; qIdx < item.questionSummaries.length; qIdx++) {
+        const q = item.questionSummaries[qIdx]
+        const details = q.commentDetails || []
+        const imgUrls = imgUrlsByQuestion[qIdx] || []
+        if (details.length === 0 && imgUrls.length === 0) continue
+
+        ensureSpace(30)
+        doc.setFont(FONT, 'bold')
+        doc.setFontSize(9)
+        doc.setTextColor(...COLORS.accent)
+        doc.text(`Q${qIdx + 1}`, M + 6, y)
+        y += 8
+
+        for (const cd of details) {
+          ensureSpace(16)
+          doc.setFont(FONT, 'bold')
+          doc.setFontSize(8)
+          doc.setTextColor(...COLORS.text)
+          doc.text(`${cd.evaluatorName}:`, M + 10, y)
+          y += 5
+          doc.setFont(FONT, 'normal')
+          doc.setFontSize(8)
+          doc.setTextColor(...COLORS.sub)
+          const commentLines = doc.splitTextToSize(stripHtml(cd.text || ''), CONTENT_W - 20)
+          for (const line of commentLines) {
+            ensureSpace(10)
+            doc.text(line, M + 10, y)
+            y += 4
+          }
+          y += 3
+        }
+
+        const maxImgs = Math.min(imgUrls.length, 3)
+        for (let ii = 0; ii < maxImgs; ii++) {
+          try {
+            const base64 = await loadImageAsBase64(imgUrls[ii])
+            if (base64) {
+              ensureSpace(240)
+              const imgWidth = Math.min(CONTENT_W - 20, 300)
+              const imgHeight = 200
+              doc.addImage(base64, 'JPEG', M + 40, y, imgWidth, imgHeight)
+              y += imgHeight + 8
+            }
+          } catch {
+            ensureSpace(12)
+            doc.setFont(FONT, 'normal')
+            doc.setFontSize(7)
+            doc.setTextColor(...COLORS.sub)
+            doc.text(`Imagen: ${imgUrls[ii]}`, M + 10, y)
+            y += 9
+          }
+        }
+        y += 4
+      }
     }
 
     // ── Desviación típica por heurística ─────────────────────────────────

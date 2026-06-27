@@ -78,6 +78,22 @@
                         class="mb-4"
                         @change="store.commit('SET_LOCAL_CHANGES', true)"
                       />
+                      <div class="mb-4">
+                        <label class="text-subtitle-2 font-weight-medium mb-2 d-block">
+                          <span class="text-red">*</span>
+                          {{ $t('studyCreation.details.websiteUrl') }}
+                        </label>
+                        <v-text-field
+                          v-model="websiteDetails.siteURL"
+                          :rules="urlRules"
+                          :placeholder="
+                            $t('studyCreation.details.enterWebsiteUrl')
+                          "
+                          variant="outlined"
+                          prepend-inner-icon="mdi-link-variant"
+                          @change="store.commit('SET_LOCAL_CHANGES', true)"
+                        />
+                      </div>
                       <div v-if="method == STUDY_TYPES.HEURISTIC">
                         <v-text-field
                           v-model="websiteDetails.siteName"
@@ -311,6 +327,25 @@ const studyType = computed(() => store.state.Tests.studyType)
 const selectedTemplate = computed(() => store.state.Tests.selectedTemplate)
 const isLoading = ref(false)
 
+const isValidUrl = (value) => {
+  if (!value) return false
+  const sanitized = value.trim()
+  if (sanitized.length > 2000) return false
+  const urlPattern = /^https?:\/\/[a-zA-Z0-9\-._~:/?#[\]@!$&'()*+,;=%]+$/
+  if (!urlPattern.test(sanitized)) return false
+  try {
+    const url = new URL(sanitized)
+    return ['http:', 'https:'].includes(url.protocol)
+  } catch {
+    return false
+  }
+}
+
+const urlRules = [
+  (v) => !!v || t('studyCreation.details.validation.enterWebsiteUrl'),
+  (v) => isValidUrl(v) || t('studyCreation.details.validation.validUrl'),
+]
+
 const steps = computed(() => [
   { value: 1, title: t('studyCreation.steps.category'), complete: true },
   { value: 2, title: t('studyCreation.steps.methods'), complete: true },
@@ -322,7 +357,8 @@ const isFormValid = computed(() => {
   return (
     test.value.title &&
     test.value.title.length <= 200 &&
-    test.value.description.length <= 600
+    test.value.description.length <= 600 &&
+    isValidUrl(websiteDetails.value.siteURL)
   )
 })
 
@@ -355,6 +391,14 @@ const validate = () => {
   }
   if (test.value.description.length > 600) {
     showWarning('studyCreation.details.validation.max600Characters')
+    return
+  }
+  if (!websiteDetails.value.siteURL) {
+    showWarning('studyCreation.details.validation.enterWebsiteUrl')
+    return
+  }
+  if (!isValidUrl(websiteDetails.value.siteURL)) {
+    showWarning('studyCreation.details.validation.validUrl')
     return
   }
   handleTestType()
@@ -397,6 +441,7 @@ const submitFromTemplate = async () => {
     testDescription:
       test.value.description || templateBody.testDescription || '',
     isPublic: test.value.isPublic,
+    websiteUrl: websiteDetails.value.siteURL || templateBody.websiteUrl || '',
     testAdmin: new StudyAdmin({
       userDocId: user.id,
       email: user.email,
@@ -433,6 +478,7 @@ const submit = async () => {
     testType: testType,
     isPublic: test.value.isPublic,
     subType: test.value.subType,
+    websiteUrl: websiteDetails.value.siteURL,
     testAdmin: new StudyAdmin({
       userDocId: user.id,
       email: user.email,

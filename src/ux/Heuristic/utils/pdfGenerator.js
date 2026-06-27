@@ -9,22 +9,22 @@ const PAGE_H = 841.89
 const CONTENT_W = PAGE_W - M * 2
 const LH = 14
 const COLORS = {
-  text: [34, 34, 34],
-  sub: [120, 120, 120],
-  accent: [38, 50, 56],
-  tableHead: [38, 50, 56],
+  text: [7, 0, 11],
+  sub: [180, 180, 180],
+  accent: [11, 16, 101],
+  tableHead: [44, 115, 181],
   zebra: [246, 246, 246],
-  border: [230, 230, 230],
+  border: [200, 200, 200],
   white: [255, 255, 255],
-  green: [111, 175, 148],
-  yellow: [196, 160, 60],
-  red: [180, 70, 60],
+  green: [56, 85, 36],
+  yellow: [224, 170, 102],
+  red: [96, 19, 25],
 }
 const SEVERITY_COLORS = {
-  Leve: [111, 175, 148],
-  Moderado: [196, 160, 60],
-  Grave: [219, 136, 40],
-  Crítico: [180, 70, 60],
+  Leve: [56, 85, 36],
+  Moderado: [242, 222, 169],
+  Grave: [224, 170, 102],
+  Crítico: [196, 7, 13],
 }
 
 function loadLogo(url, maxHeight) {
@@ -818,13 +818,20 @@ export async function generateHeuristicPdf(reportData, options = {}) {
 
   const addPageHeader = () => {
     addFooter(doc, pageNum)
+    if (pageNum > 1) {
+      doc.setFont(FONT, 'normal')
+      doc.setFontSize(8)
+      doc.setTextColor(...COLORS.sub)
+      const headerText = testTitle || 'Informe de evaluación'
+      doc.text(headerText, PAGE_W - M, M - 10, { align: 'right' })
+      y = M + 16
+    }
   }
 
   const ensureSpace = (needed) => {
     if (y + needed > PAGE_H - M) {
       doc.addPage()
       pageNum += 1
-      y = M
       addPageHeader()
       doc.setFont(FONT, 'normal')
       doc.setFontSize(11)
@@ -1009,7 +1016,6 @@ export async function generateHeuristicPdf(reportData, options = {}) {
   // ─── INDICE ───────────────────────────────────────────────────────────────
   doc.addPage()
   pageNum += 1
-  y = M
   addPageHeader()
   doc.setFont(FONT, 'bold')
   doc.setFontSize(22)
@@ -1023,7 +1029,6 @@ export async function generateHeuristicPdf(reportData, options = {}) {
   // ─── 1. INTRODUCCION ─────────────────────────────────────────────────────
   doc.addPage()
   pageNum += 1
-  y = M
   addPageHeader()
   startSection('1. Introducción')
 
@@ -1081,7 +1086,6 @@ export async function generateHeuristicPdf(reportData, options = {}) {
   // ─── 2. PORCENTAJES REPRESENTATIVOS ─────────────────────────────────────────
   doc.addPage()
   pageNum += 1
-  y = M
   addPageHeader()
   startSection('2. Porcentajes representativos')
   writeParagraph(
@@ -1124,20 +1128,178 @@ export async function generateHeuristicPdf(reportData, options = {}) {
   }
 
   if (totalWarnings > 0) {
-    const totalApplicable = evidence.heuristics.reduce(
-      (sum, item) => {
-        const qSummaries = item.questionSummaries || []
-        return sum + qSummaries.reduce((qs, q) => qs + (q.values?.length || 0), 0)
-      },
-      0,
+    const totalApplicable = evidence.heuristics.reduce((sum, item) => {
+      const qSummaries = item.questionSummaries || []
+      return sum + qSummaries.reduce((qs, q) => qs + (q.values?.length || 0), 0)
+    }, 0)
+    const warningPct =
+      totalApplicable > 0
+        ? ((totalWarnings / totalApplicable) * 100).toFixed(1)
+        : '0.0'
+
+    ensureSpace(60)
+    const boxH = 48
+    const boxW = CONTENT_W
+    doc.setFillColor(255, 248, 230)
+    doc.setDrawColor(196, 160, 60)
+    doc.setLineWidth(0.5)
+    doc.roundedRect(M, y, boxW, boxH, 4, 4, 'FD')
+    doc.setFont(FONT, 'bold')
+    doc.setFontSize(9)
+    doc.setTextColor(140, 100, 20)
+    doc.text(
+      `Warnings: ${totalWarnings} de ${totalApplicable} preguntas aplicables (${warningPct}%)`,
+      M + 8,
+      y + 14,
     )
-    const warningPct = totalApplicable > 0
-      ? ((totalWarnings / totalApplicable) * 100).toFixed(1)
-      : '0.0'
-    writeParagraph(
-      `Preguntas con warning: ${totalWarnings} de ${totalApplicable} aplicables (${warningPct}%). Estas preguntas requieren un análisis más profundo y señalan aspectos que no pueden verificarse solo con la navegación superficial.`,
-      { size: 10, color: COLORS.sub, spacing: 5 },
+    doc.setFont(FONT, 'normal')
+    doc.setFontSize(8)
+    doc.setTextColor(100, 80, 70)
+    doc.text(
+      'Los warnings indican preguntas que no pudieron verificarse con la navegación superficial del sitio. Requieren una revisión más profunda del sistema para confirmar o descartar el problema detectado.',
+      M + 8,
+      y + 28,
+      { maxWidth: boxW - 16 },
     )
+    y += boxH + 10 + 10
+  }
+
+  // ─── TABLA: TIPOS DE RESPUESTA POR USO ────────────────────────────────────
+  if (
+    allOptions &&
+    allOptions.length > 0 &&
+    allAnswers &&
+    allAnswers.length > 0
+  ) {
+    const usageCount = {}
+    allOptions.forEach((opt) => {
+      if (opt.value != null) usageCount[opt.value] = 0
+    })
+
+    let totalAnswered = 0
+    let totalPossible = 0
+    let totalNoAplica = 0
+    let totalNoComprobar = 0
+    allAnswers.forEach((answer) => {
+      const heuristics = answer?.heuristicQuestions || []
+      heuristics.forEach((h) => {
+        const questions = h?.heuristicQuestions || []
+        questions.forEach((q) => {
+          const val = q?.heuristicAnswer?.value
+          const isWarning = q?.heuristicAnswer?.warning === true
+          if (
+            val != null &&
+            Object.prototype.hasOwnProperty.call(usageCount, val)
+          ) {
+            usageCount[val]++
+            totalAnswered++
+            totalPossible++
+          } else if (isWarning) {
+            totalPossible++
+            totalNoComprobar++
+          } else {
+            totalNoAplica++
+          }
+        })
+      })
+    })
+
+    const sortedOptions = [...allOptions]
+      .filter((opt) => opt.value != null)
+      .sort((a, b) => (usageCount[b.value] || 0) - (usageCount[a.value] || 0))
+
+    const allRows = sortedOptions.map((opt) => [
+      String(opt.value),
+      opt.text || opt.label || 'Sin nombre',
+      String(usageCount[opt.value] || 0),
+    ])
+
+    const specialRows = []
+    if (totalNoAplica > 0) {
+      specialRows.push([
+        '—',
+        'No aplica',
+        String((totalNoAplica - totalNoComprobar) * evaluatorCount),
+      ])
+    }
+    if (totalNoComprobar > 0) {
+      specialRows.push([
+        '!',
+        'No es posible de comprobar',
+        String(totalNoComprobar),
+      ])
+    }
+    const optionsRows = [...allRows, ...specialRows]
+
+    if (optionsRows.length > 0) {
+      writeParagraph('Tipos de respuesta por uso:', {
+        bold: true,
+        size: 10,
+        spacing: 3,
+      })
+      writeParagraph(
+        'La siguiente tabla muestra los distintos tipos de respuesta utilizados durante la evaluación, ordenados de mayor a menor frecuencia de uso. Las respuestas "No aplica" y "No es posible de comprobar" se incluyen al final de la tabla.',
+        { size: 10, spacing: 5 },
+      )
+
+      ensureSpace(60)
+
+      const contentW = CONTENT_W
+      autoTable(doc, {
+        startY: y,
+        head: [['Valor', 'Tipo de Respuesta', 'Usos']],
+        body: optionsRows,
+        showHead: 'firstPage',
+        styles: { fontSize: 8, cellPadding: 4 },
+        headStyles: { fillColor: COLORS.accent, textColor: COLORS.white },
+        alternateRowStyles: { fillColor: COLORS.zebra },
+        margin: { left: M, right: M },
+        theme: 'grid',
+        columnStyles: {
+          0: {
+            cellWidth: Math.round(contentW * 0.1),
+            halign: 'center',
+            fontStyle: 'bold',
+          },
+          1: { cellWidth: Math.round(contentW * 0.7), overflow: 'linebreak' },
+          2: { cellWidth: Math.round(contentW * 0.2), halign: 'center' },
+        },
+      })
+      y = doc.lastAutoTable.finalY + 14
+
+      // ── Cuadro resumen: total preguntas aplicables ──────────────────────
+      ensureSpace(60)
+      const boxH = 40
+      const boxW = CONTENT_W * 0.5
+      const boxX = M + (CONTENT_W - boxW) / 2
+      doc.setFillColor(240, 244, 248)
+      doc.setDrawColor(...COLORS.accent)
+      doc.setLineWidth(0.5)
+      doc.roundedRect(boxX, y, boxW, boxH, 4, 4, 'FD')
+      doc.setFont(FONT, 'bold')
+      doc.setFontSize(9)
+      doc.setTextColor(...COLORS.accent)
+      doc.text('Total preguntas respondidas:', boxX + 8, y + 12)
+      doc.text('Total preguntas no aplica:', boxX + 8, y + 22)
+      doc.text('Total preguntas no comprobables:', boxX + 8, y + 32)
+      doc.setFont(FONT, 'normal')
+      doc.text(String(totalAnswered), boxX + boxW - 8, y + 12, {
+        align: 'right',
+      })
+      doc.text(
+        String(totalNoAplica * evaluatorCount),
+        boxX + boxW - 8,
+        y + 22,
+        { align: 'right' },
+      )
+      doc.text(
+        String(totalNoComprobar * evaluatorCount),
+        boxX + boxW - 8,
+        y + 32,
+        { align: 'right' },
+      )
+      y += boxH + 14
+    }
   }
 
   // ─── 3. PRIORIDAD DE MEJORA ───────────────────────────────────────────────
@@ -1186,120 +1348,15 @@ export async function generateHeuristicPdf(reportData, options = {}) {
   })
   y = doc.lastAutoTable.finalY + 20
 
-  // ─── TABLA: TIPOS DE RESPUESTA POR USO ────────────────────────────────────
-  if (allOptions && allOptions.length > 0 && allAnswers && allAnswers.length > 0) {
-    const usageCount = {}
-    allOptions.forEach((opt) => {
-      if (opt.value != null) usageCount[opt.value] = 0
-    })
-
-    let totalAnswered = 0
-    let totalPossible = 0
-    let totalNoAplica = 0
-    let totalNoComprobar = 0
-    allAnswers.forEach((answer) => {
-      const heuristics = answer?.heuristicQuestions || []
-      heuristics.forEach((h) => {
-        const questions = h?.heuristicQuestions || []
-        questions.forEach((q) => {
-          const val = q?.heuristicAnswer?.value
-          const isWarning = q?.heuristicAnswer?.warning === true
-          if (val != null && Object.prototype.hasOwnProperty.call(usageCount, val)) {
-            usageCount[val]++
-            totalAnswered++
-            totalPossible++
-          } else if (isWarning) {
-            totalPossible++
-            totalNoComprobar++
-          } else {
-            totalNoAplica++
-          }
-        })
-      })
-    })
-
-    const sortedOptions = [...allOptions]
-      .filter((opt) => opt.value != null)
-      .sort((a, b) => (usageCount[b.value] || 0) - (usageCount[a.value] || 0))
-
-    const allRows = sortedOptions.map((opt) => [
-      String(opt.value),
-      opt.text || opt.label || 'Sin nombre',
-      String(usageCount[opt.value] || 0),
-    ])
-
-    const specialRows = []
-    if (totalNoAplica > 0) {
-      specialRows.push(['—', 'No aplica', String(totalNoAplica)])
-    }
-    if (totalNoComprobar > 0) {
-      specialRows.push(['!', 'No es posible de comprobar', String(totalNoComprobar)])
-    }
-    const optionsRows = [...allRows, ...specialRows]
-
-    if (optionsRows.length > 0) {
-      writeParagraph('Tipos de respuesta por uso:', {
-        bold: true,
-        size: 10,
-        spacing: 3,
-      })
-      writeParagraph(
-        'La siguiente tabla muestra los distintos tipos de respuesta utilizados durante la evaluación, ordenados de mayor a menor frecuencia de uso. Las respuestas "No aplica" y "No es posible de comprobar" se incluyen al final de la tabla.',
-        { size: 10, spacing: 5 },
-      )
-
-      ensureSpace(60)
-
-      const contentW = CONTENT_W
-      autoTable(doc, {
-        startY: y,
-        head: [['Valor', 'Tipo de Respuesta', 'Usos']],
-        body: optionsRows,
-        styles: { fontSize: 8, cellPadding: 4 },
-        headStyles: { fillColor: COLORS.accent, textColor: COLORS.white },
-        alternateRowStyles: { fillColor: COLORS.zebra },
-        margin: { left: M, right: M },
-        theme: 'grid',
-        columnStyles: {
-          0: { cellWidth: Math.round(contentW * 0.1), halign: 'center', fontStyle: 'bold' },
-          1: { cellWidth: Math.round(contentW * 0.7), overflow: 'linebreak' },
-          2: { cellWidth: Math.round(contentW * 0.2), halign: 'center' },
-        },
-      })
-      y = doc.lastAutoTable.finalY + 14
-
-      // ── Cuadro resumen: total preguntas aplicables ──────────────────────
-      ensureSpace(60)
-      const boxH = 40
-      const boxW = CONTENT_W * 0.5
-      const boxX = M + (CONTENT_W - boxW) / 2
-      doc.setFillColor(240, 244, 248)
-      doc.setDrawColor(...COLORS.accent)
-      doc.setLineWidth(0.5)
-      doc.roundedRect(boxX, y, boxW, boxH, 4, 4, 'FD')
-      doc.setFont(FONT, 'bold')
-      doc.setFontSize(9)
-      doc.setTextColor(...COLORS.accent)
-      doc.text('Total preguntas respondidas:', boxX + 8, y + 12)
-      doc.text('Total preguntas no aplica:', boxX + 8, y + 22)
-      doc.text('Total preguntas no comprobables:', boxX + 8, y + 32)
-      doc.setFont(FONT, 'normal')
-      doc.text(String(totalAnswered), boxX + boxW - 8, y + 12, { align: 'right' })
-      doc.text(String(totalNoAplica * evaluatorCount), boxX + boxW - 8, y + 22, { align: 'right' })
-      doc.text(String(totalNoComprobar * evaluatorCount), boxX + boxW - 8, y + 32, { align: 'right' })
-      y += boxH + 14
-    }
-  }
-
   // ─── 4. ANALISIS DETALLADO ────────────────────────────────────────────────
   doc.addPage()
   pageNum += 1
-  y = M
   addPageHeader()
   startSection('4. Análisis detallado por heurística')
 
   for (const item of evidence.orderedByImpact) {
     ensureSpace(110)
+    y += 12
 
     // Title + severity badge (keep percentage here as it's the section identifier)
     writeParagraph(item.label, { bold: true, size: 13, spacing: 2 })
@@ -1326,7 +1383,7 @@ export async function generateHeuristicPdf(reportData, options = {}) {
 
     // ── Tabla de criterios evaluados ─────────────────────────────────────
     if (item.questionSummaries.length > 0) {
-      writeParagraph('Criterios evaluados:', {
+      writeParagraph('Criterios evaluados', {
         bold: true,
         size: 10,
         spacing: 3,
@@ -1374,7 +1431,7 @@ export async function generateHeuristicPdf(reportData, options = {}) {
 
     if (hasPerQuestionComments || fallbackComment) {
       ensureSpace(40)
-      writeParagraph('Comentarios del investigador:', {
+      writeParagraph('Comentarios del investigador', {
         bold: true,
         size: 10,
         spacing: 3,
@@ -1422,7 +1479,7 @@ export async function generateHeuristicPdf(reportData, options = {}) {
       testStructure,
     )
     if (imgUrls.length > 0) {
-      writeParagraph(`Evidencias visuales (${imgUrls.length}):`, {
+      writeParagraph(`Evidencias visuales (${imgUrls.length})`, {
         bold: true,
         size: 10,
         spacing: 3,
@@ -1434,7 +1491,7 @@ export async function generateHeuristicPdf(reportData, options = {}) {
           if (base64) {
             ensureSpace(400)
             const imgWidth = Math.min(CONTENT_W - 12, 400)
-            const imgHeight = 300
+            const imgHeight = 45
             doc.addImage(base64, 'JPEG', M + 50, y, imgWidth, imgHeight)
             y += imgHeight + 15
           }
@@ -1455,11 +1512,15 @@ export async function generateHeuristicPdf(reportData, options = {}) {
       (q) => (q.commentDetails || []).length > 0,
     )
     if (hasAnyComments) {
-      writeParagraph('Comentarios de evaluadores:', {
+      writeParagraph('Comentarios de evaluadores', {
         bold: true,
         size: 10,
         spacing: 3,
       })
+      writeParagraph(
+        'La siguiente tabla recoge los comentarios individuales realizados por cada evaluador durante la revisión de esta heurística. Las preguntas se identifican como Q1, Q2, etc., donde el número corresponde al orden de aparición en la tabla de cumplimiento de esta heurística. Cada fila representa una observación concreta de un evaluador sobre un criterio específico.',
+        { size: 9, color: COLORS.sub, spacing: 5 },
+      )
       y = renderCommentsTable(doc, item.questionSummaries, y, {
         FONT,
         M,
@@ -1501,7 +1562,7 @@ export async function generateHeuristicPdf(reportData, options = {}) {
     writeParagraph(globalDiagnosis, { size: 10, spacing: 4 })
 
     // ── Impacto negativo ─────────────────────────────────────────────────
-    writeParagraph('Impacto negativo actual:', {
+    writeParagraph('Impacto negativo actual', {
       bold: true,
       size: 10,
       spacing: 2,
@@ -1509,7 +1570,7 @@ export async function generateHeuristicPdf(reportData, options = {}) {
     writeParagraph(buildNegativeImpact(item), { size: 10, spacing: 4 })
 
     // ── Beneficio si mejora ──────────────────────────────────────────────
-    writeParagraph('Beneficio esperado si se mejora:', {
+    writeParagraph('Beneficio esperado si se mejora', {
       bold: true,
       size: 10,
       spacing: 2,
@@ -1545,7 +1606,6 @@ export async function generateHeuristicPdf(reportData, options = {}) {
   // ─── 5. COMPARATIVA POR EVALUADOR ────────────────────────────────────────
   doc.addPage()
   pageNum += 1
-  y = M
   addPageHeader()
   startSection('5. Comparativa de puntuaciones por evaluador')
   writeParagraph(
@@ -1795,7 +1855,7 @@ function renderCommentsTable(doc, questionSummaries, y, options = {}) {
     const details = q.commentDetails || []
     details.forEach((cd) => {
       commentRows.push([
-        String(qIdx + 1),
+        `Q${qIdx + 1}`,
         cd.evaluatorName || '—',
         stripHtml(cd.text || ''),
       ])
@@ -1806,7 +1866,7 @@ function renderCommentsTable(doc, questionSummaries, y, options = {}) {
   ensureSpace(commentRows.length * 12 + 30)
   autoTable(doc, {
     startY: y,
-    head: [['# Pregunta', 'Evaluador/a', 'Comentario']],
+    head: [['Pregunta', 'Evaluador/a', 'Comentario']],
     body: commentRows,
     styles: {
       fontSize: 8,

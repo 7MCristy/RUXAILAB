@@ -1,6 +1,6 @@
 <template>
   <PageWrapper
-    :title="answers.length > 0 ? $t('titles.finalReport') : ''"
+    :title="answers.length > 0 ? `${$t('titles.finalReport')} - ${test?.testTitle || ''}` : ''"
     :loading="loading"
     :loading-text="$t('HeuristicsReport.messages.reports_loading')"
     :side-gap="true"

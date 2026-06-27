@@ -1993,8 +1993,8 @@
       "enterDescription": "Describe el propósito y los objetivos de tu estudio",
       "websiteName": "Nombre del Sitio Web",
       "enterWebsiteName": "Ingresa el nombre del sitio web",
-      "websiteUrl": "URL del Sitio Web (opcional)",
-      "enterWebsiteUrl": "Ingresa la URL del sitio web",
+      "websiteUrl": "URL del Sitio Web",
+      "enterWebsiteUrl": "Ingresa la URL del sitio web (ejemplo: https://ejemplo.com)",
       "privacySettings": "Configuraciones de Privacidad",
       "controlVisibility": "Controla quién puede ver tu estudio",
       "publicStudy": "Estudio Público",
@@ -2008,9 +2008,10 @@
         "max200Characters": "Máximo 200 caracteres",
         "max600Characters": "Máximo 600 caracteres",
         "enterWebsiteName": "Ingresa el nombre del sitio web",
-        "enterWebsiteUrl": "Ingresa la URL del sitio web",
+        "enterWebsiteUrl": "La URL del sitio web es obligatoria",
         "urlProtocol": "La URL debe comenzar con http:// o https://",
-        "validUrl": "Ingresa una URL válida (por ejemplo, https://ejemplo.com)"
+        "validUrl": "Ingresa una URL válida (por ejemplo, https://ejemplo.com)",
+        "invalidCharacters": "La URL contiene caracteres no válidos"
       },
       "status": {
         "active": "Activo",

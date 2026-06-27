@@ -2,7 +2,7 @@ const STORAGE_KEY = 'ruxailab_token_usage'
 
 const LIMITS = {
   jina: { total: 10_000_000, resetMs: 30 * 24 * 60 * 60 * 1000 },
-  gemini: { total: 250_000, resetMs: 60 * 1000 },
+  gemini: { total: 250_000, resetMs: 24 * 60 * 60 * 1000 },
 }
 
 function loadUsage() {

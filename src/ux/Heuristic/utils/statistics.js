@@ -950,6 +950,25 @@ function buildHeuristicsStatistics(heuristicsEvaluator) {
   return table
 }
 
+function buildGlobalExecutionAverage(evaluatorPercentages) {
+  const items = Array.isArray(evaluatorPercentages?.items)
+    ? evaluatorPercentages.items
+    : []
+  if (!items.length) {
+    return { items: [], globalAverage: '0.00' }
+  }
+  const validPercentages = items
+    .map((item) => Number.parseFloat(item.percentage))
+    .filter((value) => Number.isFinite(value))
+  const globalAverage = validPercentages.length
+    ? (
+        validPercentages.reduce((sum, value) => sum + value, 0) /
+        validPercentages.length
+      ).toFixed(2)
+    : '0.00'
+  return { items, globalAverage }
+}
+
 export {
   percentage,
   standardDeviation,
@@ -958,6 +977,7 @@ export {
   finalResult,
   buildHeuristicsStatistics,
   buildHeuristicsEvaluator,
+  buildGlobalExecutionAverage,
   parseTimeSpentToMs,
   formatTimeSpentFromMs,
 }

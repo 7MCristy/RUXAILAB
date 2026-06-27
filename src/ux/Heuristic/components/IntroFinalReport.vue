@@ -1,7 +1,7 @@
 <template>
   <IntroComp
     :colors="['#FF3F59', '#00213f']"
-    :title="'Final Report'"
+    :title="' -'"
     :image="'IntroReports.svg'"
     :main="$t('descriptions.intro.finalReport')"
     :link="$t('descriptions.intro.invite')"

@@ -2009,8 +2009,8 @@
       "enterDescription": "Describe the purpose and goals of your study",
       "websiteName": "Website Name",
       "enterWebsiteName": "Enter the website name",
-      "websiteUrl": "Website URL (optional)",
-      "enterWebsiteUrl": "Enter the website URL",
+      "websiteUrl": "Website URL",
+      "enterWebsiteUrl": "Enter the website URL (e.g., https://example.com)",
       "privacySettings": "Privacy Settings",
       "controlVisibility": "Control who can see your study",
       "publicStudy": "Public Study",
@@ -2024,9 +2024,10 @@
         "max200Characters": "Max 200 characters",
         "max600Characters": "Max 600 characters",
         "enterWebsiteName": "Enter website name",
-        "enterWebsiteUrl": "Enter website URL",
+        "enterWebsiteUrl": "Website URL is required",
         "urlProtocol": "URL must start with http:// or https://",
-        "validUrl": "Enter a valid URL (e.g., https://example.com)"
+        "validUrl": "Enter a valid URL (e.g., https://example.com)",
+        "invalidCharacters": "URL contains invalid characters"
       },
       "status": {
         "active": "Active",

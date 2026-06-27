@@ -93,7 +93,7 @@
           Generating Report PDF. This operation might take a few minutes. Don't
           close this tab.
         </p>
-        <v-progress-linear indeterminate />
+        <v-progress-linear indeterminate class="mb-8" />
       </div>
 
       <div class="flex-grow-1" />
@@ -107,15 +107,25 @@
           {{ $t('buttons.previous') }}
         </v-btn>
         <div class="d-flex ga-2 align-center">
-          <div class="text-caption text-grey d-flex ga-3 mr-2">
-            <span>
-              <v-icon size="14" class="mr-1">mdi-robot-outline</v-icon>
+          <div class="d-flex ga-4 mr-2">
+            <v-chip
+              :key="'gemini-' + tokenUsage.gemini.remaining"
+              size="small"
+              :color="tokenUsage.gemini.remaining < tokenUsage.gemini.total * 0.2 ? 'error' : tokenUsage.gemini.remaining < tokenUsage.gemini.total * 0.5 ? 'warning' : 'success'"
+              variant="tonal"
+              prepend-icon="mdi-robot-outline"
+            >
               Gemini: {{ tokenUsage.gemini.remaining.toLocaleString() }} / {{ tokenUsage.gemini.total.toLocaleString() }}
-            </span>
-            <span>
-              <v-icon size="14" class="mr-1">mdi-web</v-icon>
+            </v-chip>
+            <v-chip
+              :key="'jina-' + tokenUsage.jina.remaining"
+              size="small"
+              :color="tokenUsage.jina.remaining < tokenUsage.jina.total * 0.2 ? 'error' : tokenUsage.jina.remaining < tokenUsage.jina.total * 0.5 ? 'warning' : 'success'"
+              variant="tonal"
+              prepend-icon="mdi-web"
+            >
               Jina: {{ tokenUsage.jina.remaining.toLocaleString() }} / {{ tokenUsage.jina.total.toLocaleString() }}
-            </span>
+            </v-chip>
           </div>
           <v-btn :disabled="isLoading" color="blue-grey" @click="previewPdf">
             <span v-if="!isLoading">Vista previa sin IA</span>
@@ -244,6 +254,11 @@ function refreshTokenUsage() {
   }
 }
 const tokenUsage = ref(refreshTokenUsage())
+
+const forceRefreshTokens = () => {
+  const fresh = refreshTokenUsage()
+  tokenUsage.value = { ...fresh }
+}
 
 // Configuración de PDF (para UI, pero NO filtra datos en buildFinalReportItem)
 const pdfConfig = reactive({
@@ -627,6 +642,10 @@ const buildFinalReportItem = () => {
 const generateAiFinalReport = async (finalReportItem) => {
   console.log('[generateAiFinalReport] 🎯 Iniciando generación de informe con IA...')
 
+  const tokenInterval = setInterval(() => {
+    forceRefreshTokens()
+  }, 1500)
+
   try {
     const result = await generateAiReportWithFallback(finalReportItem, {
       ollamaUrl: process.env.VUE_APP_OLLAMA_API_URL || 'http://localhost:11434/api/chat',
@@ -642,15 +661,17 @@ const generateAiFinalReport = async (finalReportItem) => {
       console.log('[generateAiFinalReport] 🔌 Fuente:', source)
     }
 
-    tokenUsage.value = refreshTokenUsage()
+    forceRefreshTokens()
 
     if (webResearch) {
       finalReportItem.webResearch = webResearch
     }
 
+    clearInterval(tokenInterval)
     return content
   } catch (error) {
     console.error('[generateAiFinalReport] ❌ Error generando informe con IA:', error)
+    clearInterval(tokenInterval)
     return finalReportItem.finalReport || buildFallbackConclusion()
   }
 }
@@ -730,7 +751,7 @@ const openPdfPreview = async (
 
 const previewPdf = async () => {
   isLoading.value = true
-  tokenUsage.value = refreshTokenUsage()
+  forceRefreshTokens()
   
   await correctComments()
   
@@ -745,14 +766,14 @@ const previewPdf = async () => {
     showPreviewError(error, 'No se pudo generar la vista previa. Verifica que el test tenga datos de evaluación.')
   } finally {
     isLoading.value = false
-    tokenUsage.value = refreshTokenUsage()
+    forceRefreshTokens()
   }
 }
 
 const previewPdfWithAi = async () => {
   isLoading.value = true
   aiSource.value = ''
-  tokenUsage.value = refreshTokenUsage()
+  forceRefreshTokens()
   
   await correctComments()
   
@@ -794,7 +815,7 @@ const previewPdfWithAi = async () => {
     }
   } finally {
     isLoading.value = false
-    tokenUsage.value = refreshTokenUsage()
+    forceRefreshTokens()
   }
 }
 

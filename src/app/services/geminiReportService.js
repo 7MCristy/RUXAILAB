@@ -83,50 +83,25 @@ export async function generateAiReportWithGemini(finalReportItem) {
   }
 
   try {
-    console.log(
-      '[Gemini] 📝 Iniciando generación de informe con librería oficial...',
-    )
-    console.log('[Gemini] Modelo:', GEMINI_MODEL)
-    console.log('[Gemini] Datos recibidos en finalReportItem:', {
-      titulo: finalReportItem.title,
-      url: finalReportItem.testUrl,
-      heuristicas: finalReportItem.statisticsByHeuristics?.items?.length || 0,
-      evaluadores: finalReportItem.statisticsTable?.items?.length || 0,
-      respuestas: finalReportItem.allAnswers?.length || 0,
-      preguntasEstructura: finalReportItem.testStructure?.length || 0,
-      cumplimientoGlobal: finalReportItem.generalStatistics?.average,
-      tieneComentarios: Object.keys(finalReportItem.heuristicComments || {}).length > 0,
-    })
+    console.log('[Gemini] Iniciando generación de informe...')
 
     // Investigación web RAG: buscar información actualizada del sitio evaluado
     let webResearchContent = ''
     if (ENABLE_WEB_RESEARCH) {
       try {
-        console.log('[Gemini] 🌐 Iniciando investigación web (RAG)...')
         const webResult = await researchWebsite({
           testUrl: finalReportItem.testUrl,
           testDescription: finalReportItem.testDescription,
           testTitle: finalReportItem.title,
         })
         webResearchContent = webResult.content
-        console.log('[Gemini] 🌐 Investigación web obtenida, fuente:', webResult.source, 'longitud:', webResearchContent.length)
       } catch (webError) {
-        console.warn('[Gemini] ⚠️ Investigación web falló (continuando sin ella):', webError.message)
+        console.warn('[Gemini] Investigación web falló:', webError.message)
       }
-    } else {
-      console.log('[Gemini] 🌐 Investigación web deshabilitada (VUE_APP_ENABLE_WEB_RESEARCH=false)')
     }
 
     const client = getGeminiClient()
     const userPrompt = buildHeuristicReportPrompt(finalReportItem, webResearchContent)
-
-    console.log(
-      '[Gemini] Prompt construido, longitud:',
-      userPrompt.length,
-      'caracteres',
-    )
-    console.log('[Gemini] Inicio del prompt (primeros 300 chars):', userPrompt.substring(0, 300))
-    console.log('[Gemini] Final del prompt (últimos 300 chars):', userPrompt.substring(userPrompt.length - 300))
 
     // Configuración de la generación
     const config = {
@@ -151,14 +126,8 @@ export async function generateAiReportWithGemini(finalReportItem) {
 
     for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
       try {
-        console.log('[Gemini] Enviando solicitud a Google AI Studio...')
-        if (attempt > 0) {
-          console.log(`[Gemini] 🔄 Retry attempt ${attempt}/${MAX_RETRIES}`)
-        }
-
         const controller = new AbortController()
         const timeoutId = setTimeout(() => {
-          console.warn('[Gemini] ⏱️ Timeout alcanzado, abortando solicitud...')
           controller.abort()
         }, GEMINI_TIMEOUT)
 
@@ -169,19 +138,12 @@ export async function generateAiReportWithGemini(finalReportItem) {
 
           clearTimeout(timeoutId)
 
-          console.log('[Gemini] ✅ Respuesta recibida')
-
           const content = response?.text || ''
 
           if (!content || typeof content !== 'string') {
-            console.error('[Gemini] ❌ Respuesta inválida')
             throw new Error('Respuesta vacía o formato inválido de Gemini API')
           }
 
-          console.log(
-            '[Gemini] ✅ Informe generado exitosamente, longitud:',
-            content.length,
-          )
           return { content, webResearch: webResearchContent || '', userPrompt }
         } catch (fetchError) {
           clearTimeout(timeoutId)
@@ -192,7 +154,6 @@ export async function generateAiReportWithGemini(finalReportItem) {
             errMsg.includes('A listener indicated an asynchronous response') ||
             errMsg.includes('Extension context invalidated')
           ) {
-            console.warn('[Gemini] ⚠️ Error de extensión Chrome detectado')
             throw new Error('Error de extensión Chrome. Reintenta.')
           }
 
@@ -209,9 +170,6 @@ export async function generateAiReportWithGemini(finalReportItem) {
 
         if ((is429 || is503) && attempt < MAX_RETRIES) {
           const delay = is429 ? RETRY_DELAY_MS : 5000 * (attempt + 1)
-          console.warn(
-            `[Gemini] ⏳ Error ${is429 ? '429' : '503'}, retry ${attempt + 1}/${MAX_RETRIES} en ${delay}ms...`,
-          )
           await new Promise((r) => setTimeout(r, delay))
           continue
         }
@@ -220,7 +178,6 @@ export async function generateAiReportWithGemini(finalReportItem) {
       }
     }
   } catch (error) {
-    console.error('[Gemini] ❌ Error al generar informe:', error.message)
 
     if (error.message.includes('API key') || error.message.includes('403')) {
       throw new Error(
@@ -257,21 +214,16 @@ export async function generateAiReportWithGemini(finalReportItem) {
  */
 export async function generateAiReportWithOllama(
   finalReportItem,
-  ollamaUrl = 'http://localhost:11434/api/chat',
+  ollamaUrl = process.env.VUE_APP_OLLAMA_API_URL || 'http://localhost:11434/api/chat',
 ) {
   try {
-    console.log('[Ollama] ⏳ Generando informe con Ollama local...')
-
     const baseUrl = ollamaUrl.replace('/api/chat', '')
     const isAvailable = await checkOllamaAvailable(baseUrl)
     if (!isAvailable) {
-      console.warn('[Ollama] ⚠️ Ollama no está disponible en', baseUrl)
       throw new Error('Ollama no está disponible')
     }
 
     const body = buildOllamaRequestBody(finalReportItem)
-
-    console.log('[Ollama] 📤 Enviando solicitud a:', ollamaUrl)
 
     const response = await fetch(ollamaUrl, {
       method: 'POST',
@@ -290,10 +242,8 @@ export async function generateAiReportWithOllama(
       throw new Error('Ollama devolvió respuesta vacía')
     }
 
-    console.log('[Ollama] ✅ Informe generado exitosamente')
     return { content, webResearch: '' }
   } catch (error) {
-    console.error('[Ollama] ❌ Error con Ollama:', error.message)
     throw error
   }
 }
@@ -324,7 +274,7 @@ export async function generateAiReportWithFallback(
   options = {},
 ) {
   const {
-    ollamaUrl = 'http://localhost:11434/api/chat',
+    ollamaUrl = process.env.VUE_APP_OLLAMA_API_URL || 'http://localhost:11434/api/chat',
     skipGemini = false,
     skipOllama = false,
     buildFallback,
@@ -343,29 +293,18 @@ export async function generateAiReportWithFallback(
   // Intenta Gemini primero (a menos que se omita o no tenga cuota)
   if (!skipGemini) {
     if (!hasQuota('gemini')) {
-      const geminiRemaining = getRemaining('gemini')
-      console.warn(
-        `[AI] ⚠️ Gemini sin cuota (${geminiRemaining.used}/${geminiRemaining.total} tokens usados). Saltando a Ollama.`,
-      )
+      // Sin cuota, saltar a Ollama
     } else {
       try {
-        console.log(
-          '[AI] 🚀 Intentando generar informe con Gemini API (librería oficial)...',
-        )
         const result = await generateAiReportWithGemini(finalReportItem)
         const inputTokens = estimateTokens(result.userPrompt || '')
         const outputTokens = estimateTokens(result.content || '')
         trackTokens('gemini', inputTokens + outputTokens)
-        console.log(`[AI] 📊 Tokens Gemini: ${inputTokens} entrada + ${outputTokens} salida = ${inputTokens + outputTokens} total`)
-        console.log('[AI] ✅ Éxito con Gemini API')
-        console.log('[AI] ===== FIN GENERACIÓN (Gemini) =====')
         if (typeof result === 'string') {
           return { content: result, webResearch: '', source: 'gemini' }
         }
         return { ...result, source: 'gemini' }
       } catch (geminiError) {
-        console.warn('[AI] ⚠️ Gemini falló:', geminiError.message)
-
         if (geminiError.message.includes('429') || geminiError.message.includes('quota')) {
           trackTokens('gemini', 250000)
         }
@@ -380,21 +319,16 @@ export async function generateAiReportWithFallback(
   // Fallback a Ollama
   if (!skipOllama) {
     try {
-      console.log('[AI] 🔄 Generando con Ollama local...')
       const result = await generateAiReportWithOllama(
         finalReportItem,
         ollamaUrl,
       )
-      const ollamaTokens = estimateTokens(result.content || '')
-      console.log(`[AI] 📊 Tokens Ollama (local): ~${ollamaTokens} salida`)
-      console.log('[AI] ✅ Éxito con Ollama local')
-      console.log('[AI] ===== FIN GENERACIÓN (Ollama) =====')
       if (typeof result === 'string') {
         return { content: result, webResearch: '', source: 'ollama' }
       }
       return { ...result, source: 'ollama' }
     } catch (ollamaError) {
-      console.error('[AI] ❌ Ollama también falló:', ollamaError.message)
+      // Ollama también falló, usar fallback genérico
     }
   }
 

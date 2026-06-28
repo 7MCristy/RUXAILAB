@@ -458,7 +458,7 @@ SECCION 1 - INTRODUCCION
 ================================================================
 Redacta 4-5 frases en prosa continua que:
 1. Presenten el sistema evaluado (nombre y URL), indicando qué tipo de sitio web o aplicación es.
-2. Contextualicen la evaluación heurística: por qué es relevante, qué metodología se usó (Nielsen + ISO 9241-110).
+2. Contextualicen la evaluación heurística: por qué es relevante, qué metodología se usó (Nielsen + Tognazzini (ISO 9241-110)).
 3. Indiquen cuántos evaluadores participaron y el contexto de la evaluación.
 4. Mencionen el cumplimiento global (${globalCompliance != null ? globalCompliance.toFixed(2) + '%' : 'N/D'}) y su severidad (${globalSeverity}) como dato de partida.
 5. Incorporen la descripción del sistema si está disponible.

@@ -22,7 +22,7 @@ const testData = {
  * - impacto: diferencia entre average (finalResult) y baseWarning (string con % al final).
  *
  * Valor inicial:
- * - Todos los campos en null hasta que `FinalResultWarnings()` los calcule.
+ * - Todos los campos en null hasta que se calculen con finalResult().
  */
 const warningsData = {
   baseWarning: null,
@@ -294,7 +294,7 @@ function calcFinalResult(array) {
  *         Retorna [] si testAnswerDocument no existe o no es HEURISTIC
  *
  * En el flujo:
- * Lo usan statistics() y calcResultsWarnings() para iterar sobre evaluadores.
+ * Lo usan statistics() y finalResult() para iterar sobre evaluadores.
  */
 function answers() {
   if (store.getters.testAnswerDocument) {

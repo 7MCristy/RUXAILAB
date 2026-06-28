@@ -45,7 +45,7 @@
             Evaluadores: {{ evaluatorNames }}
           </p>
           <p class="text-body-2 text-grey">
-            Metodología: 15 Heurísticas de Usabilidad — Nielsen + ISO 9241-110
+            Metodología: 15 Heurísticas de Usabilidad — Nielsen + Tognazzini (ISO 9241-110)
           </p>
         </v-sheet>
 
@@ -62,7 +62,7 @@
             La evaluación fue llevada a cabo por
             {{ participants?.length || 0 }} {{ participants?.length === 1 ? 'experto' : 'expertos' }} en usabilidad, utilizando
             un formulario basado en las heurísticas de usabilidad de Nielsen y
-            la norma ISO 9241-110.
+            los principios de interacción de Tognazzini (norma ISO 9241-110).
           </p>
           <p class="text-body-1 mt-2">
             El objetivo principal de esta evaluación es identificar problemas de
@@ -646,6 +646,7 @@ const priorityItems = computed(() => {
 const references = [
   'Nielsen, J. (1994). Usability Engineering. Morgan Kaufmann.',
   'Nielsen, J. (1994). 10 Usability Heuristics for User Interface Design. Nielsen Norman Group.',
+  'Tognazzini, B. (2014). Tognazzini\'s First Principles of Interaction Design. AskTog.',
   'ISO 9241-110 (2020). Ergonomics of human-system interaction — Part 110: Interaction principles.',
   'ISO 9241-11 (2018). Ergonomics of human-system interaction — Part 11: Usability: Definitions and concepts.',
   'WCAG 2.1 (2018). Web Content Accessibility Guidelines. W3C.',

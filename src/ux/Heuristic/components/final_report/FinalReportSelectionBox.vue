@@ -109,6 +109,7 @@
         <div class="d-flex ga-2 align-center">
           <div class="d-flex ga-4 mr-2">
             <v-chip
+              v-if="geminiHasQuota"
               :key="'gemini-' + tokenUsage.gemini.remaining"
               size="small"
               :color="tokenUsage.gemini.remaining < tokenUsage.gemini.total * 0.2 ? 'error' : tokenUsage.gemini.remaining < tokenUsage.gemini.total * 0.5 ? 'warning' : 'success'"
@@ -116,6 +117,15 @@
               prepend-icon="mdi-robot-outline"
             >
               Gemini: {{ tokenUsage.gemini.remaining.toLocaleString() }} / {{ tokenUsage.gemini.total.toLocaleString() }}
+            </v-chip>
+            <v-chip
+              v-if="!geminiHasQuota"
+              size="small"
+              color="info"
+              variant="tonal"
+              prepend-icon="mdi-desktop-tower"
+            >
+              Ollama (local)
             </v-chip>
             <v-chip
               :key="'jina-' + tokenUsage.jina.remaining"
@@ -210,7 +220,7 @@ import {
 import { buildOllamaRequestBody } from '@/ux/Heuristic/utils/aiReportPrompt'
 import { STUDY_TYPES } from '@/shared/constants/methodDefinitions'
 import { generateAiReportWithFallback, correctCommentsWithAI } from '@/app/services/geminiReportService'
-import { getRemaining } from '@/app/services/tokenTracker'
+import { getRemaining, hasQuota } from '@/app/services/tokenTracker'
 
 const store = useStore()
 const { t } = useI18n()
@@ -259,6 +269,7 @@ const forceRefreshTokens = () => {
   const fresh = refreshTokenUsage()
   tokenUsage.value = { ...fresh }
 }
+const geminiHasQuota = computed(() => hasQuota('gemini'))
 
 // Configuración de PDF (para UI, pero NO filtra datos en buildFinalReportItem)
 const pdfConfig = reactive({

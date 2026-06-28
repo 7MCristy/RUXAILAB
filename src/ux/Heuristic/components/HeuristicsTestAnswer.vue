@@ -102,9 +102,7 @@ import {
   standardDeviation,
   finalResult,
   statistics,
-  FinalResultWarnings,
   calcFinalResult,
-  calcResultsWarnings,
   formatTimeSpentFromMs,
 } from '@/ux/Heuristic/utils/statistics'
 import {

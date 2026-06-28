@@ -10,6 +10,11 @@ module.exports = {
       'Cross-Origin-Embedder-Policy': 'unsafe-none',
     },
     proxy: {
+      '/ollama-proxy': {
+        target: 'http://localhost:11434',
+        changeOrigin: true,
+        pathRewrite: { '^/ollama-proxy': '' },
+      },
       '/storage-proxy': {
         target: 'https://firebasestorage.googleapis.com',
         changeOrigin: true,

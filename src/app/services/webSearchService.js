@@ -51,11 +51,6 @@ async function searchWithJina(query) {
         headers['Authorization'] = `Bearer ${apiKey}`
       }
 
-      console.log(
-        '[WebSearch] 🔍 Buscando con Jina AI:',
-        query.substring(0, 100),
-      )
-
       const controller = new AbortController()
       const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS)
 
@@ -70,12 +65,7 @@ async function searchWithJina(query) {
           throw new Error(`Jina search HTTP ${response.status}`)
         }
 
-        const text = await response.text()
-        console.log(
-          '[WebSearch] ✅ Jina AI respondió, longitud:',
-          text.length,
-        )
-        return text
+        return await response.text()
       } catch (error) {
         clearTimeout(timeoutId)
         throw error
@@ -103,8 +93,6 @@ async function readUrlWithJina(url) {
         headers['Authorization'] = `Bearer ${apiKey}`
       }
 
-      console.log('[WebSearch] 📖 Leyendo URL con Jina AI:', url)
-
       const controller = new AbortController()
       const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS)
 
@@ -119,9 +107,7 @@ async function readUrlWithJina(url) {
           throw new Error(`Jina read HTTP ${response.status}`)
         }
 
-        const text = await response.text()
-        console.log('[WebSearch] ✅ URL leída, longitud:', text.length)
-        return text
+        return await response.text()
       } catch (error) {
         clearTimeout(timeoutId)
         throw error
@@ -144,11 +130,7 @@ async function searchWithTinyFish(query) {
         throw new Error('TinyFish API key no configurada')
       }
 
-      const url = `${TINYFISH_SEARCH_URL}?q=${encodeURIComponent(query)}`
-      console.log(
-        '[WebSearch] 🔍 Buscando con TinyFish:',
-        query.substring(0, 100),
-      )
+      const url = `${TINYFISH_SEARCH_URL}?query=${encodeURIComponent(query)}`
 
       const controller = new AbortController()
       const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS)
@@ -168,10 +150,6 @@ async function searchWithTinyFish(query) {
         }
 
         const data = await response.json()
-        console.log(
-          '[WebSearch] ✅ TinyFish respondió, resultados:',
-          data?.results?.length || 0,
-        )
         return data?.results || []
       } catch (error) {
         clearTimeout(timeoutId)
@@ -210,13 +188,6 @@ export async function researchWebsite({
   testDescription,
   testTitle,
 }) {
-  console.log('[WebSearch] ===== INICIO INVESTIGACIÓN WEB =====')
-  console.log('[WebSearch] URL:', testUrl)
-  console.log(
-    '[WebSearch] Descripción:',
-    testDescription?.substring(0, 100),
-  )
-
   const queries = []
   if (testUrl) {
     queries.push(`Análisis de usabilidad y UX de ${testUrl}`)
@@ -233,14 +204,9 @@ export async function researchWebsite({
 
   // 1. Intentar Jina AI
   if (!hasQuota('jina')) {
-    const jinaRemaining = getRemaining('jina')
-    console.warn(
-      `[WebSearch] ⚠️ Jina sin cuota (${jinaRemaining.used}/${jinaRemaining.total} tokens usados). Saltando a TinyFish.`,
-    )
+    // Sin cuota, saltar a TinyFish
   } else {
     try {
-      console.log('[WebSearch] 🚀 Usando Jina AI...')
-
       // Leer la URL del sitio evaluado directamente
       if (testUrl) {
         try {
@@ -250,19 +216,13 @@ export async function researchWebsite({
             `=== CONTENIDO DEL SITIO EVALUADO (${testUrl}) ===\n${siteContent}`,
           )
         } catch (readError) {
-          console.warn(
-            '[WebSearch] ⚠️ No se pudo leer la URL con Jina:',
-            readError.message,
-          )
+          // No se pudo leer la URL
         }
       }
 
       // Buscar información relevante
       for (const query of uniqueQueries.slice(0, 2)) {
-        if (!hasQuota('jina')) {
-          console.warn('[WebSearch] ⚠️ Jina sin cuota, omitiendo más búsquedas')
-          break
-        }
+        if (!hasQuota('jina')) break
         try {
           const searchResults = await searchWithJina(query)
           trackTokens('jina', estimateTokens(searchResults))
@@ -270,65 +230,38 @@ export async function researchWebsite({
             `=== RESULTADOS DE BÚSQUEDA: "${query}" ===\n${searchResults}`,
           )
         } catch (searchError) {
-          console.warn(
-            '[WebSearch] ⚠️ Búsqueda Jina falló:',
-            searchError.message,
-          )
+          // Búsqueda falló
         }
       }
 
       if (allContent.length > 0) {
-        const combined = allContent.join('\n\n')
-        console.log(
-          '[WebSearch] ✅ Investigación web completada con Jina AI, total:',
-          combined.length,
-          'caracteres',
-        )
-        console.log('[WebSearch] ===== FIN INVESTIGACIÓN WEB (Jina) =====')
-        return { content: combined, source: 'jina' }
+        return { content: allContent.join('\n\n'), source: 'jina' }
       }
     } catch (jinaError) {
-      console.warn(
-        '[WebSearch] ⚠️ Jina AI falló completamente:',
-        jinaError.message,
-      )
+      // Jina falló completamente
     }
   }
 
   // 2. Fallback: TinyFish
   try {
-    console.log('[WebSearch] 🔄 Intentando TinyFish como fallback...')
-
     const tinyFishResults = []
     for (const query of uniqueQueries.slice(0, 1)) {
       try {
         const results = await searchWithTinyFish(query)
         tinyFishResults.push(...results)
       } catch (tfError) {
-        console.warn('[WebSearch] ⚠️ TinyFish falló:', tfError.message)
+        // TinyFish falló
       }
     }
 
     if (tinyFishResults.length > 0) {
-      const markdown = tinyFishResultsToMarkdown(tinyFishResults)
-      console.log(
-        '[WebSearch] ✅ Investigación web completada con TinyFish',
-      )
-      console.log(
-        '[WebSearch] ===== FIN INVESTIGACIÓN WEB (TinyFish) =====',
-      )
-      return { content: markdown, source: 'tinyfish' }
+      return { content: tinyFishResultsToMarkdown(tinyFishResults), source: 'tinyfish' }
     }
   } catch (tinyFishError) {
-    console.warn(
-      '[WebSearch] ⚠️ TinyFish también falló:',
-      tinyFishError.message,
-    )
+    // TinyFish también falló
   }
 
   // 3. Sin resultados
-  console.log('[WebSearch] ⚠️ No se pudo obtener investigación web')
-  console.log('[WebSearch] ===== FIN INVESTIGACIÓN WEB (sin datos) =====')
   return { content: '', source: 'none' }
 }
 

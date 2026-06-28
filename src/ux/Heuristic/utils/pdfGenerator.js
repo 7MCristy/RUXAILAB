@@ -1,6 +1,7 @@
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
 import { formatTimeSpentFromMs } from '@/ux/Heuristic/utils/statistics'
+import { buildHeuristicEvidence } from './buildHeuristicEvidence'
 
 const FONT = 'helvetica'
 const M = 52
@@ -10,11 +11,11 @@ const CONTENT_W = PAGE_W - M * 2
 const LH = 14
 const COLORS = {
   text: [7, 0, 11],
-  sub: [180, 180, 180],
+  sub: [140, 140, 140],
   accent: [11, 16, 101],
   tableHead: [44, 115, 181],
   zebra: [246, 246, 246],
-  border: [200, 200, 200],
+  border: [170, 170, 170],
   white: [255, 255, 255],
   green: [56, 85, 36],
   yellow: [224, 170, 102],
@@ -78,9 +79,27 @@ function pluralize(count, singular, plural) {
   return n === 1 ? singular : plural
 }
 
-function stripHtml(value = '') {
-  return String(value)
+function stripHtml(value) {
+  return String(value ?? '')
     .replace(/<[^>]*>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+function stripMarkdown(value) {
+  return String(value ?? '')
+    .replace(/^#{1,6}\s+/gm, '')
+    .replace(/\*\*(.+?)\*\*/g, '$1')
+    .replace(/\*(.+?)\*/g, '$1')
+    .replace(/__(.+?)__/g, '$1')
+    .replace(/_(.+?)_/g, '$1')
+    .replace(/```[\s\S]*?```/g, '')
+    .replace(/`([^`]+)`/g, '$1')
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+    .replace(/^[-*+]\s+/gm, '')
+    .replace(/^\d+\.\s+/gm, '')
+    .replace(/^>\s+/gm, '')
+    .replace(/\n{3,}/g, '\n\n')
     .replace(/\s+/g, ' ')
     .trim()
 }
@@ -379,235 +398,6 @@ function calcStandardDeviation(values) {
 }
 
 /**
- * Looks up researcher comments for a given heuristic across multiple key formats.
- * Handles numeric indices (0, 1), 1-based ("H1", "H2"), and heuristic.id/heuristic.heuristicId.
- */
-function findHeuristicComments(heuristicComments, heuristic, heuristicIndex) {
-  if (!heuristicComments || typeof heuristicComments !== 'object') return null
-  const keys = [
-    `H${heuristicIndex + 1}`,
-    String(heuristicIndex),
-    String(heuristicIndex + 1),
-    heuristic?.id,
-    heuristic?.heuristicId,
-  ].filter(Boolean)
-  for (const key of keys) {
-    if (heuristicComments[key]) return heuristicComments[key]
-  }
-  return null
-}
-
-function buildHeuristicEvidence({
-  allAnswers = [],
-  testStructure = [],
-  heuristicsStatistics = [],
-  heuristicComments = {},
-  testOptions = [],
-}) {
-  const maxQuestionScore = getMaxQuestionScore(testOptions)
-  const heuristics = testStructure.map((heuristic, heuristicIndex) => {
-    const evaluatorHeuristics = allAnswers
-      .map((answer) => answer?.heuristicQuestions?.[heuristicIndex])
-      .filter(Boolean)
-    const questionDefinitions = Array.isArray(heuristic?.questions)
-      ? heuristic.questions
-      : Array.isArray(heuristic?.heuristicQuestions)
-        ? heuristic.heuristicQuestions
-        : []
-
-    const questionSummaries = questionDefinitions.map(
-      (question, questionIndex) => {
-        const questionAnswers = evaluatorHeuristics.map(
-          (answer) => answer?.heuristicQuestions?.[questionIndex] || null,
-        )
-        const values = questionAnswers
-          .map((answer) => getNumber(answer?.heuristicAnswer?.value, NaN))
-          .filter((value) => Number.isFinite(value))
-        const warnings = questionAnswers.filter(
-          (answer) => answer?.heuristicAnswer?.warning === true,
-        ).length
-        const images = questionAnswers.reduce(
-          (total, answer) =>
-            total +
-            (Array.isArray(answer?.images)
-              ? answer.images.length
-              : answer?.answerImageUrl
-                ? 1
-                : 0),
-          0,
-        )
-        const commentDetails = []
-        questionAnswers.forEach((answer, answerIndex) => {
-          if (!answer) return
-          const evaluatorName = getEvaluatorLabel(
-            evaluatorHeuristics[answerIndex],
-            answerIndex,
-          )
-          // Extract comments from question-level answer
-          const texts = extractCommentTexts(answer)
-          texts.forEach((text) => {
-            commentDetails.push({
-              evaluatorName,
-              text,
-              questionIndex: questionIndex + 1,
-            })
-          })
-        })
-        // Also extract comments from heuristic-level answer (fallback)
-        if (commentDetails.length === 0) {
-          evaluatorHeuristics.forEach((heuristicAnswer, answerIndex) => {
-            if (!heuristicAnswer) return
-            const evaluatorName = getEvaluatorLabel(
-              evaluatorHeuristics[answerIndex],
-              answerIndex,
-            )
-            const texts = extractCommentTexts(heuristicAnswer)
-            texts.forEach((text) => {
-              if (!commentDetails.some((c) => c.text === text)) {
-                commentDetails.push({
-                  evaluatorName,
-                  text,
-                  questionIndex: questionIndex + 1,
-                })
-              }
-            })
-          })
-        }
-        const comments = commentDetails.length
-        const average = values.length
-          ? values.reduce((sum, value) => sum + value, 0) / values.length
-          : 0
-
-        return {
-          title: getQuestionLabel(question, questionIndex),
-          values,
-          average,
-          warnings,
-          images,
-          comments,
-          commentDetails,
-        }
-      },
-    )
-
-    const heuristicStat =
-      heuristicsStatistics.find(
-        (item) =>
-          item.name === getHeuristicShortTitle(heuristic, heuristicIndex),
-      ) ||
-      heuristicsStatistics[heuristicIndex] ||
-      {}
-
-    const calculatedPercentage = calculateHeuristicCompliance(
-      evaluatorHeuristics,
-      maxQuestionScore,
-    )
-    const percentage = Number.isFinite(calculatedPercentage)
-      ? calculatedPercentage
-      : getNumber(heuristicStat.percentage)
-
-    // Standard deviation: prefer statistics data, fallback to calculating from question averages
-    const sdFromStats = getNumber(heuristicStat.sd, Number.NaN)
-    const responseValues = questionSummaries.flatMap((item) => item.values)
-    const sdCalculated = calcStandardDeviation(responseValues)
-    const sd =
-      Number.isFinite(sdFromStats) && sdFromStats > 0
-        ? sdFromStats
-        : sdCalculated
-
-    const averagePoints = getNumber(heuristicStat.average)
-    const maxPoints = getNumber(heuristicStat.max)
-    const minPoints = getNumber(heuristicStat.min)
-    const totalWarnings = questionSummaries.reduce(
-      (total, item) => total + item.warnings,
-      0,
-    )
-    const totalImages = questionSummaries.reduce(
-      (total, item) => total + item.images,
-      0,
-    )
-    const totalComments = questionSummaries.reduce(
-      (total, item) => total + item.comments,
-      0,
-    )
-    const responseAverage = responseValues.length
-      ? responseValues.reduce((sum, value) => sum + value, 0) /
-        responseValues.length
-      : 0
-    const responseMin = responseValues.length ? Math.min(...responseValues) : 0
-    const responseMax = responseValues.length ? Math.max(...responseValues) : 0
-    const responseSpread = responseMax - responseMin
-    const completionGap = Math.max(0, 100 - percentage)
-    const warningWeight = 1 + Math.min(0.45, totalWarnings * 0.08)
-    const evidenceWeight =
-      1 + Math.min(0.18, totalComments * 0.03 + totalImages * 0.02)
-    const domainWeight = getHeuristicDomainWeight(
-      getHeuristicShortTitle(heuristic, heuristicIndex),
-    )
-    const impactScore =
-      completionGap * warningWeight * evidenceWeight * domainWeight
-
-    return {
-      id: heuristic?.heuristicId || `H${heuristicIndex + 1}`,
-      position: heuristicIndex + 1,
-      label: getHeuristicLabel(heuristic, heuristicIndex),
-      title: getHeuristicShortTitle(heuristic, heuristicIndex),
-      percentage,
-      averagePoints,
-      maxPoints,
-      minPoints,
-      sd,
-      totalWarnings,
-      totalImages,
-      totalComments,
-      questionSummaries,
-      responseAverage,
-      responseMin,
-      responseMax,
-      responseSpread,
-      impactScore,
-      severity: getSeverityFromPercentage(percentage),
-      comments: (() => {
-        const heuComments = findHeuristicComments(
-          heuristicComments,
-          heuristic,
-          heuristicIndex,
-        )
-        if (!heuComments) return ''
-        if (typeof heuComments === 'string')
-          return normalizeText(stripHtml(heuComments))
-        if (typeof heuComments === 'object') {
-          return Object.values(heuComments)
-            .filter((t) => t && String(t).trim().length > 0)
-            .map((t) => normalizeText(stripHtml(String(t))))
-            .join('\n')
-        }
-        return ''
-      })(),
-      perQuestionComments: (() => {
-        const heuComments = findHeuristicComments(
-          heuristicComments,
-          heuristic,
-          heuristicIndex,
-        )
-        if (!heuComments || typeof heuComments !== 'object') return {}
-        return heuComments
-      })(),
-    }
-  })
-
-  return {
-    heuristics,
-    orderedByPercentage: [...heuristics].sort(
-      (left, right) => left.percentage - right.percentage,
-    ),
-    orderedByImpact: [...heuristics].sort(
-      (left, right) => right.impactScore - left.impactScore,
-    ),
-  }
-}
-
-/**
  * Extrae las URLs de imágenes de allAnswers para una heurística y pregunta específicas.
  */
 function getQuestionImageUrls(allAnswers, heuristicIndex, questionIndex) {
@@ -723,7 +513,7 @@ export async function generateHeuristicPdf(reportData, options = {}) {
   const showQuickSummary = options?.showQuickSummary === true
   const useWarningTerm = showQuickSummary
   const cleanTestDescription = stripHtml(testDescription)
-  const cleanStudyConclusion = stripHtml(studyConclusion)
+  const cleanStudyConclusion = stripMarkdown(stripHtml(studyConclusion))
 
   const doc = new jsPDF({ unit: 'pt', format: 'a4' })
   const logo = await loadLogo('/brand/logo_full.png', 30)
@@ -931,7 +721,28 @@ export async function generateHeuristicPdf(reportData, options = {}) {
   doc.text('INFORME DE EVALUACIÓN', PAGE_W / 2, y, { align: 'center' })
   y += 22
   doc.text('HEURÍSTICA', PAGE_W / 2, y, { align: 'center' })
-  y += 36
+  y += 28
+
+  const smallLogo = await loadLogo('/brand/logo_full.png', 15)
+  if (smallLogo) {
+    doc.addImage(
+      smallLogo.img,
+      'PNG',
+      PAGE_W / 2 - smallLogo.width / 2,
+      y,
+      smallLogo.width,
+      smallLogo.height,
+    )
+    y += smallLogo.height + 20
+  }
+
+  const now = new Date()
+  const months = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
+  const dateLabel = `${months[now.getMonth()]} ${now.getFullYear()}`
+  doc.setFont(FONT, 'normal')
+  doc.setFontSize(12)
+  doc.setTextColor(...COLORS.sub)
+  doc.text(dateLabel, PAGE_W / 2, PAGE_H - M - 30, { align: 'center' })
 
   doc.setDrawColor(...COLORS.border)
   doc.setLineWidth(0.4)
@@ -971,7 +782,7 @@ export async function generateHeuristicPdf(reportData, options = {}) {
     y += evalLines.length * 16 + 6
   }
   doc.text(
-    'Metodología: 15 Heurísticas de Usabilidad - Nielsen + ISO 9241-110',
+    'Metodología: 15 Heurísticas de Usabilidad - Nielsen + Tognazzini (ISO 9241-110)',
     PAGE_W / 2,
     y,
     { align: 'center' },
@@ -1177,7 +988,6 @@ export async function generateHeuristicPdf(reportData, options = {}) {
     })
 
     let totalAnswered = 0
-    let totalPossible = 0
     let totalNoAplica = 0
     let totalNoComprobar = 0
     allAnswers.forEach((answer) => {
@@ -1193,9 +1003,7 @@ export async function generateHeuristicPdf(reportData, options = {}) {
           ) {
             usageCount[val]++
             totalAnswered++
-            totalPossible++
           } else if (isWarning) {
-            totalPossible++
             totalNoComprobar++
           } else {
             totalNoAplica++
@@ -1203,6 +1011,12 @@ export async function generateHeuristicPdf(reportData, options = {}) {
         })
       })
     })
+
+    const totalQuestions = testStructure.reduce((sum, h) => {
+      const qs = h?.questions || h?.heuristicQuestions || []
+      return sum + qs.length
+    }, 0)
+    const totalExpected = totalQuestions * evaluatorCount
 
     const sortedOptions = [...allOptions]
       .filter((opt) => opt.value != null)
@@ -1297,7 +1111,7 @@ export async function generateHeuristicPdf(reportData, options = {}) {
 
       // ── Cuadro resumen: total preguntas aplicables ──────────────────────
       ensureSpace(60)
-      const boxH = 40
+      const boxH = 52
       const boxW = CONTENT_W * 0.5
       const boxX = M + (CONTENT_W - boxW) / 2
       doc.setFillColor(240, 244, 248)
@@ -1310,33 +1124,35 @@ export async function generateHeuristicPdf(reportData, options = {}) {
       doc.text('Total preguntas respondidas:', boxX + 8, y + 12)
       doc.text('Total preguntas no aplica:', boxX + 8, y + 22)
       doc.text('Total preguntas no comprobables:', boxX + 8, y + 32)
+      doc.text('Total esperado (preguntas × evaluadores):', boxX + 8, y + 42)
       doc.setFont(FONT, 'normal')
       doc.text(String(totalAnswered), boxX + boxW - 8, y + 12, {
         align: 'right',
       })
       doc.text(
-        String(totalNoAplica * evaluatorCount),
+        String(totalNoAplica),
         boxX + boxW - 8,
         y + 22,
         { align: 'right' },
       )
       doc.text(
-        String(totalNoComprobar * evaluatorCount),
+        String(totalNoComprobar),
         boxX + boxW - 8,
         y + 32,
         { align: 'right' },
       )
-      y += boxH + 14
+      doc.text(
+        String(totalExpected),
+        boxX + boxW - 8,
+        y + 42,
+        { align: 'right' },
+      )
+      y += boxH + 40
     }
   }
 
   // ─── 3. PRIORIDAD DE MEJORA ───────────────────────────────────────────────
   startSection('3. Prioridad de mejora por impacto negativo')
-  writeParagraph(
-    useWarningTerm
-      ? 'La priorización combina el porcentaje de cumplimiento con las señales de riesgo recogidas durante la evaluación, como warnings, comentarios y evidencias visuales.'
-      : 'La priorización combina el porcentaje de cumplimiento con las señales de riesgo recogidas durante la evaluación, como las preguntas que requieren un análisis más profundo, los comentarios y las evidencias visuales.',
-  )
   writeParagraph(
     'La tabla siguiente presenta el cumplimiento calculado por heurística. Para cada evaluador se suman las puntuaciones de las preguntas aplicables, se multiplican por 100 y se dividen entre el número de preguntas aplicables multiplicado por la puntuación máxima. Después se promedian esos porcentajes entre evaluadores.',
   )
@@ -1519,10 +1335,7 @@ export async function generateHeuristicPdf(reportData, options = {}) {
         size: 10,
         spacing: 3,
       })
-      writeParagraph(
-        'Para cada pregunta se muestran los comentarios de los evaluadores y, cuando existen, las evidencias visuales asociadas.',
-        { size: 9, color: COLORS.sub, spacing: 5 },
-      )
+
 
       for (let qIdx = 0; qIdx < item.questionSummaries.length; qIdx++) {
         const q = item.questionSummaries[qIdx]
@@ -2013,6 +1826,8 @@ function renderHeuristicCommentsTable(
   return doc.lastAutoTable.finalY + 12
 }
 
+const generateHeuristicPdfWithAi = generateHeuristicPdf
+
 export {
   loadLogo,
   addFooter,
@@ -2020,6 +1835,7 @@ export {
   normalizeText,
   pluralize,
   stripHtml,
+  stripMarkdown,
   extractCommentTexts,
   getNumber,
   getHeuristicLabel,
@@ -2053,4 +1869,5 @@ export {
   getQuestionImageUrls,
   getAllImagesForHeuristic,
   loadImageAsBase64,
+  generateHeuristicPdfWithAi,
 }

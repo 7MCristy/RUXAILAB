@@ -737,7 +737,20 @@ export async function generateHeuristicPdf(reportData, options = {}) {
   }
 
   const now = new Date()
-  const months = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
+  const months = [
+    'Enero',
+    'Febrero',
+    'Marzo',
+    'Abril',
+    'Mayo',
+    'Junio',
+    'Julio',
+    'Agosto',
+    'Septiembre',
+    'Octubre',
+    'Noviembre',
+    'Diciembre',
+  ]
   const dateLabel = `${months[now.getMonth()]} ${now.getFullYear()}`
   doc.setFont(FONT, 'normal')
   doc.setFontSize(12)
@@ -1049,11 +1062,7 @@ export async function generateHeuristicPdf(reportData, options = {}) {
       specialRows.push(row)
     }
     if (totalNoComprobar > 0) {
-      const row = [
-        '!',
-        'No es posible de comprobar',
-        String(totalNoComprobar),
-      ]
+      const row = ['!', 'No es posible de comprobar', String(totalNoComprobar)]
       if (hasDescriptions) row.push('')
       specialRows.push(row)
     }
@@ -1093,9 +1102,15 @@ export async function generateHeuristicPdf(reportData, options = {}) {
                 halign: 'center',
                 fontStyle: 'bold',
               },
-              1: { cellWidth: Math.round(contentW * 0.37), overflow: 'linebreak' },
+              1: {
+                cellWidth: Math.round(contentW * 0.37),
+                overflow: 'linebreak',
+              },
               2: { cellWidth: Math.round(contentW * 0.1), halign: 'center' },
-              3: { cellWidth: Math.round(contentW * 0.45), overflow: 'linebreak' },
+              3: {
+                cellWidth: Math.round(contentW * 0.45),
+                overflow: 'linebreak',
+              },
             }
           : {
               0: {
@@ -1103,7 +1118,10 @@ export async function generateHeuristicPdf(reportData, options = {}) {
                 halign: 'center',
                 fontStyle: 'bold',
               },
-              1: { cellWidth: Math.round(contentW * 0.7), overflow: 'linebreak' },
+              1: {
+                cellWidth: Math.round(contentW * 0.7),
+                overflow: 'linebreak',
+              },
               2: { cellWidth: Math.round(contentW * 0.2), halign: 'center' },
             },
       })
@@ -1129,30 +1147,24 @@ export async function generateHeuristicPdf(reportData, options = {}) {
       doc.text(String(totalAnswered), boxX + boxW - 8, y + 12, {
         align: 'right',
       })
-      doc.text(
-        String(totalNoAplica),
-        boxX + boxW - 8,
-        y + 22,
-        { align: 'right' },
-      )
-      doc.text(
-        String(totalNoComprobar),
-        boxX + boxW - 8,
-        y + 32,
-        { align: 'right' },
-      )
-      doc.text(
-        String(totalExpected),
-        boxX + boxW - 8,
-        y + 42,
-        { align: 'right' },
-      )
+      doc.text(String(totalNoAplica), boxX + boxW - 8, y + 22, {
+        align: 'right',
+      })
+      doc.text(String(totalNoComprobar), boxX + boxW - 8, y + 32, {
+        align: 'right',
+      })
+      doc.text(String(totalExpected), boxX + boxW - 8, y + 42, {
+        align: 'right',
+      })
       y += boxH + 40
     }
   }
 
   // ─── 3. PRIORIDAD DE MEJORA ───────────────────────────────────────────────
-  startSection('3. Prioridad de mejora por impacto negativo')
+  doc.addPage()
+  pageNum += 1
+  addPageHeader()
+  startSection('3. Heurísticas prioritarizadas por nivel de severidad')
   writeParagraph(
     'La tabla siguiente presenta el cumplimiento calculado por heurística. Para cada evaluador se suman las puntuaciones de las preguntas aplicables, se multiplican por 100 y se dividen entre el número de preguntas aplicables multiplicado por la puntuación máxima. Después se promedian esos porcentajes entre evaluadores.',
   )
@@ -1321,7 +1333,10 @@ export async function generateHeuristicPdf(reportData, options = {}) {
     )
     const heuristicIndexForImg = (item.position || 1) - 1
     const imgUrlsByQuestion = {}
-    const questions = testStructure?.[heuristicIndexForImg]?.questions || testStructure?.[heuristicIndexForImg]?.heuristicQuestions || []
+    const questions =
+      testStructure?.[heuristicIndexForImg]?.questions ||
+      testStructure?.[heuristicIndexForImg]?.heuristicQuestions ||
+      []
     questions.forEach((_, qIdx) => {
       const urls = getQuestionImageUrls(allAnswers, heuristicIndexForImg, qIdx)
       if (urls.length > 0) imgUrlsByQuestion[qIdx] = urls
@@ -1335,7 +1350,6 @@ export async function generateHeuristicPdf(reportData, options = {}) {
         size: 10,
         spacing: 3,
       })
-
 
       for (let qIdx = 0; qIdx < item.questionSummaries.length; qIdx++) {
         const q = item.questionSummaries[qIdx]
@@ -1360,7 +1374,10 @@ export async function generateHeuristicPdf(reportData, options = {}) {
           doc.setFont(FONT, 'normal')
           doc.setFontSize(8)
           doc.setTextColor(...COLORS.sub)
-          const commentLines = doc.splitTextToSize(stripHtml(cd.text || ''), CONTENT_W - 20)
+          const commentLines = doc.splitTextToSize(
+            stripHtml(cd.text || ''),
+            CONTENT_W - 20,
+          )
           for (const line of commentLines) {
             ensureSpace(10)
             doc.text(line, M + 10, y)

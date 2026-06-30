@@ -22,6 +22,7 @@ export default class Study {
     status, // transformar em um ENUM
     endDate,
     creationDate,
+    websiteUrl,
   } = {}) {
     /**
      * Defines the test id.
@@ -141,6 +142,13 @@ export default class Study {
      * @type {number}
      */
     this.endDate = endDate ?? null
+
+    /**
+     * Website URL of the system being evaluated.
+     *
+     * @type {string}
+     */
+    this.websiteUrl = websiteUrl ?? null
   }
 
   /**
@@ -168,6 +176,7 @@ export default class Study {
       status: this.status,
       endDate: this.endDate,
       subType: this.subType,
+      websiteUrl: this.websiteUrl,
     }
   }
 }

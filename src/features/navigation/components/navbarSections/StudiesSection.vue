@@ -89,10 +89,17 @@
 
           <!-- ⚙️ Status -->
           <v-col cols="12" sm="6" md="3">
-            <div class="filter-label">
+            <label
+              class="filter-label"
+              for="status-select"
+              style="cursor: pointer"
+            >
               {{ $t('pages.studies.statusLabel') }}
-            </div>
+            </label>
+
+            <!-- status-select id ties this to the label above for accessibility -->
             <v-select
+              id="status-select"
               v-model="selectedStatusFilter"
               :items="statusOptions"
               item-title="text"
@@ -102,6 +109,8 @@
               density="compact"
               variant="outlined"
               hide-details
+              class="status-select"
+              :aria-label="$t('pages.studies.statusLabel')"
             />
           </v-col>
 
@@ -191,6 +200,7 @@ import {
   STUDY_TYPES,
   USER_STUDY_SUBTYPES,
 } from '@/shared/constants/methodDefinitions'
+import { matchesSearch } from '@/shared/utils/searchUtils'
 
 // ===== Setup =====
 const store = useStore()
@@ -281,9 +291,9 @@ const filteredTests = computed(() => {
   if (!tests.value) return []
 
   return tests.value.filter((test) => {
-    const title = (test.testTitle || test.title || '').toLowerCase()
-    const query = (search.value || '').toLowerCase()
-    const matchesSearch = !query || title.includes(query)
+    const title = test.testTitle || test.title || ''
+    const query = search.value || ''
+    const matchesSearchQuery = matchesSearch(title, query)
 
     // 🔹 Method
     let matchesMethod = true
@@ -356,7 +366,7 @@ const filteredTests = computed(() => {
     }
 
     return (
-      matchesSearch &&
+      matchesSearchQuery &&
       matchesMethod &&
       matchesStatus &&
       matchesVisibility &&
@@ -404,5 +414,9 @@ const goTo = (test) => {
 }
 .filter-field :deep(.v-field__input) {
   min-height: 36px;
+}
+
+.status-select :deep(.v-chip) {
+  pointer-events: none;
 }
 </style>

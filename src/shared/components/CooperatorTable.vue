@@ -49,8 +49,8 @@
         :items="filteredCooperators"
         :items-per-page="itemsPerPage"
         class="cooperators-table"
-        item-key="email"
-        item-value="email"
+        item-key="_rowKey"
+        item-value="_rowKey"
         height="50vh"
       >
         <!-- Email Column -->
@@ -205,6 +205,7 @@ import { ref, computed, watch } from 'vue'
 import { useCooperatorUtils } from '@/shared/composables/useCooperatorUtils'
 import { useRouter } from 'vue-router'
 import { useStore } from 'vuex'
+import { matchesSearch } from '@/shared/utils/searchUtils'
 
 const router = useRouter()
 const store = useStore()
@@ -317,7 +318,13 @@ const computedHeaders = computed(() => {
 })
 
 const filteredCooperators = computed(() => {
-  let result = [...props.cooperators]
+  let result = props.cooperators.map((coop, index) => ({
+    ...coop,
+    _rowKey:
+      coop.userDocId ||
+      coop.token ||
+      `${coop.email || 'cooperator'}-${index}-${coop.accessLevel}-${coop.accepted}`,
+  }))
 
   if (filters.value.role) {
     result = result.filter(
@@ -339,7 +346,7 @@ const filteredCooperators = computed(() => {
 
   if (filters.value.search) {
     result = result.filter((coop) =>
-      coop.email.toLowerCase().includes(filters.value.search.toLowerCase()),
+      matchesSearch(coop.email, filters.value.search),
     )
   }
 

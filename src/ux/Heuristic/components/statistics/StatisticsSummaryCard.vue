@@ -283,6 +283,10 @@
 </template>
 
 <script setup>
+import { watch, onMounted } from 'vue'
+
+// Receives the final result object from the parent
+// { average, max, min, sd }
 import { computed } from 'vue'
 import SelectionPieChart from '@/shared/components/charts/SelectionPieChart.vue'
 import { useI18n } from 'vue-i18n'
@@ -315,6 +319,31 @@ const props = defineProps({
   },
 })
 
+// Debug: Ver el contenido de result
+onMounted(() => {
+  console.log('=== StatisticsSummaryCard - result inicial ===')
+  console.log('result:', props.result)
+  console.log('average:', props.result?.average)
+  console.log('max:', props.result?.max)
+  console.log('min:', props.result?.min)
+  console.log('sd:', props.result?.sd)
+  console.log('===========================================')
+})
+
+watch(
+  () => props.result,
+  (newResult) => {
+    console.log('=== StatisticsSummaryCard - result actualizado ===')
+    console.log('result:', newResult)
+    console.log('average:', newResult?.average)
+    console.log('max:', newResult?.max)
+    console.log('min:', newResult?.min)
+    console.log('sd:', newResult?.sd)
+    console.log('===============================================')
+  },
+  { deep: true },
+)
+
 const optionColors = [
   '#8EA8C3',
   '#C7AE79',
@@ -345,8 +374,23 @@ const evaluatorsCount = computed(() => Number(props.result?.evaluators) || 0)
 const isSingleEvaluator = computed(() => evaluatorsCount.value === 1)
 
 const evaluatorsLabel = computed(() => {
-  const suffix = evaluatorsCount.value === 1 ? 'Evaluator' : 'Evaluators'
-  return `${evaluatorsCount.value} ${suffix}`
+  const key =
+    evaluatorsCount.value === 1 ? 'common.evaluator' : 'common.evaluators'
+  return `${evaluatorsCount.value} ${t(key)}`
+})
+
+const totalComments = computed(() => Number(props.result?.totalComments) || 0)
+
+const commentsLabel = computed(() => {
+  const key = totalComments.value === 1 ? 'common.comment' : 'common.comments'
+  return `${totalComments.value} ${t(key)}`
+})
+
+const totalImages = computed(() => Number(props.result?.totalImages) || 0)
+
+const imagesLabel = computed(() => {
+  const key = totalImages.value === 1 ? 'common.image' : 'common.images'
+  return `${totalImages.value} ${t(key)}`
 })
 
 const evaluatorIdentityLabel = computed(() =>

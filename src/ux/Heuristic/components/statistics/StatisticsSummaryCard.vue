@@ -139,15 +139,6 @@
                 {{ t('HeuristicsTestAnswer.summary.warningSubtitle') }}
               </div>
             </div>
-            <v-chip
-              size="small"
-              color="#F3E5C7"
-              variant="flat"
-              class="text-amber-900 warning-metrics-chip"
-            >
-              {{ warningMetricsCount }}
-              {{ t('HeuristicsTestAnswer.summary.metrics') }}
-            </v-chip>
           </div>
 
           <v-row dense>

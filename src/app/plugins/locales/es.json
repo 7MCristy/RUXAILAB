@@ -613,6 +613,7 @@
       "addNewDescription": "Agregar nueva descripción",
       "addOption": "Agregar nueva opción",
       "hasValue": "Tiene valor",
+      "warning": "No es posible comprobar",
       "moveUp": "Mover arriba",
       "moveDown": "Mover abajo",
       "Question": "Pregunta",

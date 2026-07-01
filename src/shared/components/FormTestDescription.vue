@@ -82,7 +82,7 @@
             :placeholder="$t('Web Url')"
             hide-details="auto"
             class="modern-input"
-            @update:model-value="updateEnglishWebUrl($event)"
+            @update:model-value="WebUrl($event)"
           />
         </div>
       </v-col>
@@ -175,7 +175,7 @@ const updateTestDescription = (value) => {
   store.commit('SET_LOCAL_CHANGES', true)
 }
 
-const updateEnglishWebUrl = (value) => {
+const WebUrl = (value) => {
   emit('update:test', {
     ...props.test,
     englishWebUrl: value,

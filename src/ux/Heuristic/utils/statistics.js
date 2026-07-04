@@ -668,12 +668,15 @@ function finalResult(
         : 0)
     }, 0)
 
-    // Aggregate totalTimeMs and averageTimeMs
-    const timeValues = validItems
-      .map((item) => toFiniteNumber(item.totalTimeMs))
-      .filter((v) => v > 0)
-    testData.totalTimeMs = timeValues.reduce((sum, v) => sum + v, 0)
-    testData.averageTimeMs = timeValues.length ? testData.totalTimeMs / timeValues.length : 0
+    // Calculate average time per evaluator (sum all heuristics' timeSpentMs, divide by evaluator count)
+    const totalTimeAllEvaluators = validItems.reduce((sum, ev) => {
+      return sum + (Array.isArray(ev.heuristics)
+        ? ev.heuristics.reduce((s, h) => s + (h.timeSpentMs || 0), 0)
+        : 0)
+    }, 0)
+    testData.averageTimeMs = validCount > 0
+      ? Math.round(totalTimeAllEvaluators / validCount)
+      : 0
 
     console.log('[finalResult] computed global stats:', {
       average: testData.average,

@@ -74,7 +74,7 @@
             <span class="required-star">*</span>
           </label>
           <v-text-field
-            :model-value="test.englishWebUrl"
+            :model-value="test.websiteUrl"
             :label="$t('Link url from the web')"
             :rules="urlRequired"
             variant="outlined"
@@ -178,7 +178,6 @@ const updateTestDescription = (value) => {
 const WebUrl = (value) => {
   emit('update:test', {
     ...props.test,
-    englishWebUrl: value,
     websiteUrl: value,
   })
   store.commit('SET_LOCAL_CHANGES', true)

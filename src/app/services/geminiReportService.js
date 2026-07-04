@@ -101,7 +101,10 @@ export async function generateAiReportWithGemini(finalReportItem) {
     }
 
     const client = getGeminiClient()
-    const userPrompt = buildHeuristicReportPrompt(finalReportItem, webResearchContent)
+    const userPrompt = buildHeuristicReportPrompt(
+      finalReportItem,
+      webResearchContent,
+    )
 
     // Configuración de la generación
     const config = {
@@ -178,7 +181,6 @@ export async function generateAiReportWithGemini(finalReportItem) {
       }
     }
   } catch (error) {
-
     if (error.message.includes('API key') || error.message.includes('403')) {
       throw new Error(
         'API Key de Gemini inválida. Verifica VUE_APP_GEMINI_API_KEY en .env',
@@ -192,9 +194,7 @@ export async function generateAiReportWithGemini(finalReportItem) {
     }
 
     if (error.message.includes('404') || error.message.includes('not found')) {
-      throw new Error(
-        `Modelo ${GEMINI_MODEL} no encontrado.`,
-      )
+      throw new Error(`Modelo ${GEMINI_MODEL} no encontrado.`)
     }
 
     if (error.name === 'AbortError') {
@@ -203,9 +203,7 @@ export async function generateAiReportWithGemini(finalReportItem) {
 
     throw new Error(`Gemini API error: ${error.message}`)
   }
-  
 }
-
 
 /**
  * Genera informe con Ollama usando buildOllamaRequestBody
@@ -216,7 +214,8 @@ export async function generateAiReportWithGemini(finalReportItem) {
  */
 export async function generateAiReportWithOllama(
   finalReportItem,
-  ollamaUrl = process.env.VUE_APP_OLLAMA_API_URL || 'http://localhost:11434/api/chat',
+  ollamaUrl = process.env.VUE_APP_OLLAMA_API_URL ||
+    'http://localhost:11434/api/chat',
 ) {
   try {
     const baseUrl = ollamaUrl.replace('/api/chat', '')
@@ -290,6 +289,8 @@ function cleanSectionText(text) {
   if (!text || typeof text !== 'string') return ''
   const original = text
   const cleaned = stripMarkdown(text)
+    .replace(/\[PROPOSITO\]/gi, '')
+    .replace(/\[\/PROPOSITO\]/gi, '')
     .replace(/\[ESTADO_ACTUAL\]/gi, '')
     .replace(/\[\/ESTADO_ACTUAL\]/gi, '')
     .replace(/\[IMPACTO_EXPERIENCIA\]/gi, '')
@@ -298,20 +299,26 @@ function cleanSectionText(text) {
     .replace(/\[\/PLAN_ACCION\]/gi, '')
     .replace(/\[RESUMEN_EJECUTIVO\]/gi, '')
     .replace(/\[\/RESUMEN_EJECUTIVO\]/gi, '')
+    .replace(/\[IMPACTO_MEJORA\]/gi, '')
+    .replace(/\[\/IMPACTO_MEJORA\]/gi, '')
+    .replace(/\/PROPOSITO/gi, '')
     .replace(/\/ESTADO_ACTUAL/gi, '')
     .replace(/\/IMPACTO_EXPERIENCIA/gi, '')
     .replace(/\/PLAN_ACCION/gi, '')
     .replace(/\/RESUMEN_EJECUTIVO/gi, '')
+    .replace(/\/IMPACTO_MEJORA/gi, '')
     .replace(/\n{3,}/g, '\n\n')
     .trim()
-  console.log(`[cleanSectionText] Original: ${original.length} chars → Limpio: ${cleaned.length} chars`)
+  console.log(
+    `[cleanSectionText] Original: ${original.length} chars → Limpio: ${cleaned.length} chars`,
+  )
   return cleaned
 }
 
 /**
  * Parsea la respuesta de IA en secciones usando delimitadores ===SECCION:NOMBRE===
  * @param {string} content - Texto completo generado por la IA
- * @returns {Object} Secciones: { introduccion, porcentajes, tipos_respuesta, heuristicas_prioritarias, analisis_heuristico, comparativa, conclusion }
+ * @returns {Object} Secciones: { introduccion, porcentajes, tipos_respuesta, analisis_heuristico, comparativa, conclusion }
  */
 export function parseAiReportSections(content) {
   console.log('═══════════════════════════════════════════════════════════════')
@@ -319,15 +326,24 @@ export function parseAiReportSections(content) {
   console.log('═══════════════════════════════════════════════════════════════')
 
   if (!content || typeof content !== 'string') {
-    console.log('[parseAiReportSections] ❌ Contenido vacío o no es string:', typeof content)
-    return { introduccion: '', porcentajes: '', tipos_respuesta: '', heuristicas_prioritarias: '', analisis_heuristico: '', comparativa: '', conclusion: '' }
+    console.log(
+      '[parseAiReportSections] ❌ Contenido vacío o no es string:',
+      typeof content,
+    )
+    return {
+      introduccion: '',
+      porcentajes: '',
+      tipos_respuesta: '',
+      analisis_heuristico: '',
+      comparativa: '',
+      conclusion: '',
+    }
   }
 
   const sectionMap = {
     INTRODUCCION: 'introduccion',
     PORCENTAJES: 'porcentajes',
     TIPOS_RESPUESTA: 'tipos_respuesta',
-    HEURISTICAS_PRIORITARIAS: 'heuristicas_prioritarias',
     ANALISIS_HEURISTICO: 'analisis_heuristico',
     COMPARATIVA: 'comparativa',
     CONCLUSION: 'conclusion',
@@ -335,7 +351,14 @@ export function parseAiReportSections(content) {
 
   const regex = /===SECCION:(\w+)===/g
   const parts = content.split(regex)
-  const sections = { introduccion: '', porcentajes: '', tipos_respuesta: '', heuristicas_prioritarias: '', analisis_heuristico: '', comparativa: '', conclusion: '' }
+  const sections = {
+    introduccion: '',
+    porcentajes: '',
+    tipos_respuesta: '',
+    analisis_heuristico: '',
+    comparativa: '',
+    conclusion: '',
+  }
 
   for (let i = 1; i < parts.length; i += 2) {
     const tagName = parts[i]
@@ -346,13 +369,18 @@ export function parseAiReportSections(content) {
     }
   }
 
-  const hasAnySection = Object.values(sections).some(s => s.length > 0)
+  const hasAnySection = Object.values(sections).some((s) => s.length > 0)
   if (!hasAnySection) {
-    console.log('[parseAiReportSections] ⚠️ SIN DELIMITADORES - usando fallback')
+    console.log(
+      '[parseAiReportSections] ⚠️ SIN DELIMITADORES - usando fallback',
+    )
     Object.assign(sections, distributeTextByKeywords(content))
   }
 
-  console.log('[parseAiReportSections] 📊 Estado final:', Object.fromEntries(Object.entries(sections).map(([k, v]) => [k, v.length])))
+  console.log(
+    '[parseAiReportSections] 📊 Estado final:',
+    Object.fromEntries(Object.entries(sections).map(([k, v]) => [k, v.length])),
+  )
   console.log('═══════════════════════════════════════════════════════════════')
   return sections
 }
@@ -361,29 +389,63 @@ export function parseAiReportSections(content) {
  * Fallback: distribuye texto por keywords cuando no hay delimitadores
  */
 function distributeTextByKeywords(content) {
-  const sections = { introduccion: '', porcentajes: '', tipos_respuesta: '', heuristicas_prioritarias: '', analisis_heuristico: '', comparativa: '', conclusion: '' }
+  const sections = {
+    introduccion: '',
+    porcentajes: '',
+    tipos_respuesta: '',
+    analisis_heuristico: '',
+    comparativa: '',
+    conclusion: '',
+  }
   const lines = content.split('\n')
   let currentSection = 'introduccion'
   const keywordMap = {
     introduccion: ['introducción', 'sistema evaluado', 'evaluación heurística'],
-    porcentajes: ['porcentajes', 'cumplimiento global', 'evaluador', 'madurez ux'],
+    porcentajes: [
+      'porcentajes',
+      'cumplimiento global',
+      'evaluador',
+      'madurez ux',
+    ],
     tipos_respuesta: ['tipos de respuesta', 'no aplica', 'no es posible'],
-    heuristicas_prioritarias: ['prioridad', 'heurísticas más crític', 'orden de prior'],
-    analisis_heuristico: ['heurística #', 'h1 —', 'h2 —', 'h3 —', 'estado_actual', 'impacto_experiencia', 'plan_accion'],
-    comparativa: ['comparativa', 'puntuaciones individuales', 'dispersión', 'consenso'],
-    conclusion: ['conclusión', 'roadmap', 'valoración final', 'potencial de mejora'],
+    analisis_heuristico: [
+      'heurística #',
+      'h1 —',
+      'h2 —',
+      'h3 —',
+      'estado_actual',
+      'impacto_experiencia',
+      'plan_accion',
+      'prioridad',
+      'heurísticas más crític',
+      'orden de prior',
+    ],
+    comparativa: [
+      'comparativa',
+      'puntuaciones individuales',
+      'dispersión',
+      'consenso',
+    ],
+    conclusion: [
+      'conclusión',
+      'roadmap',
+      'valoración final',
+      'potencial de mejora',
+    ],
   }
   for (const line of lines) {
     const lower = line.toLowerCase()
     for (const [section, keywords] of Object.entries(keywordMap)) {
-      if (keywords.some(k => lower.includes(k))) {
+      if (keywords.some((k) => lower.includes(k))) {
         currentSection = section
         break
       }
     }
     sections[currentSection] += line + '\n'
   }
-  return Object.fromEntries(Object.entries(sections).map(([k, v]) => [k, cleanSectionText(v)]))
+  return Object.fromEntries(
+    Object.entries(sections).map(([k, v]) => [k, cleanSectionText(v)]),
+  )
 }
 
 /**
@@ -393,48 +455,75 @@ function distributeTextByKeywords(content) {
  */
 export function parseHeuristicAnalysis(text) {
   if (!text) return []
-  
+
   const blocks = []
   // Divide por encabezados de heurística: "H1 — 45% — Nombre" o "H1 - 45% - Nombre"
   const heuristicHeaderRegex = /^H(\d+)\s*[—–-]\s*(\d+)%\s*[—–-]\s*(.+)$/gm
-  
+
   const headerMatches = [...text.matchAll(heuristicHeaderRegex)]
-  
+
   for (let i = 0; i < headerMatches.length; i++) {
     const match = headerMatches[i]
-    const nextStart = i + 1 < headerMatches.length ? headerMatches[i + 1].index : text.length
+    const nextStart =
+      i + 1 < headerMatches.length ? headerMatches[i + 1].index : text.length
     const blockText = text.slice(match.index, nextStart).trim()
-    
+
     const id = `H${match[1]}`
     const index = parseInt(match[1]) - 1
     const compliance = `${match[2]}%`
     const title = match[3].trim()
-    
+
     // Extraer sub-bloques [ETIQUETA]...[/ETIQUETA]
     const extract = (tag) => {
-      const regex = new RegExp(`\\[${tag}\\]\\s*([\\s\\S]*?)\\[\\/${tag}\\]`, 'i')
+      const regex = new RegExp(
+        `\\[${tag}\\]\\s*([\\s\\S]*?)\\[\\/${tag}\\]`,
+        'i',
+      )
       const m = blockText.match(regex)
       return m ? m[1].trim() : ''
     }
-    
+
+    const proposito = extract('PROPOSITO')
     const estadoActual = extract('ESTADO_ACTUAL')
     const impactoExperiencia = extract('IMPACTO_EXPERIENCIA')
     const planAccion = extract('PLAN_ACCION')
     const resumenEjecutivo = extract('RESUMEN_EJECUTIVO')
     const impactoMejora = extract('IMPACTO_MEJORA')
-    
+
     // Heurísticas leves: si no tiene sub-bloques, es una frase resumen
-    const isLight = !estadoActual && !impactoExperiencia && !planAccion && !resumenEjecutivo && !impactoMejora
-    const lightSummary = isLight ? blockText.replace(/^H\d+\s*[—–-].*\n?/, '').trim() : ''
-    
+    const isLight =
+      !estadoActual &&
+      !impactoExperiencia &&
+      !planAccion &&
+      !resumenEjecutivo &&
+      !impactoMejora
+    const lightSummary = isLight
+      ? blockText
+          .replace(/^H\d+\s*[—–-].*\n?/, '')
+          .replace(/\[\/?PROPOSITO\]/gi, '')
+          .replace(/\[\/?ESTADO_ACTUAL\]/gi, '')
+          .replace(/\[\/?IMPACTO_EXPERIENCIA\]/gi, '')
+          .replace(/\[\/?PLAN_ACCION\]/gi, '')
+          .replace(/\[\/?RESUMEN_EJECUTIVO\]/gi, '')
+          .replace(/\[\/?IMPACTO_MEJORA\]/gi, '')
+          .trim()
+      : ''
+
     blocks.push({
-      id, index, compliance, title,
-      estadoActual, impactoExperiencia, planAccion, resumenEjecutivo,
+      id,
+      index,
+      compliance,
+      title,
+      proposito,
+      estadoActual,
+      impactoExperiencia,
+      planAccion,
+      resumenEjecutivo,
       impactoMejora,
       lightSummary,
     })
   }
-  
+
   return blocks
 }
 
@@ -453,7 +542,8 @@ export async function generateAiReportWithFallback(
   options = {},
 ) {
   const {
-    ollamaUrl = process.env.VUE_APP_OLLAMA_API_URL || 'http://localhost:11434/api/chat',
+    ollamaUrl = process.env.VUE_APP_OLLAMA_API_URL ||
+      'http://localhost:11434/api/chat',
     skipGemini = false,
     skipOllama = false,
     buildFallback,
@@ -480,11 +570,23 @@ export async function generateAiReportWithFallback(
         const outputTokens = estimateTokens(result.content || '')
         trackTokens('gemini', inputTokens + outputTokens)
         if (typeof result === 'string') {
-          return { content: result, webResearch: '', source: 'gemini', sections: parseAiReportSections(result) }
+          return {
+            content: result,
+            webResearch: '',
+            source: 'gemini',
+            sections: parseAiReportSections(result),
+          }
         }
-        return { ...result, sections: parseAiReportSections(result.content), source: 'gemini' }
+        return {
+          ...result,
+          sections: parseAiReportSections(result.content),
+          source: 'gemini',
+        }
       } catch (geminiError) {
-        if (geminiError.message.includes('429') || geminiError.message.includes('quota')) {
+        if (
+          geminiError.message.includes('429') ||
+          geminiError.message.includes('quota')
+        ) {
           trackTokens('gemini', 250000)
         }
 
@@ -503,11 +605,21 @@ export async function generateAiReportWithFallback(
         ollamaUrl,
       )
       if (typeof result === 'string') {
-        return { content: result, webResearch: '', source: 'ollama' }
+        return {
+          content: result,
+          webResearch: '',
+          source: 'ollama',
+          sections: parseAiReportSections(result),
+        }
       }
-      return { ...result, source: 'ollama' }
+      return {
+        ...result,
+        source: 'ollama',
+        sections: parseAiReportSections(result.content),
+      }
     } catch (ollamaError) {
       // Ollama también falló, usar fallback genérico
+      console.error('[AI] ❌ Ollama falló:', ollamaError.message)
     }
   }
 
@@ -515,10 +627,16 @@ export async function generateAiReportWithFallback(
   console.log('[AI] 📝 Usando conclusión de fallback (sin IA)')
   console.log('[AI] ⚠️ AMBAS IAs fallaron. Usando texto de respaldo.')
   console.log('[AI] ===== FIN GENERACIÓN (Fallback) =====')
-  const fallbackText = typeof buildFallback === 'function'
-    ? buildFallback()
-    : buildFallbackConclusionText()
-  return { content: fallbackText, webResearch: '', source: 'fallback' }
+  const fallbackText =
+    typeof buildFallback === 'function'
+      ? buildFallback()
+      : buildFallbackConclusionText()
+  return {
+    content: fallbackText,
+    webResearch: '',
+    source: 'fallback',
+    sections: null,
+  }
 }
 
 /**
@@ -553,12 +671,13 @@ export async function correctCommentsWithAI(comments, language = 'ca') {
   try {
     console.log('[AI] Corrigiendo comentarios con IA...')
     console.log('[AI] Comentarios a corregir:', comments)
-    
+
     const client = getGeminiClient()
-    
+
     // Construir prompt para corregir comentarios
-    const langName = language === 'ca' ? 'catalán' : language === 'es' ? 'español' : 'inglés'
-    
+    const langName =
+      language === 'ca' ? 'catalán' : language === 'es' ? 'español' : 'inglés'
+
     const commentPairs = []
     Object.entries(comments).forEach(([heuristicId, questions]) => {
       Object.entries(questions).forEach(([questionId, comment]) => {
@@ -566,34 +685,37 @@ export async function correctCommentsWithAI(comments, language = 'ca') {
           commentPairs.push({
             heuristicId,
             questionId,
-            original: comment
+            original: comment,
           })
         }
       })
     })
-    
+
     if (commentPairs.length === 0) {
       return comments
     }
-    
+
     // Procesar comentarios en grupos para no exceder el token limit
     const batchSize = 10
     const correctedComments = {}
-    
+
     for (let i = 0; i < commentPairs.length; i += batchSize) {
       const batch = commentPairs.slice(i, i + batchSize)
-      
+
       const prompt = `
         Eres un corrector de textos profesional. 
         CORRIGE los siguientes comentarios en ${langName}, manteniendo su significado original pero mejorando la redacción, gramática y ortografía.
         Devuelve UNICAMENTE los textos corregidos en el mismo orden, uno por línea, sin números, sin explicaciones, sin formato markdown.
         
         Textos a corregir:
-        ${batch.map(c => `- ${c.original}`).join('\n')}
+        ${batch.map((c) => `- ${c.original}`).join('\n')}
       `.trim()
-      
-      console.log('[AI] Prompt de corrección:', prompt.substring(0, 200) + '...')
-      
+
+      console.log(
+        '[AI] Prompt de corrección:',
+        prompt.substring(0, 200) + '...',
+      )
+
       const config = {
         model: GEMINI_MODEL,
         contents: [{ role: 'user', parts: [{ text: prompt }] }],
@@ -603,11 +725,14 @@ export async function correctCommentsWithAI(comments, language = 'ca') {
           maxOutputTokens: 2000,
         },
       }
-      
+
       const response = await client.models.generateContent(config)
       const correctedText = response?.text || ''
-      const correctedLines = correctedText.trim().split('\n').filter(l => l.trim().length > 0)
-      
+      const correctedLines = correctedText
+        .trim()
+        .split('\n')
+        .filter((l) => l.trim().length > 0)
+
       // Asignar comentarios corregidos
       correctedLines.forEach((corrected, idx) => {
         if (batch[idx]) {
@@ -619,10 +744,9 @@ export async function correctCommentsWithAI(comments, language = 'ca') {
         }
       })
     }
-    
+
     console.log('[AI] ✅ Comentarios corregidos:', correctedComments)
     return correctedComments
-    
   } catch (error) {
     console.error('[AI] ❌ Error corrigiendo comentarios:', error.message)
     console.warn('[AI] Devolviendo comentarios originales sin corregir')

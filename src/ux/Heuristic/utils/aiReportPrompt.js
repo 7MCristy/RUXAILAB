@@ -93,10 +93,11 @@ NORMAS OBLIGATORIAS:
 - Las recomendaciones deben ser ACCIONABLES, específicas y priorizadas. Nada de "mejorar la usabilidad".
 - NO incluyas encabezados Markdown (# o ##). El PDF los genera automáticamente.
 - NO incluyas etiquetas , ni razonamiento interno.
-- Devuelve SOLO el texto del informe, sin prefacios ni explicaciones.
+- Devuelve SOLO el texto explicativo cualitativo en base a los datos pasados del informe , sin prefacios ni explicaciones.
 - Varía el vocabulario entre secciones. No repitas las mismas frases de transición.
 - USA VOCABULARIO TÉCNICO DE UX: "fricción", "carga cognitiva", "affordance", "feedback", "consistencia", "heurística", "tasa de error", "eficiencia", "satisfacción percibida".
 - NO uses relleno. Cada frase debe aportar información concreta y valor analítico.
+- SEPARA cada sección usando EXACTAMENTE el delimitador que se te indica en el prompt de usuario (===SECCION:NOMBRE===). Estos delimitadores son OBLIGATORIOS porque el sistema de parseo los usa para separar las secciones del PDF. NO uses encabezados numerados como "1. Introducción" ni formato Markdown. Ejemplo correcto: ===SECCION:INTRODUCCION=== seguido del texto de la sección.
 `.trim()
 
 function toFiniteNumber(value, fallback = null) {
@@ -500,6 +501,10 @@ ${commentsBlock}
         (opt) =>
           `  - ${opt.text || opt.label || 'Sin nombre'}: ${usageCount[opt.value] || 0} usos`,
       )
+      .map(
+        (opt) =>
+          `  - ${opt.text || opt.label || 'Sin nombre'}: ${usageCount[opt.value] || 0} usos`,
+      )
       .join('\n')
     responseTypesText += `\n  Total respondidas: ${totalAnswered} / ${totalPossible} preguntas posibles`
   }
@@ -514,6 +519,7 @@ INSTRUCCIONES CRÍTICAS:
 - Haz referencias concretas al tipo de sitio web y su contexto de uso (basándote en la URL y descripción).
 - Las recomendaciones deben ser específicas, técnicas y aplicables directamente al sistema evaluado.
 - Mantén un tono profesional, riguroso y útil para un equipo de producto.
+- OBLIGATORIO: Cada sección DEBE comenzar con su delimitador exacto en una línea separada: ===SECCION:INTRODUCCION===, ===SECCION:PORCENTAJES===, ===SECCION:TIPOS_RESPUESTA===, ===SECCION:ANALISIS_HEURISTICO===, ===SECCION:COMPARATIVA===, ===SECCION:CONCLUSION===. Sin estos delimitadores el sistema NO puede separar las secciones y todo el texto irá a una sola sección del PDF. NO uses "1. Introducción" ni "# Introducción". Usa SOLO ===SECCION:NOMBRE===.
 
 DATOS DEL SISTEMA EVALUADO:
 - Nombre: ${testName}
@@ -635,6 +641,13 @@ IMPORTANTE:
 
 Datos disponibles para cada heurística:
 ${heuristicsDetailText}
+
+IMPORTANTE:
+- Usa los datos de las preguntas individuales para ser específico.
+- Cada heurística debe tener TODOS los párrafos indicados.
+- Separa cada heurística con una línea en blanco.
+- El número debe ser correlativo (1, 2, 3...).
+- NO incluyas tablas ni datos numéricos en tu texto. Solo prosa analítica. Las tablas las genera el PDF automáticamente.
 
 ==============================================================
 ===SECCION:COMPARATIVA_DE_PUNTUACIONES_POR_EVALUADOR===

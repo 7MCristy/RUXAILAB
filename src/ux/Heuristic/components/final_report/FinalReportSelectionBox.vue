@@ -136,6 +136,15 @@
             >
               Jina: {{ tokenUsage.jina.remaining.toLocaleString() }} / {{ tokenUsage.jina.total.toLocaleString() }}
             </v-chip>
+            <v-chip
+              v-if="isPrefetchingAi"
+              size="small"
+              color="info"
+              variant="tonal"
+              prepend-icon="mdi-loading mdi-spin"
+            >
+              IA no disponible
+            </v-chip>
           </div>
           <v-btn :disabled="isLoading" color="blue-grey" @click="previewPdf">
             <span v-if="!isLoading">Vista previa sin IA</span>
@@ -204,7 +213,7 @@
 </template>
 
 <script setup>
-import { ref, computed, reactive, onBeforeUnmount, watch } from 'vue'
+import { ref, computed, reactive, onBeforeUnmount, onMounted, watch } from 'vue'
 import { useStore } from 'vuex'
 import { useI18n } from 'vue-i18n'
 import { generateHeuristicPdf } from '@/ux/Heuristic/utils/pdfGenerator'
@@ -219,7 +228,7 @@ import {
 } from '@/ux/Heuristic/utils/statistics'
 import { buildOllamaRequestBody } from '@/ux/Heuristic/utils/aiReportPrompt'
 import { STUDY_TYPES } from '@/shared/constants/methodDefinitions'
-import { generateAiReportWithFallback, correctCommentsWithAI } from '@/app/services/geminiReportService'
+import { generateAiReportWithFallback, correctCommentsWithAI, parseAiReportSections } from '@/app/services/geminiReportService'
 import { getRemaining, hasQuota } from '@/app/services/tokenTracker'
 
 const store = useStore()
@@ -245,6 +254,11 @@ const previewError = ref('')
 const correctedHeuristicComments = ref(null)
 const isCorrectingComments = ref(false)
 const aiSource = ref('')
+const cachedAiSections = ref(null)
+const cachedAiContent = ref('')
+const isPrefetchingAi = ref(false)
+const prefetchError = ref('')
+const lastCommentsSnapshot = ref('')
 const aiSourceLabel = computed(() => {
   const labels = {
     gemini: 'Gemini AI',
@@ -324,6 +338,55 @@ const correctComments = async () => {
     correctedHeuristicComments.value = null
   } finally {
     isCorrectingComments.value = false
+  }
+}
+
+// ============================================================================
+// PREFETCH: Pre-generar secciones de IA cuando el componente se monta
+// para que estén listas cuando el usuario pida el PDF con IA
+// ============================================================================
+const getCommentsSnapshot = () => {
+  return JSON.stringify(props.heuristicComments || {})
+}
+
+const prefetchAiSections = async () => {
+  if (isPrefetchingAi.value) return
+
+  const currentSnapshot = getCommentsSnapshot()
+  if (cachedAiSections.value && lastCommentsSnapshot.value === currentSnapshot) {
+    console.log('[Prefetch] ℹ️ Comentarios sin cambios, usando caché')
+    return
+  }
+
+  isPrefetchingAi.value = true
+  prefetchError.value = ''
+  console.log('[Prefetch] 🚀 Iniciando pre-generación de secciones IA...')
+
+  const tokenInterval = setInterval(() => {
+    forceRefreshTokens()
+  }, 1500)
+
+  try {
+    await correctComments()
+
+    const finalReportItem = buildFinalReportItem()
+    console.log('[Prefetch] 📦 ReportItem construido, llamando a Gemini...')
+
+    const aiContent = await generateAiFinalReport(finalReportItem)
+    const aiSections = parseAiReportSections(aiContent)
+
+    cachedAiSections.value = aiSections
+    cachedAiContent.value = aiContent
+    lastCommentsSnapshot.value = currentSnapshot
+
+    console.log('[Prefetch] ✅ Secciones IA cacheadas:', Object.keys(aiSections).filter(k => aiSections[k]))
+  } catch (error) {
+    console.error('[Prefetch] ❌ Error pre-generando secciones IA:', error)
+    prefetchError.value = error?.message || 'Error al generar texto con IA'
+  } finally {
+    clearInterval(tokenInterval)
+    isPrefetchingAi.value = false
+    forceRefreshTokens()
   }
 }
 
@@ -788,18 +851,34 @@ const previewPdfWithAi = async () => {
   
   await correctComments()
   
+  const currentSnapshot = getCommentsSnapshot()
+  const useCache = cachedAiSections.value && lastCommentsSnapshot.value === currentSnapshot
+  
   startPreview(
     'Vista previa del informe con IA',
-    'Generando informe con IA...',
+    useCache
+      ? 'Generando PDF con texto de IA pre-generado...'
+      : 'Generando informe con IA...',
   )
   try {
     const finalReportItem = buildFinalReportItem()
-    const aiResult = await generateAiFinalReport(finalReportItem)
-    const aiContent = typeof aiResult === 'string' ? aiResult : aiResult.content
-    const aiSections = typeof aiResult === 'string' ? null : aiResult.sections
 
-    finalReportItem.finalReport = aiContent
-    finalReportItem.studyConclusion = aiContent
+    let aiSections
+    if (useCache) {
+      console.log('[previewPdfWithAi] ♻️ Usando secciones IA cacheadas')
+      aiSections = cachedAiSections.value
+    } else {
+      console.log('[previewPdfWithAi] 🆕 Generando secciones IA on-the-fly')
+      const aiContent = await generateAiFinalReport(finalReportItem)
+      aiSections = parseAiReportSections(aiContent)
+      cachedAiSections.value = aiSections
+      cachedAiContent.value = aiContent
+      lastCommentsSnapshot.value = currentSnapshot
+    }
+
+    finalReportItem.aiSections = aiSections
+    finalReportItem.finalReport = aiSections.conclusion || cachedAiContent.value || ''
+    finalReportItem.studyConclusion = aiSections.conclusion || cachedAiContent.value || ''
 
     // Distribuir secciones parseadas
     if (aiSections) {
@@ -807,7 +886,6 @@ const previewPdfWithAi = async () => {
       finalReportItem.aiIntroduccion = aiSections.introduccion || ''
       finalReportItem.aiPorcentajes = aiSections.porcentajes || ''
       finalReportItem.aiTiposRespuesta = aiSections.tipos_respuesta || ''
-      finalReportItem.aiHeuristicasPrioritarias = aiSections.heuristicas_prioritarias || ''
       finalReportItem.aiAnalisisHeuristico = aiSections.analisis_heuristico || ''
       finalReportItem.aiComparativa = aiSections.comparativa || ''
       finalReportItem.aiConclusion = aiSections.conclusion || ''
@@ -847,6 +925,24 @@ const previewPdfWithAi = async () => {
 onBeforeUnmount(() => {
   revokePreviewUrl()
 })
+
+onMounted(() => {
+  prefetchAiSections()
+})
+
+watch(
+  () => props.heuristicComments,
+  () => {
+    const currentSnapshot = getCommentsSnapshot()
+    if (cachedAiSections.value && lastCommentsSnapshot.value !== currentSnapshot) {
+      console.log('[Prefetch] 🔄 Comentarios cambiados, invalidando caché IA')
+      cachedAiSections.value = null
+      cachedAiContent.value = ''
+      prefetchAiSections()
+    }
+  },
+  { deep: true },
+)
 
 watch(isPreviewOpen, (value) => {
   if (!value) revokePreviewUrl()

@@ -216,7 +216,7 @@ export async function researchWebsite({
             `=== CONTENIDO DEL SITIO EVALUADO (${testUrl}) ===\n${siteContent}`,
           )
         } catch (readError) {
-          // No se pudo leer la URL
+          console.error('[WebSearch] Jina read failed for URL:', testUrl, readError)
         }
       }
 
@@ -230,7 +230,7 @@ export async function researchWebsite({
             `=== RESULTADOS DE BÚSQUEDA: "${query}" ===\n${searchResults}`,
           )
         } catch (searchError) {
-          // Búsqueda falló
+          console.error('[WebSearch] Jina search failed for query:', query, searchError)
         }
       }
 
@@ -238,7 +238,7 @@ export async function researchWebsite({
         return { content: allContent.join('\n\n'), source: 'jina' }
       }
     } catch (jinaError) {
-      // Jina falló completamente
+      console.error('[WebSearch] Jina search/read failed:', jinaError)
     }
   }
 
@@ -250,7 +250,7 @@ export async function researchWebsite({
         const results = await searchWithTinyFish(query)
         tinyFishResults.push(...results)
       } catch (tfError) {
-        // TinyFish falló
+        console.error('[WebSearch] TinyFish search failed for query:', query, tfError)
       }
     }
 
@@ -258,7 +258,7 @@ export async function researchWebsite({
       return { content: tinyFishResultsToMarkdown(tinyFishResults), source: 'tinyfish' }
     }
   } catch (tinyFishError) {
-    // TinyFish también falló
+    console.error('[WebSearch] TinyFish search failed:', tinyFishError)
   }
 
   // 3. Sin resultados

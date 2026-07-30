@@ -10,6 +10,8 @@ const testData = {
   sd: null,
   totalComments: 0,
   totalImages: 0,
+  totalTimeMs: 0,
+  averageTimeMs: 0,
 }
 
 /**
@@ -43,6 +45,11 @@ const warningsData = {
  *
  * Ejemplo: percentage(75, 100) => 75
  */
+function toFiniteNumber(value, fallback = 0) {
+  const numericValue = Number(value)
+  return Number.isFinite(numericValue) ? numericValue : fallback
+}
+
 function percentage(value, result) {
   return (value * 100) / result
 }
@@ -521,6 +528,12 @@ function statistics() {
         heurisIndex++
       })
 
+      // Calculate totalTimeMs for this evaluator
+      SelectEvaluator.totalTimeMs = SelectEvaluator.heuristics.reduce(
+        (total, heuristic) => total + (heuristic.timeSpentMs || 0),
+        0,
+      )
+
       console.log('[statistics] evaluator processed:', {
         userDocId: SelectEvaluator.userDocId,
         heuristicsCount: SelectEvaluator.heuristics.length,
@@ -654,6 +667,13 @@ function finalResult(
         ? ev.heuristics.reduce((s, h) => s + (h.totalImages || 0), 0)
         : 0)
     }, 0)
+
+    // Aggregate totalTimeMs and averageTimeMs
+    const timeValues = validItems
+      .map((item) => toFiniteNumber(item.totalTimeMs))
+      .filter((v) => v > 0)
+    testData.totalTimeMs = timeValues.reduce((sum, v) => sum + v, 0)
+    testData.averageTimeMs = timeValues.length ? testData.totalTimeMs / timeValues.length : 0
 
     console.log('[finalResult] computed global stats:', {
       average: testData.average,
@@ -969,6 +989,119 @@ function buildGlobalExecutionAverage(evaluatorPercentages) {
   return { items, globalAverage }
 }
 
+function getSeverityLabel(percentageValue) {
+  if (percentageValue >= 75) return 'Leve'
+  if (percentageValue >= 50) return 'Moderado'
+  if (percentageValue >= 25) return 'Grave'
+  return 'Crítico'
+}
+
+function getEvaluatorName(evaluatorItem, participants = []) {
+  const evaluator = participants.find(
+    (p) =>
+      p?.userDocId === evaluatorItem?.userDocId ||
+      p?.uid === evaluatorItem?.userDocId,
+  )
+  return evaluator?.fullName || evaluator?.name || evaluator?.displayName || ''
+}
+
+function buildEvaluatorPercentages(resultEvaluator, participants = []) {
+  if (!Array.isArray(resultEvaluator)) {
+    return { items: [], globalAverage: '0.00' }
+  }
+
+  const items = resultEvaluator.map((item) => {
+    const percentageValue = toNumeric(item.result)
+    return {
+      name: getEvaluatorName(item, participants),
+      percentage: Number.isFinite(percentageValue)
+        ? percentageValue.toFixed(2)
+        : '0.00',
+      severity: getSeverityLabel(percentageValue),
+    }
+  })
+
+  const validPercentages = items
+    .map((i) => parseFloat(i.percentage))
+    .filter((v) => Number.isFinite(v))
+  const globalAverage = validPercentages.length
+    ? (
+        validPercentages.reduce((s, v) => s + v, 0) / validPercentages.length
+      ).toFixed(2)
+    : '0.00'
+
+  return { items, globalAverage }
+}
+
+function buildHeuristicRanking(heuristicsStatistics, heuristicsEvaluator) {
+  if (
+    !heuristicsStatistics?.items?.length ||
+    !heuristicsEvaluator?.items?.length
+  ) {
+    return { items: [] }
+  }
+
+  const heuristicMap = new Map()
+  heuristicsEvaluator.items.forEach((item) => {
+    heuristicMap.set(item.heuristic, item)
+  })
+
+  const items = heuristicsStatistics.items
+    .map((stat) => {
+      const percentageValue = parseFloat(stat.percentage)
+      const maxValue = toFiniteNumber(stat.max)
+      const minValue = toFiniteNumber(stat.min)
+
+      return {
+        name: stat.name,
+        percentage: Number.isFinite(percentageValue) ? percentageValue : 0,
+        max: maxValue,
+        min: minValue,
+        severity: getSeverityLabel(percentageValue),
+      }
+    })
+    .sort((a, b) => a.percentage - b.percentage)
+    .map((item, index) => ({
+      position: index + 1,
+      ...item,
+    }))
+
+  return { items }
+}
+
+function extractEvaluatorComments(resultEvaluator, participants = []) {
+  const commentsByHeuristic = {}
+
+  if (!Array.isArray(resultEvaluator)) return commentsByHeuristic
+
+  resultEvaluator.forEach((evaluator) => {
+    const evaluatorName =
+      getEvaluatorName(evaluator, participants) || evaluator.id
+
+    if (!Array.isArray(evaluator.heuristics)) return
+
+    evaluator.heuristics.forEach((heuristic) => {
+      const heuristicId = heuristic.id
+      if (!commentsByHeuristic[heuristicId]) {
+        commentsByHeuristic[heuristicId] = []
+      }
+      if (heuristic.totalComments > 0) {
+        commentsByHeuristic[heuristicId].push({
+          evaluatorName,
+          hasComments: true,
+        })
+      } else {
+        commentsByHeuristic[heuristicId].push({
+          evaluatorName,
+          hasComments: false,
+        })
+      }
+    })
+  })
+
+  return commentsByHeuristic
+}
+
 export {
   percentage,
   standardDeviation,
@@ -980,4 +1113,10 @@ export {
   buildGlobalExecutionAverage,
   parseTimeSpentToMs,
   formatTimeSpentFromMs,
+  toFiniteNumber,
+  getSeverityLabel,
+  getEvaluatorName,
+  buildEvaluatorPercentages,
+  buildHeuristicRanking,
+  extractEvaluatorComments,
 }

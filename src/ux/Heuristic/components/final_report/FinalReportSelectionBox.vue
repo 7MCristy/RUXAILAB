@@ -629,6 +629,7 @@ const buildFinalReportItem = () => {
     participants: getCooperatorEmails().map((email) => ({ email })),
     anonymized: pdfConfig.anonymizeEvaluators,
   }
+}
 
   // Logs detallados (versión recuperada)
   console.log('[FinalReportItem] 📦 Datos preparados para IA:', {
@@ -644,7 +645,16 @@ const buildFinalReportItem = () => {
     rankingHeuristicas: heuristicRankingItems.map(h => `${h.name}: ${h.percentage}%`),
   })
 
-  return reportItem
+    if (webResearch) {
+      finalReportItem.webResearch = webResearch
+    }
+  })
+
+    return content
+  } catch (error) {
+    console.error('Error generando informe con IA:', error)
+    return finalReportItem.finalReport || buildFallbackConclusion()
+  }
 }
 
 // ============================================================================
@@ -718,8 +728,7 @@ const startPreview = (title, status) => {
 }
 
 const showPreviewError = (error, fallbackMessage) => {
-  const message = error?.message || fallbackMessage
-  previewError.value = message
+  previewError.value = error?.message || fallbackMessage
 }
 
 const closePreview = () => {
@@ -818,7 +827,6 @@ const previewPdfWithAi = async () => {
         showQuickSummary: false,
       }, generateHeuristicPdf)
     } catch (fallbackError) {
-      console.error('[previewPdfWithAi] ❌ Error también en fallback:', fallbackError)
       showPreviewError(
         fallbackError,
         'No se pudo generar la vista previa. Verifica que el test tenga datos de evaluación.',

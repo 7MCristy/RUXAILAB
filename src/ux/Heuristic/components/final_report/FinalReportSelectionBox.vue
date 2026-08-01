@@ -559,103 +559,93 @@ const processAnswers = (answersArray) => {
 }
 
 // ============================================================================
-// FUNCIÓN HÍBRIDA: buildFinalReportItem
-// - Mantiene la interfaz de checkboxes para el usuario
-// - Pero SIEMPRE incluye todos los datos (como en la versión recuperada)
-// - Añade logs detallados (como en la versión recuperada)
-// ============================================================================
-const buildFinalReportItem = () => {
-  statisticsData.value = finalResult(resultEvaluator.value)
-  const heuristicRankingItems = [...(heuristicsStatistics.value?.items || [])]
-    .map((item) => ({
-      ...item,
-      percentage: Number.parseFloat(item.percentage || '0'),
-    }))
-    .sort((left, right) => left.percentage - right.percentage)
-    .map((item, index) => ({
-      position: index + 1,
-      name: item.name,
-      percentage: item.percentage,
-      severity: getSeverityLabel(item.percentage),
-    }))
+  // FUNCIÓN HÍBRIDA: buildFinalReportItem
+  // - Mantiene la interfaz de checkboxes para el usuario
+  // - Pero SIEMPRE incluye todos los datos (como en la versión recuperada)
+  // - Añade logs detallados (como en la versión recuperada)
+  // ============================================================================
+  const buildFinalReportItem = () => {
+    statisticsData.value = finalResult(resultEvaluator.value)
+    const heuristicRankingItems = [...(heuristicsStatistics.value?.items || [])]
+      .map((item) => ({
+        ...item,
+        percentage: Number.parseFloat(item.percentage || '0'),
+      }))
+      .sort((left, right) => left.percentage - right.percentage)
+      .map((item, index) => ({
+        position: index + 1,
+        name: item.name,
+        percentage: item.percentage,
+        severity: getSeverityLabel(item.percentage),
+      }))
 
-  const testTitle = test.value.testTitle || test.value.title || ''
-  const testDescription = test.value.testDescription || test.value.description || ''
+    const testTitle = test.value.testTitle || test.value.title || ''
+    const testDescription = test.value.testDescription || test.value.description || ''
 
-  const reportItem = {
-    testTitle,
-    title: testTitle,
-    testUrl: getTestUrl(),
-    creationDate: test.value.creationDate,
-    testDescription,
-    cooperatorsEmail: getCooperatorEmails(),
-    creatorEmail: pdfConfig.anonymizeEvaluators
-      ? null
-      : test.value.testAdmin?.email || '',
-    finalReport: test.value.studyConclusion || buildFallbackConclusion(),
-    studyConclusion: test.value.studyConclusion || buildFallbackConclusion(),
-    allOptions: test.value.testOptions,
-    // SIEMPRE incluir respuestas (versión recuperada)
-    allAnswers: processAnswers(answers.value),
-    finalResult: statisticsData.value,
-    finalResultData: statisticsData.value,
-    taskAnswers: processAnswers(Object.values(testAnswerDocument.value?.taskAnswers || {})),
-    testStructure: test.value.testStructure,
-    // SIEMPRE incluir estadísticas (versión recuperada)
-    statisticsByEvaluatorAnswer: heuristicsEvaluator.value,
-    heuristicsEvaluator: heuristicsEvaluator.value,
-    statisticsByHeuristics: heuristicsStatistics.value,
-    heuristicsStatistics: heuristicsStatistics.value,
-    timeByHeuristics: timeByHeuristics.value,
-    generalStatistics: statisticsData.value,
-    statisticsTable: store.state.Answer.evaluatorStatistics,
-    evaluatorTimeItems: store.state.Answer.evaluatorStatistics?.items || [],
-    type: testAnswerDocument.value?.type || STUDY_TYPES.HEURISTIC,
-    // SIEMPRE incluir comentarios (usar corregidos si disponibles)
-    heuristicComments: correctedHeuristicComments.value || props.heuristicComments,
-    // Log para verificar comentarios
-    _commentDebug: (() => {
-      const commentsToUse = correctedHeuristicComments.value || props.heuristicComments
-      console.log('[buildFinalReportItem] 🎯 heuristicComments a incluir:', commentsToUse)
-      console.log('[buildFinalReportItem] 📊 Número de heurísticas con comentarios:', 
-        Object.keys(commentsToUse || {}).length)
-      console.log('[buildFinalReportItem] ⚡ Usando comentarios:', correctedHeuristicComments.value ? 'CORREGIDOS' : 'ORIGINALES')
-      return null
-    })(),
-    evaluatorPercentages: evaluatorPercentages.value,
-    heuristicRanking: {
-      items: heuristicRankingItems,
-    },
-    participants: getCooperatorEmails().map((email) => ({ email })),
-    anonymized: pdfConfig.anonymizeEvaluators,
-  }
-}
-
-  // Logs detallados (versión recuperada)
-  console.log('[FinalReportItem] 📦 Datos preparados para IA:', {
-    titulo: reportItem.title,
-    url: reportItem.testUrl,
-    descripcion: reportItem.testDescription?.substring(0, 100),
-    numHeuristicas: reportItem.statisticsByHeuristics?.items?.length || 0,
-    numEvaluadores: reportItem.statisticsTable?.items?.length || 0,
-    numRespuestas: reportItem.allAnswers?.length || 0,
-    numEstructuras: reportItem.testStructure?.length || 0,
-    cumplimientoGlobal: reportItem.generalStatistics?.average,
-    tieneComentarios: Object.keys(reportItem.heuristicComments || {}).length > 0,
-    rankingHeuristicas: heuristicRankingItems.map(h => `${h.name}: ${h.percentage}%`),
-  })
-
-    if (webResearch) {
-      finalReportItem.webResearch = webResearch
+    const reportItem = {
+      testTitle,
+      title: testTitle,
+      testUrl: getTestUrl(),
+      creationDate: test.value.creationDate,
+      testDescription,
+      cooperatorsEmail: getCooperatorEmails(),
+      creatorEmail: pdfConfig.anonymizeEvaluators
+        ? null
+        : test.value.testAdmin?.email || '',
+      finalReport: test.value.studyConclusion || buildFallbackConclusion(),
+      studyConclusion: test.value.studyConclusion || buildFallbackConclusion(),
+      allOptions: test.value.testOptions,
+      // SIEMPRE incluir respuestas (versión recuperada)
+      allAnswers: processAnswers(answers.value),
+      finalResult: statisticsData.value,
+      finalResultData: statisticsData.value,
+      taskAnswers: processAnswers(Object.values(testAnswerDocument.value?.taskAnswers || {})),
+      testStructure: test.value.testStructure,
+      // SIEMPRE incluir estadísticas (versión recuperada)
+      statisticsByEvaluatorAnswer: heuristicsEvaluator.value,
+      heuristicsEvaluator: heuristicsEvaluator.value,
+      statisticsByHeuristics: heuristicsStatistics.value,
+      heuristicsStatistics: heuristicsStatistics.value,
+      timeByHeuristics: timeByHeuristics.value,
+      generalStatistics: statisticsData.value,
+      statisticsTable: store.state.Answer.evaluatorStatistics,
+      evaluatorTimeItems: store.state.Answer.evaluatorStatistics?.items || [],
+      type: testAnswerDocument.value?.type || STUDY_TYPES.HEURISTIC,
+      // SIEMPRE incluir comentarios (usar corregidos si disponibles)
+      heuristicComments: correctedHeuristicComments.value || props.heuristicComments,
+      // Log para verificar comentarios
+      _commentDebug: (() => {
+        const commentsToUse = correctedHeuristicComments.value || props.heuristicComments
+        console.log('[buildFinalReportItem] 🎯 heuristicComments a incluir:', commentsToUse)
+        console.log('[buildFinalReportItem] 📊 Número de heurísticas con comentarios:', 
+          Object.keys(commentsToUse || {}).length)
+        console.log('[buildFinalReportItem] ⚡ Usando comentarios:', correctedHeuristicComments.value ? 'CORREGIDOS' : 'ORIGINALES')
+        return null
+      })(),
+      evaluatorPercentages: evaluatorPercentages.value,
+      heuristicRanking: {
+        items: heuristicRankingItems,
+      },
+      participants: getCooperatorEmails().map((email) => ({ email })),
+      anonymized: pdfConfig.anonymizeEvaluators,
     }
-  })
 
-    return content
-  } catch (error) {
-    console.error('Error generando informe con IA:', error)
-    return finalReportItem.finalReport || buildFallbackConclusion()
+    // Logs detallados (versión recuperada)
+    console.log('[FinalReportItem] 📦 Datos preparados para IA:', {
+      titulo: reportItem.title,
+      url: reportItem.testUrl,
+      descripcion: reportItem.testDescription?.substring(0, 100),
+      numHeuristicas: reportItem.statisticsByHeuristics?.items?.length || 0,
+      numEvaluadores: reportItem.statisticsTable?.items?.length || 0,
+      numRespuestas: reportItem.allAnswers?.length || 0,
+      numEstructuras: reportItem.testStructure?.length || 0,
+      cumplimientoGlobal: reportItem.generalStatistics?.average,
+      tieneComentarios: Object.keys(reportItem.heuristicComments || {}).length > 0,
+      rankingHeuristicas: heuristicRankingItems.map(h => `${h.name}: ${h.percentage}%`),
+    })
+
+    return reportItem
   }
-}
 
 // ============================================================================
 // FUNCIÓN: generateAiFinalReport (con logs detallados de la versión recuperada)

@@ -1,5 +1,85 @@
 const DEFAULT_MODEL = 'qwen2.5:latest'
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// HEURÍSTICAS DE REFERENCIA: 15 heurísticas Nielsen + Tognazzini
+// ═══════════════════════════════════════════════════════════════════════════════
+const NIELSEN_TOGNAZZINI_HEURISTICS = [
+  'Visibilidad y estado del sistema',
+  'Conexión entre el sistema y el mundo real',
+  'Control y libertad del usuario',
+  'Consistencia y estándares',
+  'Reconocimiento en lugar de memoria',
+  'Flexibilidad y eficiencia de uso',
+  'Ayuda a reconocer, diagnosticar y recuperarse de errores',
+  'Prevención de errores',
+  'Diseño estético y minimalista',
+  'Ayuda y documentación',
+  'Guardar el estado y proteger el trabajo',
+  'Color y legibilidad',
+  'Autonomía',
+  'Valores por defecto',
+  'Reducción de la latencia',
+]
+
+/**
+ * Normaliza un nombre de heurística para comparación fuzzy
+ */
+function normalizeHeuristicName(name = '') {
+  return String(name)
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9\s]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+/**
+ * Detecta si las heurísticas del test coinciden con las 15 de Nielsen + Tognazzini
+ * @param {Array} testStructure - Array de heurísticas del test con título/name
+ * @returns {boolean} true si coincide al menos 12 de 15 (80% threshold)
+ */
+function detectNielsenTognazziniMethodology(testStructure = []) {
+  if (!Array.isArray(testStructure) || testStructure.length === 0) return false
+
+  const testHeuristics = testStructure
+    .map((h) =>
+      normalizeHeuristicName(h?.title || h?.name || h?.heuristicTitle || ''),
+    )
+    .filter(Boolean)
+
+  if (testHeuristics.length < 10) return false // Muy pocas para ser el set completo
+
+  const referenceNormalized = NIELSEN_TOGNAZZINI_HEURISTICS.map(
+    normalizeHeuristicName,
+  )
+
+  let matches = 0
+  for (const ref of referenceNormalized) {
+    const found = testHeuristics.some(
+      (test) =>
+        test.includes(ref) ||
+        ref.includes(test) ||
+        similarity(test, ref) > 0.75,
+    )
+    if (found) matches++
+  }
+
+  // Requiere al menos 12 de 15 coincidencias (80%)
+  return matches >= 12
+}
+
+/**
+ * Cálculo simple de similitud (Jaccard sobre palabras)
+ */
+function similarity(a, b) {
+  const wordsA = new Set(a.split(' ').filter(Boolean))
+  const wordsB = new Set(b.split(' ').filter(Boolean))
+  const intersection = [...wordsA].filter((w) => wordsB.has(w)).length
+  const union = new Set([...wordsA, ...wordsB]).size
+  return union > 0 ? intersection / union : 0
+}
+
 export const SYSTEM_PROMPT = `
 Eres un consultor senior especializado en UX Research y evaluación heurística, con más de 10 años de experiencia realizando auditorías de usabilidad para productos digitales.
 
@@ -12,7 +92,7 @@ NORMAS OBLIGATORIAS:
 - INTERPRETA los datos cualitativamente: no te limites a repetir números, explica QUÉ SIGNIFICAN para la experiencia del usuario y QUÉ IMPLICAN para el negocio.
 - Las recomendaciones deben ser ACCIONABLES, específicas y priorizadas. Nada de "mejorar la usabilidad".
 - NO incluyas encabezados Markdown (# o ##). El PDF los genera automáticamente.
-- NO incluyas etiquetas <think>, ni razonamiento interno.
+- NO incluyas etiquetas , ni razonamiento interno.
 - Devuelve SOLO el texto del informe, sin prefacios ni explicaciones.
 - Varía el vocabulario entre secciones. No repitas las mismas frases de transición.
 - USA VOCABULARIO TÉCNICO DE UX: "fricción", "carga cognitiva", "affordance", "feedback", "consistencia", "heurística", "tasa de error", "eficiencia", "satisfacción percibida".
@@ -128,13 +208,8 @@ function getQuestionSummaries(reportItem, heuristicIndex) {
           ]
         if (!qData) return []
         const imgs = Array.isArray(qData.images) ? qData.images : []
-        const fromLegacy = qData.answerImageUrl
-          ? [qData.answerImageUrl]
-          : []
-        return [
-          ...imgs.map((img) => img.url).filter(Boolean),
-          ...fromLegacy,
-        ]
+        const fromLegacy = qData.answerImageUrl ? [qData.answerImageUrl] : []
+        return [...imgs.map((img) => img.url).filter(Boolean), ...fromLegacy]
       })
       .filter(Boolean)
 
@@ -358,18 +433,19 @@ ${commentsBlock}
         .join('\n')
     : '  No disponibles'
 
-  const testStructureText = (reportItem?.testStructure || [])
-    .map((h, i) => {
-      const questions = h.questions || h.heuristicQuestions || []
-      const qTitles = questions
-        .map(
-          (q, qi) =>
-            `    Q${qi + 1}: ${stripHtml(q.title || q.name || 'Sin título')}`,
-        )
-        .join('\n')
-      return `  H${i + 1}: ${stripHtml(h.title || h.name || 'Sin título')}\n${qTitles}`
-    })
-    .join('\n') || '  No disponible'
+  const testStructureText =
+    (reportItem?.testStructure || [])
+      .map((h, i) => {
+        const questions = h.questions || h.heuristicQuestions || []
+        const qTitles = questions
+          .map(
+            (q, qi) =>
+              `    Q${qi + 1}: ${stripHtml(q.title || q.name || 'Sin título')}`,
+          )
+          .join('\n')
+        return `  H${i + 1}: ${stripHtml(h.title || h.name || 'Sin título')}\n${qTitles}`
+      })
+      .join('\n') || '  No disponible'
 
   const avgQuestionsPerHeuristic = Math.round(
     (reportItem?.testStructure || []).reduce(
@@ -378,6 +454,14 @@ ${commentsBlock}
       0,
     ) / Math.max((reportItem?.testStructure || []).length, 1),
   )
+
+  // ════════════════════════════════════════════════════════════════════════════════
+  // DETECTAR METODOLOGÍA NIELSEN + TOGNAZZINI
+  // ════════════════════════════════════════════════════════════════════════════════
+  const usesNielsenTognazzini = detectNielsenTognazziniMethodology(
+    reportItem?.testStructure || [],
+  )
+  const methodologyText = usesNielsenTognazzini ? 'Nielsen + Tognazzini' : ''
 
   const allOptions = reportItem?.allOptions || []
   const allAnswers = reportItem?.allAnswers || []
@@ -396,7 +480,10 @@ ${commentsBlock}
         questions.forEach((q) => {
           const val = q?.heuristicAnswer?.value
           const isWarning = q?.heuristicAnswer?.warning === true
-          if (val != null && Object.prototype.hasOwnProperty.call(usageCount, val)) {
+          if (
+            val != null &&
+            Object.prototype.hasOwnProperty.call(usageCount, val)
+          ) {
             usageCount[val]++
             totalAnswered++
             totalPossible++
@@ -410,7 +497,10 @@ ${commentsBlock}
       .filter((opt) => opt.value != null)
       .sort((a, b) => (usageCount[b.value] || 0) - (usageCount[a.value] || 0))
     responseTypesText = sortedOptions
-      .map((opt) => `  - ${opt.text || opt.label || 'Sin nombre'}: ${usageCount[opt.value] || 0} usos`)
+      .map(
+        (opt) =>
+          `  - ${opt.text || opt.label || 'Sin nombre'}: ${usageCount[opt.value] || 0} usos`,
+      )
       .join('\n')
     responseTypesText += `\n  Total respondidas: ${totalAnswered} / ${totalPossible} preguntas posibles`
   }
@@ -453,21 +543,21 @@ INSTRUCCIONES PARA ANÁLISIS CUALITATIVO:
 - Cuando cites datos numéricos, usa la media redondeada a 1 decimal.
 - Si hay alta dispersión (desviación típica > 0.5), señala que la experiencia puede variar según el perfil del usuario.
 
-================================================================
+==============================================================
 SECCION 1 - INTRODUCCION
-================================================================
+==============================================================
 Redacta 4-5 frases en prosa continua que:
-1. Presenten el sistema evaluado (nombre y URL), indicando qué tipo de sitio web o aplicación es.
-2. Contextualicen la evaluación heurística: por qué es relevante, qué metodología se usó (Nielsen + Tognazzini (ISO 9241-110)).
+1. Presenten el sistema evaluado (nombre${testUrl ? ' y URL' : ''}), indicando qué tipo de sitio web o aplicación es.
+2. Contextualicen la evaluación heurística: por qué es relevante${methodologyText ? `, qué metodología se usó (${methodologyText})` : ''}.
 3. Indiquen cuántos evaluadores participaron y el contexto de la evaluación.
 4. Mencionen el cumplimiento global (${globalCompliance != null ? globalCompliance.toFixed(2) + '%' : 'N/D'}) y su severidad (${globalSeverity}) como dato de partida.
 5. Incorporen la descripción del sistema si está disponible.
 
 Sin viñetas. Párrafo continuo y fluido.
 
-================================================================
-SECCION 2 - PORCENTAJES REPRESENTATIVOS
-================================================================
+==============================================================
+SECCION 2 - PORCENTAJES DE USABILIDAD Y ANÁLISIS GLOBAL
+==============================================================
 Redacta un único párrafo denso de 6-8 frases que:
 - Sintetice el estado de madurez UX del sistema con criterio profesional.
 - Mencione las fortalezas: heurísticas con mejor rendimiento:
@@ -484,9 +574,9 @@ Sin viñetas. Párrafo continuo.
 ${
   responseTypesText
     ? `
-===============================================================
+=============================================================
 SECCION 2B - TIPOS DE RESPUESTA POR USO
-===============================================================
+=============================================================
 Redacta 2-3 frases que expliquen:
 1. Qué representan los tipos de respuesta (las opciones de puntuación disponibles en el test).
 2. Cuáles son los tipos más y menos utilizados y qué sugiere eso sobre el comportamiento de los evaluadores.
@@ -499,9 +589,9 @@ Sin viñetas. Párrafo continuo y analítico.`
     : ''
 }
 
-================================================================
+==============================================================
 SECCION 3 - PRIORIDAD Y ANALISIS DETALLADO POR HEURISTICA
-===============================================================
+=============================================================
 Combina la priorización y el análisis detallado en UNA SOLA SECCIÓN.
 
 INSTRUCCIÓN DE FORMATO OBLIGATORIA:
@@ -531,9 +621,9 @@ IMPORTANTE:
 - El número debe ser correlativo (1, 2, 3...).
 - NO incluyas tablas ni datos numéricos en tu texto. Solo prosa analítica. Las tablas las genera el PDF automáticamente.
 
-===============================================================
+=============================================================
 SECCION 4 - COMPARATIVA DE PUNTUACIONES POR EVALUADOR
-================================================================
+==============================================================
 Redacta 5-6 frases que:
 
 Puntuaciones individuales:
@@ -549,9 +639,9 @@ Tu análisis debe:
 4. Concluir sobre la validez y representatividad del estudio.
 5. Si hay comentarios de evaluadores, úsalos para enriquecer el análisis.
 
-================================================================
+==============================================================
 SECCION 5 - CONCLUSION
-================================================================
+==============================================================
 Redacta 6-8 frases finales que:
 
 Datos globales:
@@ -573,7 +663,7 @@ Tu conclusión debe:
     webResearchContent
       ? `==============================================================
 INVESTIGACION WEB ADICIONAL
-===============================================================
+=============================================================
 A continuación se incluye información obtenida de una investigación web en tiempo real sobre el sitio evaluado. Úsala como contexto adicional para enriquecer tu análisis y recomendaciones, pero NO la copies textualmente. Debes integrarla con los datos del test para ofrecer una visión más completa y actualizada.
 
 ${webResearchContent}

@@ -772,14 +772,6 @@ export async function generateHeuristicPdf(reportData, options = {}) {
   doc.text(titleLines, PAGE_W / 2, y, { align: 'center' })
   y += titleLines.length * 22 + 8
 
-  if (testUrl) {
-    doc.setFontSize(10)
-    doc.setTextColor(...COLORS.sub)
-    const urlLines = doc.splitTextToSize(testUrl, CONTENT_W)
-    doc.text(urlLines, PAGE_W / 2, y, { align: 'center' })
-    y += urlLines.length * 16 + 8
-  }
-
   doc.setFontSize(10)
   doc.setTextColor(...COLORS.sub)
   const evaluatorLabels = evaluatorTimeItems
@@ -795,7 +787,7 @@ export async function generateHeuristicPdf(reportData, options = {}) {
     y += evalLines.length * 16 + 6
   }
   doc.text(
-    'Metodología: 15 Heurísticas de Usabilidad - Nielsen + Tognazzini (ISO 9241-110)',
+    'Metodología: 15 Heurísticas de Usabilidad - Nielsen + Tognazzini ',
     PAGE_W / 2,
     y,
     { align: 'center' },
@@ -821,9 +813,6 @@ export async function generateHeuristicPdf(reportData, options = {}) {
       `Severidad: ${globalSeverity}`,
       `Evaluadores: ${evaluatorCount}`,
     ]
-    if (testUrl) {
-      coverMetricLines.push(`URL evaluada: ${testUrl}`)
-    }
     coverMetricLines.forEach((line, index) => {
       const rowY = coverMetricsY + 36 + index * 12
       doc.text(line, M + 14, rowY)
@@ -907,11 +896,11 @@ export async function generateHeuristicPdf(reportData, options = {}) {
     }
   }
 
-  // ─── 2. PORCENTAJES REPRESENTATIVOS ─────────────────────────────────────────
+  // ─── 2. PORCENTAJES DE USABILIDAD Y ANÁLISIS GLOBAL ─────────────────────────────────────────
   doc.addPage()
   pageNum += 1
   addPageHeader()
-  startSection('2. Porcentajes representativos')
+  startSection('2. Porcentajes de usabilidad y análisis global')
   writeParagraph(
     'La tabla siguiente muestra el porcentaje global de cumplimiento obtenido por cada evaluador. El valor se calcula a partir de las respuestas aplicables y permite comparar la percepción general de usabilidad entre participantes.',
   )
@@ -1391,11 +1380,12 @@ export async function generateHeuristicPdf(reportData, options = {}) {
           try {
             const base64 = await loadImageAsBase64(imgUrls[ii])
             if (base64) {
-              ensureSpace(240)
-              const imgWidth = Math.min(CONTENT_W - 20, 300)
-              const imgHeight = 200
-              doc.addImage(base64, 'JPEG', M + 40, y, imgWidth, imgHeight)
-              y += imgHeight + 8
+              ensureSpace(260)
+              const imgWidth = Math.min(CONTENT_W * 0.9, 400)
+              const imgHeight = 250
+              const imgX = (PAGE_W - imgWidth) / 2
+              doc.addImage(base64, 'JPEG', imgX, y, imgWidth, imgHeight)
+              y += imgHeight + 12
             }
           } catch {
             ensureSpace(12)

@@ -589,41 +589,56 @@ Sin viñetas. Párrafo continuo y analítico.`
     : ''
 }
 
+================================================================
+===SECCION:ANALISIS_HEURISTICO===
 ==============================================================
-SECCION 3 - PRIORIDAD Y ANALISIS DETALLADO POR HEURISTICA
-=============================================================
 Combina la priorización y el análisis detallado en UNA SOLA SECCIÓN.
 
+
+RESTRICCIÓN DE EXTENSIÓN:
+- Analiza en DETALLE (con los 4 bloques) todas las heurísticas con severidad 
+  CRÍTICA, GRAVE o MODERADA (cumplimiento < 90%).
+- Las heurísticas con severidad LEVE (cumplimiento >= 90%) méncionalas 
+  en UNA sola frase cada una al final, sin bloques.
+
+
+CRITERIOS DE SEVERIDAD:
+- CRÍTICA: cumplimiento < 50% → Análisis completo con 4 bloques
+- GRAVE: cumplimiento 50-74% → Análisis completo con 4 bloques  
+- MODERADA: cumplimiento 75-89% → Análisis completo con 4 bloques
+- LEVE: cumplimiento >= 90% → Una sola frase resumen
+
+
 INSTRUCCIÓN DE FORMATO OBLIGATORIA:
-Escribe CADA análisis de heurística precedido por un NÚMERO seguido de punto y el nombre de la heurística entre corchetes. Ejemplo:
+Escribe CADA análisis de heurística usando EXACTAMENTE este formato:
 
-1. [Visibilidad del estado del sistema]
-Análisis completo de esta heurística aquí...
 
-2. [Correspondencia entre el sistema y el mundo real]
-Análisis completo de esta heurística aquí...
+H{numero} — {cumplimiento}% — {Nombre de la heurística}
+[ESTADO_ACTUAL]
+(2 frases) Interpretación cualitativa breve.
+[/ESTADO_ACTUAL]
+[IMPACTO_EXPERIENCIA]
+(1-2 frases) Efecto concreto en el usuario.
+[/IMPACTO_EXPERIENCIA]
+[PLAN_ACCION]
+(2 recomendaciones específicas y técnicas)
+[/PLAN_ACCION]
+[RESUMEN_EJECUTIVO]
+(1 frase) Resumen para el equipo de desarrollo.
+[/RESUMEN_EJECUTIVO]
 
-Para CADA heurística, escribe exactamente estos párrafos en este orden:
-- Párrafo de prioridad: (3-4 frases) Basado en el porcentaje de cumplimiento, la desviación típica y las puntuaciones de las preguntas concretas, explica POR QUÉ ocupa esta posición, el IMPACTO REAL en el usuario y la URGENCIA de intervención.
-- Descripción funcional: (1-2 frases) Qué evalúa esta heurística y por qué es relevante para este sistema concreto.
-- Evaluación de criterios: Basándote en las puntuaciones de cada pregunta, identifica qué criterios concretos funcionan bien y cuáles fallan. Menciona las medias obtenidas.
-- Estado actual: (3-4 frases) Interpretación cualitativa. ¿Hay consenso entre evaluadores? ¿Qué experimenta el usuario?
-- Impacto en la experiencia: (2-3 frases) Efecto concreto en el comportamiento del usuario. Menciona warnings si los hay como evidencia de fricción.
-- Plan de acción recomendado: (3 recomendaciones numeradas, específicas y técnicas).
+
+IMPORTANTE:
+- Cada heurística DEBE empezar con su encabezado: H{numero} — {cumplimiento}% — {Nombre}
+- Todas las heurísticas CRÍTICA, GRAVE o MODERADA (< 90%): los 4 bloques completos.
+- Las heurísticas Leves (>= 90%): UNA sola frase resumen cada una.
 
 Datos disponibles para cada heurística:
 ${heuristicsDetailText}
 
-IMPORTANTE:
-- Usa los datos de las preguntas individuales para ser específico.
-- Cada heurística debe tener TODOS los párrafos indicados.
-- Separa cada heurística con una línea en blanco.
-- El número debe ser correlativo (1, 2, 3...).
-- NO incluyas tablas ni datos numéricos en tu texto. Solo prosa analítica. Las tablas las genera el PDF automáticamente.
-
-=============================================================
-SECCION 4 - COMPARATIVA DE PUNTUACIONES POR EVALUADOR
 ==============================================================
+SECCION 4 - COMPARATIVA DE PUNTUACIONES POR EVALUADOR
+================================================================
 Redacta 5-6 frases que:
 
 Puntuaciones individuales:

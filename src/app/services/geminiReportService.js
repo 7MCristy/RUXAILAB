@@ -23,7 +23,7 @@ import {
 // Configuración desde variables de entorno
 const GEMINI_API_KEY = process.env.VUE_APP_GEMINI_API_KEY
 const GEMINI_MODEL = process.env.VUE_APP_GEMINI_MODEL || 'gemini-1.5-flash'
-const GEMINI_TIMEOUT = 45000
+const GEMINI_TIMEOUT = 150000
 const ENABLE_WEB_RESEARCH = process.env.VUE_APP_ENABLE_WEB_RESEARCH !== 'false'
 
 // Instancia del cliente Gemini (inicialización lazy)
@@ -115,7 +115,7 @@ export async function generateAiReportWithGemini(finalReportItem) {
       config: {
         temperature: 0.35,
         topP: 0.85,
-        maxOutputTokens: 4000,
+        maxOutputTokens: 9500,
         systemInstruction: SYSTEM_PROMPT,
       },
     }
@@ -203,7 +203,9 @@ export async function generateAiReportWithGemini(finalReportItem) {
 
     throw new Error(`Gemini API error: ${error.message}`)
   }
+  
 }
+
 
 /**
  * Genera informe con Ollama usando buildOllamaRequestBody
@@ -257,6 +259,131 @@ function buildFallbackConclusionText() {
 Las heurísticas con menor puntuación indican oportunidades claras de mejora en la experiencia de usuario. Se recomienda priorizar la revisión de los criterios que obtuvieron las calificaciones más bajas, ya que estos representan los mayores puntos de fricción para los usuarios.
 
 La implementación de las mejoras sugeridas permitiría elevar significativamente la usabilidad general del sistema, reduciendo errores y aumentando la satisfacción de los usuarios en futuras iteraciones.`
+}
+
+// ════════════════════════════════════════════════════════════════════════════════
+// HELPERS: Parseo de respuesta IA en secciones
+// ════════════════════════════════════════════════════════════════════════════════
+
+function stripMarkdown(value) {
+  return String(value ?? '')
+    .replace(/^#{1,6}\s+/gm, '')
+    .replace(/\*\*\*(.+?)\*\*\*/g, '$1')
+    .replace(/\*\*(.+?)\*\*/g, '$1')
+    .replace(/\*(.+?)\*/g, '$1')
+    .replace(/__(.+?)__/g, '$1')
+    .replace(/_(.+?)_/g, '$1')
+    .replace(/~~(.+?)~~/g, '$1')
+    .replace(/```[\s\S]*?```/g, '')
+    .replace(/`([^`]+)`/g, '$1')
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+    .replace(/^\[([^\]]+)\]$/gm, '$1')
+    .replace(/^[-*+]\s+/gm, '')
+    .replace(/^\d+\.\s+/gm, '')
+    .replace(/^>\s+/gm, '')
+    .replace(/^---+$/gm, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
+}
+
+function cleanSectionText(text) {
+  if (!text || typeof text !== 'string') return ''
+  const original = text
+  const cleaned = stripMarkdown(text)
+    .replace(/\[ESTADO_ACTUAL\]/gi, '')
+    .replace(/\[\/ESTADO_ACTUAL\]/gi, '')
+    .replace(/\[IMPACTO_EXPERIENCIA\]/gi, '')
+    .replace(/\[\/IMPACTO_EXPERIENCIA\]/gi, '')
+    .replace(/\[PLAN_ACCION\]/gi, '')
+    .replace(/\[\/PLAN_ACCION\]/gi, '')
+    .replace(/\[RESUMEN_EJECUTIVO\]/gi, '')
+    .replace(/\[\/RESUMEN_EJECUTIVO\]/gi, '')
+    .replace(/\/ESTADO_ACTUAL/gi, '')
+    .replace(/\/IMPACTO_EXPERIENCIA/gi, '')
+    .replace(/\/PLAN_ACCION/gi, '')
+    .replace(/\/RESUMEN_EJECUTIVO/gi, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
+  console.log(`[cleanSectionText] Original: ${original.length} chars → Limpio: ${cleaned.length} chars`)
+  return cleaned
+}
+
+/**
+ * Parsea la respuesta de IA en secciones usando delimitadores ===SECCION:NOMBRE===
+ * @param {string} content - Texto completo generado por la IA
+ * @returns {Object} Secciones: { introduccion, porcentajes, tipos_respuesta, heuristicas_prioritarias, analisis_heuristico, comparativa, conclusion }
+ */
+export function parseAiReportSections(content) {
+  console.log('═══════════════════════════════════════════════════════════════')
+  console.log('[parseAiReportSections] 🔍 INICIO PARSEO')
+  console.log('═══════════════════════════════════════════════════════════════')
+
+  if (!content || typeof content !== 'string') {
+    console.log('[parseAiReportSections] ❌ Contenido vacío o no es string:', typeof content)
+    return { introduccion: '', porcentajes: '', tipos_respuesta: '', heuristicas_prioritarias: '', analisis_heuristico: '', comparativa: '', conclusion: '' }
+  }
+
+  const sectionMap = {
+    INTRODUCCION: 'introduccion',
+    PORCENTAJES: 'porcentajes',
+    TIPOS_RESPUESTA: 'tipos_respuesta',
+    HEURISTICAS_PRIORITARIAS: 'heuristicas_prioritarias',
+    ANALISIS_HEURISTICO: 'analisis_heuristico',
+    COMPARATIVA: 'comparativa',
+    CONCLUSION: 'conclusion',
+  }
+
+  const regex = /===SECCION:(\w+)===/g
+  const parts = content.split(regex)
+  const sections = { introduccion: '', porcentajes: '', tipos_respuesta: '', heuristicas_prioritarias: '', analisis_heuristico: '', comparativa: '', conclusion: '' }
+
+  for (let i = 1; i < parts.length; i += 2) {
+    const tagName = parts[i]
+    const key = sectionMap[tagName]
+    const text = (parts[i + 1] || '').trim()
+    if (key) {
+      sections[key] = cleanSectionText(text)
+    }
+  }
+
+  const hasAnySection = Object.values(sections).some(s => s.length > 0)
+  if (!hasAnySection) {
+    console.log('[parseAiReportSections] ⚠️ SIN DELIMITADORES - usando fallback')
+    Object.assign(sections, distributeTextByKeywords(content))
+  }
+
+  console.log('[parseAiReportSections] 📊 Estado final:', Object.fromEntries(Object.entries(sections).map(([k, v]) => [k, v.length])))
+  console.log('═══════════════════════════════════════════════════════════════')
+  return sections
+}
+
+/**
+ * Fallback: distribuye texto por keywords cuando no hay delimitadores
+ */
+function distributeTextByKeywords(content) {
+  const sections = { introduccion: '', porcentajes: '', tipos_respuesta: '', heuristicas_prioritarias: '', analisis_heuristico: '', comparativa: '', conclusion: '' }
+  const lines = content.split('\n')
+  let currentSection = 'introduccion'
+  const keywordMap = {
+    introduccion: ['introducción', 'sistema evaluado', 'evaluación heurística'],
+    porcentajes: ['porcentajes', 'cumplimiento global', 'evaluador', 'madurez ux'],
+    tipos_respuesta: ['tipos de respuesta', 'no aplica', 'no es posible'],
+    heuristicas_prioritarias: ['prioridad', 'heurísticas más crític', 'orden de prior'],
+    analisis_heuristico: ['heurística #', 'h1 —', 'h2 —', 'h3 —', 'estado_actual', 'impacto_experiencia', 'plan_accion'],
+    comparativa: ['comparativa', 'puntuaciones individuales', 'dispersión', 'consenso'],
+    conclusion: ['conclusión', 'roadmap', 'valoración final', 'potencial de mejora'],
+  }
+  for (const line of lines) {
+    const lower = line.toLowerCase()
+    for (const [section, keywords] of Object.entries(keywordMap)) {
+      if (keywords.some(k => lower.includes(k))) {
+        currentSection = section
+        break
+      }
+    }
+    sections[currentSection] += line + '\n'
+  }
+  return Object.fromEntries(Object.entries(sections).map(([k, v]) => [k, cleanSectionText(v)]))
 }
 
 /**

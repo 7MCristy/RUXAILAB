@@ -723,19 +723,6 @@ export async function generateHeuristicPdf(reportData, options = {}) {
   doc.text('HEURÍSTICA', PAGE_W / 2, y, { align: 'center' })
   y += 28
 
-  const smallLogo = await loadLogo('/brand/logo_full.png', 15)
-  if (smallLogo) {
-    doc.addImage(
-      smallLogo.img,
-      'PNG',
-      PAGE_W / 2 - smallLogo.width / 2,
-      y,
-      smallLogo.width,
-      smallLogo.height,
-    )
-    y += smallLogo.height + 20
-  }
-
   const now = new Date()
   const months = [
     'Enero',
@@ -835,7 +822,7 @@ export async function generateHeuristicPdf(reportData, options = {}) {
   doc.setTextColor(...COLORS.accent)
   doc.text('ÍNDICE', M, y)
   doc.setDrawColor(...COLORS.accent)
-  doc.setLineWidth(0.5)
+  doc.setLineWidth(0.8)
   doc.line(M, y + 4, M + 60, y + 4)
   y += 30
 

@@ -793,9 +793,24 @@ const previewPdfWithAi = async () => {
   )
   try {
     const finalReportItem = buildFinalReportItem()
-    const aiContent = await generateAiFinalReport(finalReportItem)
+    const aiResult = await generateAiFinalReport(finalReportItem)
+    const aiContent = typeof aiResult === 'string' ? aiResult : aiResult.content
+    const aiSections = typeof aiResult === 'string' ? null : aiResult.sections
+
     finalReportItem.finalReport = aiContent
     finalReportItem.studyConclusion = aiContent
+
+    // Distribuir secciones parseadas
+    if (aiSections) {
+      finalReportItem.aiSections = aiSections
+      finalReportItem.aiIntroduccion = aiSections.introduccion || ''
+      finalReportItem.aiPorcentajes = aiSections.porcentajes || ''
+      finalReportItem.aiTiposRespuesta = aiSections.tipos_respuesta || ''
+      finalReportItem.aiHeuristicasPrioritarias = aiSections.heuristicas_prioritarias || ''
+      finalReportItem.aiAnalisisHeuristico = aiSections.analisis_heuristico || ''
+      finalReportItem.aiComparativa = aiSections.comparativa || ''
+      finalReportItem.aiConclusion = aiSections.conclusion || ''
+    }
 
     const sourceLabel = aiSourceLabel.value
     previewTitle.value = sourceLabel

@@ -822,9 +822,9 @@ export async function generateHeuristicPdf(reportData, options = {}) {
   doc.setTextColor(...COLORS.accent)
   doc.text('ÍNDICE', M, y)
   doc.setDrawColor(...COLORS.accent)
-  doc.setLineWidth(0.8)
-  doc.line(M, y + 4, M + 60, y + 4)
-  y += 30
+  doc.setLineWidth(1)
+  doc.line(M, y + 10, M + 60, y + 10)
+  y += 40
 
   // ─── 1. INTRODUCCION ─────────────────────────────────────────────────────
   doc.addPage()
@@ -1140,7 +1140,7 @@ export async function generateHeuristicPdf(reportData, options = {}) {
   doc.addPage()
   pageNum += 1
   addPageHeader()
-  startSection('3. Heurísticas prioritarizadas por nivel de severidad')
+  startSection('3. Heurísticas priorizadas por nivel de severidad')
   writeParagraph(
     'La tabla siguiente presenta el cumplimiento calculado por heurística. Para cada evaluador se suman las puntuaciones de las preguntas aplicables, se multiplican por 100 y se dividen entre el número de preguntas aplicables multiplicado por la puntuación máxima. Después se promedian esos porcentajes entre evaluadores.',
   )

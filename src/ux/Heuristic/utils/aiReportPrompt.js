@@ -54,7 +54,7 @@ function detectNielsenTognazziniMethodology(testStructure = []) {
     normalizeHeuristicName,
   )
 
-  let matches = 0
+  let matches = 0 
   for (const ref of referenceNormalized) {
     const found = testHeuristics.some(
       (test) =>

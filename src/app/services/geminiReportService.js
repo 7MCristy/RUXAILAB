@@ -387,6 +387,56 @@ function distributeTextByKeywords(content) {
 }
 
 /**
+ * Parsea el bloque de análisis heurístico en sub-bloques por heurística
+ * @param {string} text - Texto de la sección analisis_heuristico
+ * @returns {Array<Object>} Array de objetos { id, index, compliance, estadoActual, impactoExperiencia, planAccion, resumenEjecutivo, lightSummary? }
+ */
+export function parseHeuristicAnalysis(text) {
+  if (!text) return []
+  
+  const blocks = []
+  // Divide por encabezados de heurística: "H1 — 45% — Nombre" o "H1 - 45% - Nombre"
+  const heuristicHeaderRegex = /^H(\d+)\s*[—–-]\s*(\d+)%\s*[—–-]\s*(.+)$/gm
+  
+  const headerMatches = [...text.matchAll(heuristicHeaderRegex)]
+  
+  for (let i = 0; i < headerMatches.length; i++) {
+    const match = headerMatches[i]
+    const nextStart = i + 1 < headerMatches.length ? headerMatches[i + 1].index : text.length
+    const blockText = text.slice(match.index, nextStart).trim()
+    
+    const id = `H${match[1]}`
+    const index = parseInt(match[1]) - 1
+    const compliance = `${match[2]}%`
+    const title = match[3].trim()
+    
+    // Extraer sub-bloques [ETIQUETA]...[/ETIQUETA]
+    const extract = (tag) => {
+      const regex = new RegExp(`\\[${tag}\\]\\s*([\\s\\S]*?)\\[\\/${tag}\\]`, 'i')
+      const m = blockText.match(regex)
+      return m ? m[1].trim() : ''
+    }
+    
+    const estadoActual = extract('ESTADO_ACTUAL')
+    const impactoExperiencia = extract('IMPACTO_EXPERIENCIA')
+    const planAccion = extract('PLAN_ACCION')
+    const resumenEjecutivo = extract('RESUMEN_EJECUTIVO')
+    
+    // Heurísticas leves: si no tiene sub-bloques, es una frase resumen
+    const isLight = !estadoActual && !impactoExperiencia && !planAccion && !resumenEjecutivo
+    const lightSummary = isLight ? blockText.replace(/^H\d+\s*[—–-].*\n?/, '').trim() : ''
+    
+    blocks.push({
+      id, index, compliance, title,
+      estadoActual, impactoExperiencia, planAccion, resumenEjecutivo,
+      lightSummary,
+    })
+  }
+  
+  return blocks
+}
+
+/**
  * Genera informe con estrategia de fallback
  * 1. Intenta con Gemini API (librería oficial)
  * 2. Si falla, intenta con Ollama local
@@ -428,9 +478,9 @@ export async function generateAiReportWithFallback(
         const outputTokens = estimateTokens(result.content || '')
         trackTokens('gemini', inputTokens + outputTokens)
         if (typeof result === 'string') {
-          return { content: result, webResearch: '', source: 'gemini' }
+          return { content: result, webResearch: '', source: 'gemini', sections: parseAiReportSections(result) }
         }
-        return { ...result, source: 'gemini' }
+        return { ...result, sections: parseAiReportSections(result.content), source: 'gemini' }
       } catch (geminiError) {
         if (geminiError.message.includes('429') || geminiError.message.includes('quota')) {
           trackTokens('gemini', 250000)

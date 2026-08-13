@@ -421,14 +421,16 @@ export function parseHeuristicAnalysis(text) {
     const impactoExperiencia = extract('IMPACTO_EXPERIENCIA')
     const planAccion = extract('PLAN_ACCION')
     const resumenEjecutivo = extract('RESUMEN_EJECUTIVO')
+    const impactoMejora = extract('IMPACTO_MEJORA')
     
     // Heurísticas leves: si no tiene sub-bloques, es una frase resumen
-    const isLight = !estadoActual && !impactoExperiencia && !planAccion && !resumenEjecutivo
+    const isLight = !estadoActual && !impactoExperiencia && !planAccion && !resumenEjecutivo && !impactoMejora
     const lightSummary = isLight ? blockText.replace(/^H\d+\s*[—–-].*\n?/, '').trim() : ''
     
     blocks.push({
       id, index, compliance, title,
       estadoActual, impactoExperiencia, planAccion, resumenEjecutivo,
+      impactoMejora,
       lightSummary,
     })
   }

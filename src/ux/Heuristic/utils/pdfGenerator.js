@@ -2,6 +2,7 @@ import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
 import { formatTimeSpentFromMs } from '@/ux/Heuristic/utils/statistics'
 import { buildHeuristicEvidence } from './buildHeuristicEvidence'
+import { parseHeuristicAnalysis } from '@/app/services/geminiReportService'
 
 const FONT = 'helvetica'
 const M = 52
@@ -830,56 +831,64 @@ export async function generateHeuristicPdf(reportData, options = {}) {
   doc.addPage()
   pageNum += 1
   addPageHeader()
+  console.log('[PDF] reportData.aiSections:', reportData.aiSections ? 'PRESENTE' : 'AUSENTE')
+  console.log('[PDF] Sección 1 - aiIntroduccion:', reportData.aiIntroduccion ? `${reportData.aiIntroduccion.length} chars` : 'VACÍO')
   startSection('1. Introducción')
+  if (reportData.aiIntroduccion) {
+    // Texto de IA 
+    writeParagraph(reportData.aiIntroduccion, { size: 10, spacing: 4 })
+  } else {
+    startSection('1. Introducción')
 
-  writeParagraph(
-    `Este informe recoge los resultados de la evaluación heurística realizada al sistema "${testTitle || 'Sistema evaluado'}".`,
-  )
-  if (cleanTestDescription) {
-    writeParagraph(cleanTestDescription)
-  }
-  const evaluatorCount =
-    evaluatorTimeItems.length || evaluatorSummaryItems.length || 0
-  writeParagraph(
-    `La evaluación ha sido completada por ${evaluatorCount} ${pluralize(evaluatorCount, 'evaluador', 'evaluadores')} y se apoya en el promedio de respuestas, los avisos de warning, los comentarios y las evidencias visuales recogidas durante el test.`,
-  )
-  writeParagraph(
-    `El resultado global de la evaluación se interpreta con un margen de mejora ${globalSeverity}, con un promedio de cumplimiento entre evaluadores del ${Number(getNumber(evaluatorPercentages?.globalAverage || 0)).toFixed(2)}%. Este dato se calcula sumando los porcentajes individuales de cumplimiento y dividiendo entre el número total de evaluadores.`,
-  )
-  // SD global — shown here, "escenarios de warning maximo/minimo" removed
-  writeParagraph(
-    `La desviación estándar global de las puntuaciones es ${globalSd}, lo que refleja el grado de consenso entre los evaluadores: valores bajos indican alta coincidencia y valores altos señalan mayor divergencia en la percepción de la usabilidad del sistema. El valor máximo (${globalMax}) corresponde al mayor porcentaje de cumplimiento obtenido por un evaluador, mientras que el valor mínimo (${globalMin}) corresponde al menor porcentaje de cumplimiento obtenido por otro evaluador.`,
-  )
-  if (totalWarnings > 0 || totalComments > 0 || totalImages > 0) {
-    const metadataBits = []
-    if (totalWarnings > 0) {
-      const w = totalWarnings
+    writeParagraph(
+      `Este informe recoge los resultados de la evaluación heurística realizada al sistema "${testTitle || 'Sistema evaluado'}".`,
+    )
+    if (cleanTestDescription) {
+      writeParagraph(cleanTestDescription)
+    }
+    const evaluatorCount =
+      evaluatorTimeItems.length || evaluatorSummaryItems.length || 0
+    writeParagraph(
+      `La evaluación ha sido completada por ${evaluatorCount} ${pluralize(evaluatorCount, 'evaluador', 'evaluadores')} y se apoya en el promedio de respuestas, los avisos de warning, los comentarios y las evidencias visuales recogidas durante el test.`,
+    )
+    writeParagraph(
+      `El resultado global de la evaluación se interpreta con un margen de mejora ${globalSeverity}, con un promedio de cumplimiento entre evaluadores del ${Number(getNumber(evaluatorPercentages?.globalAverage || 0)).toFixed(2)}%. Este dato se calcula sumando los porcentajes individuales de cumplimiento y dividiendo entre el número total de evaluadores.`,
+    )
+    // SD global — shown here, "escenarios de warning maximo/minimo" removed
+    writeParagraph(
+      `La desviación estándar global de las puntuaciones es ${globalSd}, lo que refleja el grado de consenso entre los evaluadores: valores bajos indican alta coincidencia y valores altos señalan mayor divergencia en la percepción de la usabilidad del sistema. El valor máximo (${globalMax}) corresponde al mayor porcentaje de cumplimiento obtenido por un evaluador, mientras que el valor mínimo (${globalMin}) corresponde al menor porcentaje de cumplimiento obtenido por otro evaluador.`,
+    )
+    if (totalWarnings > 0 || totalComments > 0 || totalImages > 0) {
+      const metadataBits = []
+      if (totalWarnings > 0) {
+        const w = totalWarnings
+        if (useWarningTerm) {
+          metadataBits.push(
+            `${w} ${pluralize(w, 'respuesta con warning', 'respuestas con warning')}`,
+          )
+        } else {
+          metadataBits.push(
+            `${w} ${pluralize(w, 'pregunta que requiere un análisis más profundo', 'preguntas que requieren un análisis más profundo')}`,
+          )
+        }
+      }
+      if (totalComments > 0) {
+        const c = totalComments
+        metadataBits.push(`${c} ${pluralize(c, 'comentario', 'comentarios')}`)
+      }
+      if (totalImages > 0) {
+        const i = totalImages
+        metadataBits.push(`${i} ${pluralize(i, 'imagen', 'imágenes')}`)
+      }
       if (useWarningTerm) {
-        metadataBits.push(
-          `${w} ${pluralize(w, 'respuesta con warning', 'respuestas con warning')}`,
+        writeParagraph(
+          `La evaluación general incorpora ${metadataBits.join(', y ')}. Los warnings son indicadores de posibles mejoras internas pero que no afectan directamente al porcentaje de cumplimiento. En cambio, los comentarios y las evidencias visuales aportan contexto cualitativo que ayuda a interpretar los resultados cuantitativos y a priorizar las áreas de mejora identificadas.`,
         )
       } else {
-        metadataBits.push(
-          `${w} ${pluralize(w, 'pregunta que requiere un análisis más profundo', 'preguntas que requieren un análisis más profundo')}`,
+        writeParagraph(
+          `La evaluación general incorpora ${metadataBits.join(', y ')}. Estas preguntas señalan aspectos que no pueden verificarse únicamente con la navegación superficial de la web, sino que requieren una revisión más profunda del sistema. Los comentarios y las evidencias visuales aportan contexto cualitativo que ayuda a interpretar los resultados cuantitativos y a priorizar las áreas de mejora identificadas.`,
         )
       }
-    }
-    if (totalComments > 0) {
-      const c = totalComments
-      metadataBits.push(`${c} ${pluralize(c, 'comentario', 'comentarios')}`)
-    }
-    if (totalImages > 0) {
-      const i = totalImages
-      metadataBits.push(`${i} ${pluralize(i, 'imagen', 'imágenes')}`)
-    }
-    if (useWarningTerm) {
-      writeParagraph(
-        `La evaluación general incorpora ${metadataBits.join(', y ')}. Los warnings son indicadores de posibles mejoras internas pero que no afectan directamente al porcentaje de cumplimiento. En cambio, los comentarios y las evidencias visuales aportan contexto cualitativo que ayuda a interpretar los resultados cuantitativos y a priorizar las áreas de mejora identificadas.`,
-      )
-    } else {
-      writeParagraph(
-        `La evaluación general incorpora ${metadataBits.join(', y ')}. Estas preguntas señalan aspectos que no pueden verificarse únicamente con la navegación superficial de la web, sino que requieren una revisión más profunda del sistema. Los comentarios y las evidencias visuales aportan contexto cualitativo que ayuda a interpretar los resultados cuantitativos y a priorizar las áreas de mejora identificadas.`,
-      )
     }
   }
 
@@ -887,6 +896,7 @@ export async function generateHeuristicPdf(reportData, options = {}) {
   doc.addPage()
   pageNum += 1
   addPageHeader()
+  console.log('[PDF] aiPorcentajes:', reportData.aiPorcentajes?.substring(0, 50) || 'vacío')
   startSection('2. Porcentajes de usabilidad y análisis global')
   writeParagraph(
     'La tabla siguiente muestra el porcentaje global de cumplimiento obtenido por cada evaluador. El valor se calcula a partir de las respuestas aplicables y permite comparar la percepción general de usabilidad entre participantes.',
@@ -1136,6 +1146,15 @@ export async function generateHeuristicPdf(reportData, options = {}) {
     }
   }
 
+  // ── Párrafo adicional de IA ──────────────────────────────────────
+  if (reportData.aiPorcentajes) {
+    y += 10
+    writeParagraph(reportData.aiPorcentajes, { size: 10, spacing: 4 })
+  }
+  if (reportData.aiTiposRespuesta) {
+    writeParagraph(reportData.aiTiposRespuesta, { size: 10, spacing: 4 })
+  }
+
   // ─── 3. PRIORIDAD DE MEJORA ───────────────────────────────────────────────
   doc.addPage()
   pageNum += 1
@@ -1180,11 +1199,25 @@ export async function generateHeuristicPdf(reportData, options = {}) {
   })
   y = doc.lastAutoTable.finalY + 20
 
+  // ── Párrafo adicional de IA ──────────────────────────────────────
+  if (reportData.aiHeuristicasPrioritarias) {
+    y += 10
+    writeParagraph(reportData.aiHeuristicasPrioritarias, {
+      size: 10,
+      spacing: 4,
+    })
+  }
+
   // ─── 4. ANALISIS DETALLADO ────────────────────────────────────────────────
   doc.addPage()
   pageNum += 1
   addPageHeader()
   startSection('4. Análisis detallado por heurística')
+  console.log('[PDF] aiAnalisisHeuristico:', reportData.aiAnalisisHeuristico?.substring(0, 50) || 'vacío')
+
+  const aiHeuristicBlocks = parseHeuristicAnalysis(
+    reportData.aiAnalisisHeuristico || '',
+  )
 
   for (const item of evidence.orderedByImpact) {
     ensureSpace(110)
@@ -1432,7 +1465,63 @@ export async function generateHeuristicPdf(reportData, options = {}) {
       size: 10,
       spacing: 2,
     })
-    writeParagraph(buildPositiveImpact(item), { size: 10, spacing: 4 })
+    if (aiBlock.impactoMejora) {
+    writeParagraph('Impacto de la mejora:', { bold: true, size: 10, spacing: 2 })
+    writeParagraph(aiBlock.impactoMejora, { size: 10, spacing: 4 })
+    }else {
+      writeParagraph(buildPositiveImpact(item), { size: 10, spacing: 4 })
+    }
+
+    // ── Análisis de IA para esta heurística ─────────────────────────
+    if (aiHeuristicBlocks?.length) {
+      const aiBlock = aiHeuristicBlocks.find(
+        (b) => b.id === item.id || b.index === item.position - 1,
+      )
+      if (aiBlock) {
+        if (aiBlock.lightSummary) {
+          // Heurística leve: solo frase resumen
+          writeParagraph(aiBlock.lightSummary, {
+            size: 10,
+            spacing: 4,
+            color: COLORS.sub,
+          })
+        } else {
+          // Heurística crítica/grave/moderada: 4 bloques
+          if (aiBlock.estadoActual) {
+            writeParagraph('Estado actual:', {
+              bold: true,
+              size: 10,
+              spacing: 2,
+            })
+            writeParagraph(aiBlock.estadoActual, { size: 10, spacing: 4 })
+          }
+          if (aiBlock.impactoExperiencia) {
+            writeParagraph('Impacto en la experiencia:', {
+              bold: true,
+              size: 10,
+              spacing: 2,
+            })
+            writeParagraph(aiBlock.impactoExperiencia, { size: 10, spacing: 4 })
+          }
+          if (aiBlock.planAccion) {
+            writeParagraph('Plan de acción:', {
+              bold: true,
+              size: 10,
+              spacing: 2,
+            })
+            writeParagraph(aiBlock.planAccion, { size: 10, spacing: 4 })
+          }
+          if (aiBlock.resumenEjecutivo) {
+            writeParagraph('Resumen ejecutivo:', {
+              bold: true,
+              size: 10,
+              spacing: 2,
+            })
+            writeParagraph(aiBlock.resumenEjecutivo, { size: 10, spacing: 4 })
+          }
+        }
+      }
+    }
 
     // ── Metadata (warnings / images / comments) ──────────────────────────
     if (item.totalWarnings > 0) {
@@ -1618,10 +1707,18 @@ export async function generateHeuristicPdf(reportData, options = {}) {
 
   writeParagraph(`Tiempo medio de ejecución global: ${averageTime}.`)
 
+  // ── Párrafo adicional de IA ──────────────────────────────────────
+  if (reportData.aiComparativa) {
+    y += 10
+    writeParagraph(reportData.aiComparativa, { size: 10, spacing: 4 })
+  }
+
   // ─── 6. CONCLUSION ────────────────────────────────────────────────────────
   startSection('6. Conclusión')
-  if (cleanStudyConclusion) {
-    writeParagraph(cleanStudyConclusion)
+  console.log('[PDF] aiConclusion:', reportData.aiConclusion?.substring(0, 50) || 'vacío')
+  const conclusionText = reportData.aiConclusion || cleanStudyConclusion
+  if (conclusionText) {
+    writeParagraph(conclusionText)
   }
   const warningText = useWarningTerm
     ? pluralize(totalWarnings, 'warning', 'warnings')
@@ -1641,7 +1738,7 @@ export async function generateHeuristicPdf(reportData, options = {}) {
 
   // ─── INDICE (completar páginas reales) ───────────────────────────────────
   doc.setPage(2)
-  let tocY = M + 28
+  let tocY = M + 36
   doc.setFont(FONT, 'normal')
   doc.setFontSize(11)
   doc.setTextColor(...COLORS.text)

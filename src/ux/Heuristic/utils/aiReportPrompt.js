@@ -250,7 +250,6 @@ function getQuestionSummaries(reportItem, heuristicIndex) {
           : 'N/D',
       maxPossible,
       evaluatorCount: values.length,
-      warnings,
       values: values.map((v) => v.toFixed(1)),
       imageUrls: [...new Set(imageUrls)].slice(0, 5),
       imageCount: imageUrls.length,
@@ -544,7 +543,7 @@ INSTRUCCIONES PARA ANÁLISIS CUALITATIVO:
 - Si hay alta dispersión (desviación típica > 0.5), señala que la experiencia puede variar según el perfil del usuario.
 
 ==============================================================
-SECCION 1 - INTRODUCCION
+===SECCION:INTRODUCCION===
 ==============================================================
 Redacta 4-5 frases en prosa continua que:
 1. Presenten el sistema evaluado (nombre${testUrl ? ' y URL' : ''}), indicando qué tipo de sitio web o aplicación es.
@@ -556,7 +555,7 @@ Redacta 4-5 frases en prosa continua que:
 Sin viñetas. Párrafo continuo y fluido.
 
 ==============================================================
-SECCION 2 - PORCENTAJES DE USABILIDAD Y ANÁLISIS GLOBAL
+===SECCION:PORCENTAJES_DE_USABILIDAD_Y_ANÁLISIS_GLOBAL===
 ==============================================================
 Redacta un único párrafo denso de 6-8 frases que:
 - Sintetice el estado de madurez UX del sistema con criterio profesional.
@@ -575,7 +574,7 @@ ${
   responseTypesText
     ? `
 =============================================================
-SECCION 2B - TIPOS DE RESPUESTA POR USO
+===SECCION:TIPOS_DE_RESPUESTA_POR_USO===
 =============================================================
 Redacta 2-3 frases que expliquen:
 1. Qué representan los tipos de respuesta (las opciones de puntuación disponibles en el test).
@@ -618,10 +617,11 @@ H{numero} — {cumplimiento}% — {Nombre de la heurística}
 (2 frases) Interpretación cualitativa breve.
 [/ESTADO_ACTUAL]
 [IMPACTO_EXPERIENCIA]
-(1-2 frases) Efecto concreto en el usuario.
+(1-2 frases) Efecto concreto en el usuario.Si hay información web disponible, integra cómo afecta a usuarios reales.
 [/IMPACTO_EXPERIENCIA]
 [PLAN_ACCION]
-(2 recomendaciones específicas y técnicas)
+(2 recomendaciones específicas y técnicas). Qué mejoraría concretamente en la experiencia y usabilidad si se corrige esta heurística. Basándote en los comentarios de evaluadores 
+y, si está disponible, en la investigación web.
 [/PLAN_ACCION]
 [RESUMEN_EJECUTIVO]
 (1 frase) Resumen para el equipo de desarrollo.
@@ -637,7 +637,7 @@ Datos disponibles para cada heurística:
 ${heuristicsDetailText}
 
 ==============================================================
-SECCION 4 - COMPARATIVA DE PUNTUACIONES POR EVALUADOR
+===SECCION:COMPARATIVA_DE_PUNTUACIONES_POR_EVALUADOR===
 ================================================================
 Redacta 5-6 frases que:
 
@@ -655,7 +655,7 @@ Tu análisis debe:
 5. Si hay comentarios de evaluadores, úsalos para enriquecer el análisis.
 
 ==============================================================
-SECCION 5 - CONCLUSION
+===SECCION:CONCLUSION===
 ==============================================================
 Redacta 6-8 frases finales que:
 
@@ -677,7 +677,7 @@ Tu conclusión debe:
   ${
     webResearchContent
       ? `==============================================================
-INVESTIGACION WEB ADICIONAL
+===SECCION:INVESTIGACION_WEB_ADICIONAL===
 =============================================================
 A continuación se incluye información obtenida de una investigación web en tiempo real sobre el sitio evaluado. Úsala como contexto adicional para enriquecer tu análisis y recomendaciones, pero NO la copies textualmente. Debes integrarla con los datos del test para ofrecer una visión más completa y actualizada.
 

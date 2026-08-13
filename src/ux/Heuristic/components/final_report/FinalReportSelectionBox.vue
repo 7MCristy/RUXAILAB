@@ -679,7 +679,8 @@ const generateAiFinalReport = async (finalReportItem) => {
     }
 
     clearInterval(tokenInterval)
-    return content
+    return { content, webResearch, source, sections: result.sections || null }
+    
   } catch (error) {
     console.error('[generateAiFinalReport] ❌ Error generando informe con IA:', error)
     clearInterval(tokenInterval)

@@ -325,9 +325,12 @@ export function parseAiReportSections(content) {
   console.log('[parseAiReportSections] 🔍 INICIO PARSEO')
   console.log('═══════════════════════════════════════════════════════════════')
 
+  if (typeof content === 'object' && content?.content) {
+    content = content.content
+  }
   if (!content || typeof content !== 'string') {
     console.log(
-      '[parseAiReportSections] ❌ Contenido vacío o no es string:',
+      '[parseAiReportSections] ❌ Contenido inválido:',
       typeof content,
     )
     return {

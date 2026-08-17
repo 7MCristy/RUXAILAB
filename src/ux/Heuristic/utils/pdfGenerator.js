@@ -521,7 +521,7 @@ export async function generateHeuristicPdf(reportData, options = {}) {
   const cleanStudyConclusion = stripMarkdown(stripHtml(studyConclusion))
 
   const doc = new jsPDF({ unit: 'pt', format: 'a4' })
-  const logo = await loadLogo('/brand/logo_full.png', 30)
+  const logo = await loadLogo('/logo_full.png', 30)
 
   const heuristicsEvaluator =
     rawHeuristicsEvaluator ||

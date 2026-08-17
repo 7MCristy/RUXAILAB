@@ -373,7 +373,7 @@ const prefetchAiSections = async () => {
     console.log('[Prefetch] 📦 ReportItem construido, llamando a Gemini...')
 
     const aiContent = await generateAiFinalReport(finalReportItem)
-    const aiSections = parseAiReportSections(aiContent)
+    const aiSections = parseAiReportSections(aiContent.content)
 
     cachedAiSections.value = aiSections
     cachedAiContent.value = aiContent
@@ -870,7 +870,7 @@ const previewPdfWithAi = async () => {
     } else {
       console.log('[previewPdfWithAi] 🆕 Generando secciones IA on-the-fly')
       const aiContent = await generateAiFinalReport(finalReportItem)
-      aiSections = parseAiReportSections(aiContent)
+      aiSections = parseAiReportSections(aiContent.content)
       cachedAiSections.value = aiSections
       cachedAiContent.value = aiContent
       lastCommentsSnapshot.value = currentSnapshot

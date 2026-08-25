@@ -14,6 +14,19 @@ module.exports = {
         target: 'http://localhost:11434',
         changeOrigin: true,
         pathRewrite: { '^/ollama-proxy': '' },
+        onProxyReq(proxyReq, req) {
+          console.log('[Ollama proxy] Solicitud:', req.method, req.url)
+        },
+        onProxyRes(proxyRes, req) {
+          console.log('[Ollama proxy] Respuesta:', proxyRes.statusCode, req.url)
+        },
+        onError(error, req) {
+          console.error('[Ollama proxy] Error:', {
+            url: req.url,
+            code: error.code,
+            message: error.message,
+          })
+        },
       },
       '/storage-proxy': {
         target: 'https://firebasestorage.googleapis.com',
@@ -26,10 +39,7 @@ module.exports = {
     },
   },
 
-  transpileDependencies: [
-    'vuetify',
-    'resize-detector',
-  ],
+  transpileDependencies: ['vuetify', 'resize-detector'],
 
   pluginOptions: {
     i18n: {
@@ -50,7 +60,7 @@ module.exports = {
       new webpack.DefinePlugin({
         __VUE_OPTIONS_API__: JSON.stringify(true),
         __VUE_PROD_DEVTOOLS__: JSON.stringify(false),
-        __VUE_PROD_HYDRATION_MISMATCH_DETAILS__: JSON.stringify(false)
+        __VUE_PROD_HYDRATION_MISMATCH_DETAILS__: JSON.stringify(false),
       }),
     ],
     resolve: {
@@ -59,9 +69,8 @@ module.exports = {
         stream: require.resolve('stream-browserify'),
         buffer: require.resolve('buffer/'),
         process: require.resolve('process'),
-        "vm": false,
-
+        vm: false,
       },
     },
   },
-};
+}

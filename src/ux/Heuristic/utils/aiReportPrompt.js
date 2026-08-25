@@ -663,7 +663,7 @@ export function buildOllamaRequestBody(
       temperature: 0.4,
       top_p: 0.9,
       num_predict: 4000,
-      num_ctx: 8192,
+      num_ctx: 7500,
       repeat_penalty: 1.15,
     },
     messages: [

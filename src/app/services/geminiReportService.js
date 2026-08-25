@@ -30,13 +30,29 @@ const ENABLE_WEB_RESEARCH = process.env.VUE_APP_ENABLE_WEB_RESEARCH !== 'false'
 let geminiClient = null
 
 async function checkOllamaAvailable(url = 'http://localhost:11434') {
+  const tagsUrl = `${url.replace(/\/$/, '')}/api/tags`
+  const startedAt = Date.now()
+
   try {
-    const response = await fetch(`${url}/api/tags`, {
+    console.log('[Ollama] Comprobando disponibilidad:', tagsUrl)
+    const response = await fetch(tagsUrl, {
       method: 'GET',
-      signal: AbortSignal.timeout(3000),
+      signal: AbortSignal.timeout(8000),
+    })
+
+    console.log('[Ollama] Disponibilidad HTTP:', {
+      status: response.status,
+      ok: response.ok,
+      durationMs: Date.now() - startedAt,
     })
     return response.ok
-  } catch {
+  } catch (error) {
+    console.error('[Ollama] No se pudo consultar /api/tags:', {
+      url: tagsUrl,
+      name: error?.name,
+      message: error?.message,
+      durationMs: Date.now() - startedAt,
+    })
     return false
   }
 }
@@ -219,25 +235,59 @@ export async function generateAiReportWithOllama(
 ) {
   try {
     const baseUrl = ollamaUrl.replace('/api/chat', '')
+    const model = process.env.VUE_APP_OLLAMA_MODEL || 'qwen2.5:3b'
+
+    console.log('[Ollama] Inicio de generación:', {
+      url: ollamaUrl,
+      baseUrl,
+      model,
+    })
+
     const isAvailable = await checkOllamaAvailable(baseUrl)
     if (!isAvailable) {
       throw new Error('Ollama no está disponible')
     }
 
     const body = buildOllamaRequestBody(finalReportItem)
+    console.log('[Ollama] Petición preparada:', {
+      model: body.model,
+      stream: body.stream,
+      promptChars: body.messages?.reduce(
+        (total, message) => total + String(message.content || '').length,
+        0,
+      ),
+      messageCount: body.messages?.length || 0,
+    })
 
+    const startedAt = Date.now()
     const response = await fetch(ollamaUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     })
 
+    console.log('[Ollama] Respuesta HTTP:', {
+      status: response.status,
+      ok: response.ok,
+      durationMs: Date.now() - startedAt,
+    })
+
     if (!response.ok) {
-      throw new Error(`Ollama HTTP ${response.status}: ${response.statusText}`)
+      const errorBody = (await response.text()).slice(0, 500)
+      console.error('[Ollama] Cuerpo de error:', errorBody)
+      throw new Error(
+        `Ollama HTTP ${response.status}: ${response.statusText}${errorBody ? ` - ${errorBody}` : ''}`,
+      )
     }
 
     const data = await response.json()
     const content = String(data?.message?.content || '').trim()
+
+    console.log('[Ollama] JSON recibido:', {
+      hasMessage: Boolean(data?.message),
+      responseChars: content.length,
+      done: data?.done,
+    })
 
     if (!content) {
       throw new Error('Ollama devolvió respuesta vacía')

@@ -10,6 +10,7 @@ const testData = {
   sd: null,
   totalComments: 0,
   totalImages: 0,
+  totalNoAplication: 0,
   totalTimeMs: 0,
   averageTimeMs: 0,
 }
@@ -133,6 +134,72 @@ function formatTimeSpentFromMs(ms) {
   const minutes = Math.floor(totalSeconds / 60)
   const seconds = totalSeconds % 60
   return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
+}
+
+/**
+ * Extrae los textos de comentarios de una pregunta, fusionando el formato
+ * nuevo (arrays comments[]) y el legacy (heuristicComment string), sin duplicar
+ * cuando el mismo texto aparece en ambos formatos (p.ej. tras una migración
+ * o una edición posterior en Final Report).
+ *
+ * Uso interno: función canónica única para contar/leer comentarios de evaluador.
+ * Deben usarla statistics(), buildHeuristicEvidence.js y HeuristicsTestAnswer.vue,
+ * en vez de tener cada uno su propia lógica de extracción.
+ *
+ * @param {Object} question - Objeto de pregunta con heuristicAnswer, comments, etc.
+ * @returns {Array<{text: string, source: string}>} Comentarios únicos, normalizados.
+ */
+function getQuestionCommentTexts(question) {
+  const normalize = (value) => String(value ?? '').replace(/\s+/g, ' ').trim()
+  const seen = new Set()
+  const result = []
+
+  const tryAdd = (rawText, source) => {
+    const text = normalize(rawText)
+    if (!text) return
+    const key = text.toLowerCase()
+    if (seen.has(key)) return
+    seen.add(key)
+    result.push({ text, source })
+  }
+
+  // Formato nuevo: array en la pregunta o dentro de heuristicAnswer
+  const arrayComments = Array.isArray(question?.comments)
+    ? question.comments
+    : Array.isArray(question?.heuristicAnswer?.comments)
+      ? question.heuristicAnswer.comments
+      : []
+  arrayComments.forEach((comment) => {
+    const text = typeof comment === 'string' ? comment : comment?.text
+    tryAdd(text, 'array')
+  })
+
+  // Formato legacy: string suelto, en pregunta o en heuristicAnswer
+  tryAdd(question?.heuristicComment, 'legacy')
+  tryAdd(question?.heuristicAnswer?.heuristicComment, 'legacy')
+
+  return result
+}
+
+/**
+ * Clasifica la respuesta de una pregunta en una única categoría canónica.
+ *
+ * Uso interno: sustituye la lógica if/else duplicada que existía en
+ * statistics.js y en pdfGenerator.js para calcular "no aplica" y "warning".
+ *
+ * @param {Object} question - Objeto de pregunta con heuristicAnswer.
+ * @returns {'answered'|'noAplica'|'warning'|'noReply'}
+ */
+function classifyQuestionResponse(question) {
+  const value = question?.heuristicAnswer?.value
+  const isWarning = question?.heuristicAnswer?.warning === true
+
+  if (isWarning) return 'warning'
+  if (value === null || value === undefined) return 'noAplica'
+  if (value === '' || Object.values(question?.heuristicAnswer || {}).length < 3) {
+    return 'noReply'
+  }
+  return 'answered'
 }
 
 /**
@@ -277,6 +344,7 @@ function calcFinalResult(array) {
     minWarning,
     maxPerfResultWarnings,
     totalWarnings,
+    totalNoAplication: qtdNoAplication,
   }
 }
 
@@ -460,26 +528,14 @@ function statistics() {
         let noReply = 0
         let totalImages = 0
         let totalComments = 0
+        
         let res = heuristic.heuristicQuestions.reduce(
           (SumOfValues, question) => {
-            if (
-              question.heuristicAnswer?.value === null &&
-              question.heuristicAnswer?.warning !== true
-            ) {
-              noAplication++
-            } // es para restra del total de preguntas, no suma nada al resultado
-            if (
-              question.heuristicAnswer?.value === '' ||
-              Object.values(question.heuristicAnswer || {}).length < 3
-            ) {
-              noReply++
-            }
-            if (question.heuristicAnswer?.warning === true) {
-              totalWarnings++
-              console.log('[statistics] WARNING DETECTED in question:', {
-                totalWarnings,
-              })
-            }
+            const classification = classifyQuestionResponse(question)
+            if (classification === 'noAplica') noAplication++
+            if (classification === 'noReply') noReply++
+            if (classification === 'warning') totalWarnings++
+
             const images = Array.isArray(question?.images)
               ? question.images
               : Array.isArray(question.heuristicAnswer?.images)
@@ -487,28 +543,14 @@ function statistics() {
                 : []
             if (images.length > 0) {
               totalImages += images.length
-            } else if (
-              question?.answerImageUrl?.trim() ||
-              question.heuristicAnswer?.answerImageUrl?.trim()
-            ) {
+            } else if (question?.answerImageUrl?.trim() || question.heuristicAnswer?.answerImageUrl?.trim()) {
               totalImages += 1
             }
-            const qComments = Array.isArray(question?.comments)
-              ? question.comments
-              : Array.isArray(question.heuristicAnswer?.comments)
-                ? question.heuristicAnswer.comments
-                : []
-            if (qComments.length > 0) {
-              totalComments += qComments.length
-            } else if (
-              question?.heuristicComment?.trim() ||
-              question.heuristicAnswer?.heuristicComment?.trim()
-            ) {
-              totalComments += 1
-            }
+
+            totalComments += getQuestionCommentTexts(question).length
+
             return SumOfValues + Number(question.heuristicAnswer?.value ?? 0)
           },
-
           0,
         )
 
@@ -665,6 +707,11 @@ function finalResult(
     testData.totalImages = validItems.reduce((sum, ev) => {
       return sum + (Array.isArray(ev.heuristics)
         ? ev.heuristics.reduce((s, h) => s + (h.totalImages || 0), 0)
+        : 0)
+    }, 0)
+    testData.totalNoAplication = validItems.reduce((sum, ev) => {
+      return sum + (Array.isArray(ev.heuristics)
+        ? ev.heuristics.reduce((s, h) => s + (h.totalNoAplication || 0), 0)
         : 0)
     }, 0)
 
@@ -1122,4 +1169,6 @@ export {
   buildEvaluatorPercentages,
   buildHeuristicRanking,
   extractEvaluatorComments,
+  getQuestionCommentTexts,      // ← NUEVO
+  classifyQuestionResponse,
 }

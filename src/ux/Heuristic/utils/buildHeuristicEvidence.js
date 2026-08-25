@@ -4,15 +4,18 @@ import {
   getEvaluatorLabel,
   getQuestionLabel,
   getHeuristicLabel,
-  extractCommentTexts,
   getHeuristicShortTitle,
   calculateHeuristicCompliance,
   calcStandardDeviation,
   getHeuristicDomainWeight,
-  getSeverityFromPercentage,
+  getSeverityLabelFromPercentage,
   normalizeText,
   stripHtml,
 } from './pdfGenerator'
+import {
+  getQuestionCommentTexts,
+  classifyQuestionResponse,
+} from '@/ux/Heuristic/utils/statistics'
 
 /**
  * Looks up researcher comments for a given heuristic across multiple key formats.
@@ -70,8 +73,12 @@ function buildHeuristicEvidence({
         const values = questionAnswers
           .map((answer) => getNumber(answer?.heuristicAnswer?.value, NaN))
           .filter((value) => Number.isFinite(value))
+
         const warnings = questionAnswers.filter(
           (answer) => answer?.heuristicAnswer?.warning === true,
+        ).length
+        const noAplica = questionAnswers.filter(
+          (answer) => classifyQuestionResponse(answer) === 'noAplica',
         ).length
         const images = questionAnswers.reduce(
           (total, answer) =>
@@ -90,44 +97,27 @@ function buildHeuristicEvidence({
             evaluatorHeuristics[answerIndex],
             answerIndex,
           )
-          const texts = extractCommentTexts(answer)
-          texts.forEach((text) => {
-            commentDetails.push({
-              evaluatorName,
-              text,
-              questionIndex: questionIndex + 1,
-            })
+          const texts = getQuestionCommentTexts(answer)
+          texts.forEach(({ text }) => {
+            commentDetails.push({ evaluatorName, text, questionIndex: questionIndex + 1 })
           })
         })
-        if (commentDetails.length === 0) {
-          evaluatorHeuristics.forEach((heuristicAnswer, answerIndex) => {
-            if (!heuristicAnswer) return
-            const evaluatorName = getEvaluatorLabel(
-              evaluatorHeuristics[answerIndex],
-              answerIndex,
-            )
-            const texts = extractCommentTexts(heuristicAnswer)
-            texts.forEach((text) => {
-              if (!commentDetails.some((c) => c.text === text)) {
-                commentDetails.push({
-                  evaluatorName,
-                  text,
-                  questionIndex: questionIndex + 1,
-                })
-              }
-            })
-          })
-        }
         const comments = commentDetails.length
         const average = values.length
           ? values.reduce((sum, value) => sum + value, 0) / values.length
           : 0
 
+        const averagePercentage =
+          maxQuestionScore > 0 ? (average / maxQuestionScore) * 100 : 0
+
         return {
           title: getQuestionLabel(question, questionIndex),
           values,
           average,
+          averagePercentage,
+          evaluatorCount: values.length,
           warnings,
+          noAplica,
           images,
           comments,
           commentDetails,
@@ -159,11 +149,14 @@ function buildHeuristicEvidence({
         ? sdFromStats
         : sdCalculated
 
-    const averagePoints = getNumber(heuristicStat.average)
     const maxPoints = getNumber(heuristicStat.max)
     const minPoints = getNumber(heuristicStat.min)
     const totalWarnings = questionSummaries.reduce(
       (total, item) => total + item.warnings,
+      0,
+    )
+    const totalNoAplica = questionSummaries.reduce(
+      (total, item) => total + (item.noAplica || 0),
       0,
     )
     const totalImages = questionSummaries.reduce(
@@ -191,17 +184,32 @@ function buildHeuristicEvidence({
     const impactScore =
       completionGap * warningWeight * evidenceWeight * domainWeight
 
+    const questionAverages = questionSummaries.map((item) => item.average)
+    const questionAverageMean = questionAverages.length
+      ? questionAverages.reduce((sum, value) => sum + value, 0) /
+        questionAverages.length
+      : 0
+    const questionAverageMeanPercentage =
+      maxQuestionScore > 0 ? (questionAverageMean / maxQuestionScore) * 100 : 0
+
+    const heuristicEvaluatorCount = questionSummaries.length
+      ? Math.max(...questionSummaries.map((item) => item.evaluatorCount || 0))
+      : 0
+
     return {
       id: heuristic?.heuristicId || `H${heuristicIndex + 1}`,
       position: heuristicIndex + 1,
       label: getHeuristicLabel(heuristic, heuristicIndex),
       title: getHeuristicShortTitle(heuristic, heuristicIndex),
       percentage,
-      averagePoints,
+      questionAverageMean,
+      questionAverageMeanPercentage,
+      evaluatorCount: heuristicEvaluatorCount,
       maxPoints,
       minPoints,
       sd,
       totalWarnings,
+      totalNoAplica,
       totalImages,
       totalComments,
       questionSummaries,
@@ -210,7 +218,7 @@ function buildHeuristicEvidence({
       responseMax,
       responseSpread,
       impactScore,
-      severity: getSeverityFromPercentage(percentage),
+      severity: getSeverityLabelFromPercentage(percentage),
       comments: (() => {
         const heuComments = findHeuristicComments(
           heuristicComments,

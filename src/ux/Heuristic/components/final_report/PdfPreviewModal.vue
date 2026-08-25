@@ -438,7 +438,7 @@ const emit = defineEmits(['close', 'update:modelValue'])
 
 const show = ref(props.modelValue)
 const downloading = ref(false)
-const conclusionText = ref(props.studyConclusion || '')
+const conclusionText = ref(String(props.studyConclusion || ''))
 const editableComments = ref({})
 const editableImpact = ref({})
 const editableRecommendations = ref({})
@@ -448,7 +448,7 @@ watch(
   (val) => {
     show.value = val
     if (val) {
-      conclusionText.value = props.studyConclusion || ''
+      conclusionText.value = String(props.studyConclusion || '')
       editableComments.value = {}
       editableImpact.value = {}
       editableRecommendations.value = {}

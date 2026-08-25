@@ -204,7 +204,7 @@ export async function researchWebsite({
 
   // 1. Intentar Jina AI
   if (!hasQuota('jina')) {
-    // Sin cuota, saltar a TinyFish
+    console.warn('[WebSearch] ⚠️ Sin cuota de Jina disponible')
   } else {
     try {
       // Leer la URL del sitio evaluado directamente
@@ -217,6 +217,7 @@ export async function researchWebsite({
           )
         } catch (readError) {
           console.error('[WebSearch] Jina read failed for URL:', testUrl, readError)
+          trackTokens('jina', estimateTokens(testUrl))
         }
       }
 
@@ -231,6 +232,7 @@ export async function researchWebsite({
           )
         } catch (searchError) {
           console.error('[WebSearch] Jina search failed for query:', query, searchError)
+          trackTokens('jina', estimateTokens(query))
         }
       }
 
@@ -239,30 +241,54 @@ export async function researchWebsite({
       }
     } catch (jinaError) {
       console.error('[WebSearch] Jina search/read failed:', jinaError)
+      trackTokens('jina', estimateTokens(uniqueQueries[0] || ''))
+      console.warn('[WebSearch] 🔄 Jina falló, usando TinyFish como fallback')
     }
   }
 
   // 2. Fallback: TinyFish
-  try {
-    const tinyFishResults = []
-    for (const query of uniqueQueries.slice(0, 1)) {
-      try {
-        const results = await searchWithTinyFish(query)
-        tinyFishResults.push(...results)
-      } catch (tfError) {
-        console.error('[WebSearch] TinyFish search failed for query:', query, tfError)
+  if (!hasQuota('tinyfish')) {
+    console.warn('[WebSearch] ⚠️ Sin cuota de TinyFish disponible')
+  } else {
+    try {
+      const tinyFishResults = []
+      for (const query of uniqueQueries.slice(0, 1)) {
+        if (!hasQuota('tinyfish')) break
+        try {
+          const results = await searchWithTinyFish(query)
+          trackTokens('tinyfish', estimateTokens(JSON.stringify(results)))
+          tinyFishResults.push(...results)
+        } catch (tfError) {
+          console.error('[WebSearch] TinyFish search failed for query:', query, tfError)
+          trackTokens('tinyfish', estimateTokens(query))
+        }
       }
-    }
 
-    if (tinyFishResults.length > 0) {
-      return { content: tinyFishResultsToMarkdown(tinyFishResults), source: 'tinyfish' }
+      if (tinyFishResults.length > 0) {
+        return { content: tinyFishResultsToMarkdown(tinyFishResults), source: 'tinyfish' }
+      }
+    } catch (tinyFishError) {
+      console.error('[WebSearch] TinyFish search failed:', tinyFishError)
+      trackTokens('tinyfish', estimateTokens(uniqueQueries[0] || ''))
     }
-  } catch (tinyFishError) {
-    console.error('[WebSearch] TinyFish search failed:', tinyFishError)
   }
 
-  // 3. Sin resultados
-  return { content: '', source: 'none' }
+  // 3. Sin resultados - ambos servicios agotados
+  const jinaExhausted = !hasQuota('jina')
+  const tinyfishExhausted = !hasQuota('tinyfish')
+
+  if (jinaExhausted && tinyfishExhausted) {
+    console.warn(
+      '[WebSearch] ⚠️ Cuota agotada en Jina y TinyFish. No hay más tokens disponibles para investigación web.',
+    )
+    return {
+      content: '',
+      source: 'none',
+      message: 'No quedan tokens disponibles en ningún servicio de búsqueda web (Jina y TinyFish agotados).',
+    }
+  }
+
+  return { content: '', source: 'none', message: '' }
 }
 
 export default {

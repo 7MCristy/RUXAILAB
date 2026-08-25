@@ -325,10 +325,16 @@ export function parseAiReportSections(content) {
   console.log('[parseAiReportSections] 🔍 INICIO PARSEO')
   console.log('═══════════════════════════════════════════════════════════════')
 
+  // Asegurar que el contenido sea una cadena de texto (previene "object Object" en la UI)
+  let textContent = content
   if (typeof content === 'object' && content?.content) {
-    content = content.content
+    textContent = content.content
   }
-  if (!content || typeof content !== 'string') {
+  // Convertir a string si no lo es
+  if (typeof textContent !== 'string') {
+    textContent = String(textContent || '').trim()
+  }
+  if (!textContent || textContent.length === 0) {
     console.log(
       '[parseAiReportSections] ❌ Contenido inválido:',
       typeof content,

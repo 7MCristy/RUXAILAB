@@ -119,25 +119,37 @@
               Gemini: {{ tokenUsage.gemini.remaining.toLocaleString() }} / {{ tokenUsage.gemini.total.toLocaleString() }}
             </v-chip>
             <v-chip
-              v-if="!geminiHasQuota"
+              v-else-if="!geminiHasQuota && jinaHasQuota"
+              :key="'jina-chip'"
               size="small"
               color="info"
-              variant="tonal"
-              prepend-icon="mdi-desktop-tower"
-            >
-              Ollama (local)
-            </v-chip>
-            <v-chip
-              :key="'jina-' + tokenUsage.jina.remaining"
-              size="small"
-              :color="tokenUsage.jina.remaining < tokenUsage.jina.total * 0.2 ? 'error' : tokenUsage.jina.remaining < tokenUsage.jina.total * 0.5 ? 'warning' : 'success'"
               variant="tonal"
               prepend-icon="mdi-web"
             >
               Jina: {{ tokenUsage.jina.remaining.toLocaleString() }} / {{ tokenUsage.jina.total.toLocaleString() }}
             </v-chip>
             <v-chip
-              v-if="isPrefetchingAi"
+              v-else-if="!geminiHasQuota && !jinaHasQuota && tinyfishHasQuota"
+              :key="'tinyfish-chip'"
+              size="small"
+              color="success"
+              variant="tonal"
+              prepend-icon="mdi-brain"
+            >
+              TinyFish: {{ tokenUsage.tinyfish.remaining.toLocaleString() }} / {{ tokenUsage.tinyfish.total.toLocaleString() }}
+            </v-chip>
+            <v-chip
+              v-else-if="!geminiHasQuota && !jinaHasQuota && !tinyfishHasQuota && !isPrefetchingAi"
+              :key="'ollama-chip'"
+              size="small"
+              color="warning"
+              variant="tonal"
+              prepend-icon="mdi-desktop-tower"
+            >
+              Ollama (local)
+            </v-chip>
+            <v-chip
+              v-else-if="isPrefetchingAi"
               size="small"
               color="info"
               variant="tonal"
@@ -226,10 +238,12 @@ import {
   statistics,
   standardDeviation,
 } from '@/ux/Heuristic/utils/statistics'
-import { buildOllamaRequestBody } from '@/ux/Heuristic/utils/aiReportPrompt'
 import { STUDY_TYPES } from '@/shared/constants/methodDefinitions'
-import { generateAiReportWithFallback, correctCommentsWithAI, parseAiReportSections } from '@/app/services/geminiReportService'
-import { getRemaining, hasQuota } from '@/app/services/tokenTracker'
+import {
+  generateAiReportWithOllama,
+  parseAiReportSections,
+} from '@/app/services/geminiReportService'
+import { getRemaining, hasQuota, getUsageData, LIMITS } from '@/app/services/tokenTracker'
 
 const store = useStore()
 const { t } = useI18n()
@@ -251,14 +265,15 @@ const previewFileName = ref('informe_heuristica_evaluacion.pdf')
 const previewTitle = ref('Vista previa del informe')
 const previewStatus = ref('Generando vista previa...')
 const previewError = ref('')
-const correctedHeuristicComments = ref(null)
-const isCorrectingComments = ref(false)
+//const correctedHeuristicComments = ref(null)
+//const isCorrectingComments = ref(false)
 const aiSource = ref('')
 const cachedAiSections = ref(null)
 const cachedAiContent = ref('')
 const isPrefetchingAi = ref(false)
 const prefetchError = ref('')
 const lastCommentsSnapshot = ref('')
+const webSearchMessage = ref('') // ✅ NUEVO: Mensaje cuando se agotan los servicios de web search
 const aiSourceLabel = computed(() => {
   const labels = {
     gemini: 'Gemini AI',
@@ -275,6 +290,7 @@ function refreshTokenUsage() {
   return {
     jina: getRemaining('jina'),
     gemini: getRemaining('gemini'),
+    tinyfish: getRemaining('tinyfish'),
   }
 }
 const tokenUsage = ref(refreshTokenUsage())
@@ -284,6 +300,11 @@ const forceRefreshTokens = () => {
   tokenUsage.value = { ...fresh }
 }
 const geminiHasQuota = computed(() => hasQuota('gemini'))
+const jinaHasQuota = computed(() => hasQuota('jina'))
+const tinyfishHasQuota = computed(() => {
+  const data = getUsageData()?.tinyfish
+  return data && data.used < (LIMITS?.tinyfish?.total || 10_000_000)
+})
 
 // Configuración de PDF (para UI, pero NO filtra datos en buildFinalReportItem)
 const pdfConfig = reactive({
@@ -297,6 +318,7 @@ const pdfConfig = reactive({
   anonymizeEvaluators: false,
 })
 
+/*
 // Corregir comentarios con IA
 const correctComments = async () => {
   if (!props.heuristicComments || Object.keys(props.heuristicComments).length === 0) {
@@ -340,6 +362,8 @@ const correctComments = async () => {
     isCorrectingComments.value = false
   }
 }
+*/
+
 
 // ============================================================================
 // PREFETCH: Pre-generar secciones de IA cuando el componente se monta
@@ -367,8 +391,6 @@ const prefetchAiSections = async () => {
   }, 1500)
 
   try {
-    await correctComments()
-
     const finalReportItem = buildFinalReportItem()
     console.log('[Prefetch] 📦 ReportItem construido, llamando a Gemini...')
 
@@ -674,15 +696,15 @@ const processAnswers = (answersArray) => {
       statisticsTable: store.state.Answer.evaluatorStatistics,
       evaluatorTimeItems: store.state.Answer.evaluatorStatistics?.items || [],
       type: testAnswerDocument.value?.type || STUDY_TYPES.HEURISTIC,
-      // SIEMPRE incluir comentarios (usar corregidos si disponibles)
-      heuristicComments: correctedHeuristicComments.value || props.heuristicComments,
+      // SIEMPRE incluir comentarios originales
+      heuristicComments: props.heuristicComments,
       // Log para verificar comentarios
       _commentDebug: (() => {
-        const commentsToUse = correctedHeuristicComments.value || props.heuristicComments
+        const commentsToUse = props.heuristicComments
         console.log('[buildFinalReportItem] 🎯 heuristicComments a incluir:', commentsToUse)
         console.log('[buildFinalReportItem] 📊 Número de heurísticas con comentarios:', 
           Object.keys(commentsToUse || {}).length)
-        console.log('[buildFinalReportItem] ⚡ Usando comentarios:', correctedHeuristicComments.value ? 'CORREGIDOS' : 'ORIGINALES')
+        console.log('[buildFinalReportItem] ⚡ Usando comentarios: ORIGINALES')
         return null
       })(),
       evaluatorPercentages: evaluatorPercentages.value,
@@ -721,18 +743,21 @@ const generateAiFinalReport = async (finalReportItem) => {
   }, 1500)
 
   try {
-    const result = await generateAiReportWithFallback(finalReportItem, {
-      ollamaUrl: process.env.VUE_APP_OLLAMA_API_URL || 'http://localhost:11434/api/chat',
-      buildFallback: buildFallbackConclusion
-    })
+    // ✅ Temporal: Forzar Ollama directo para pruebas (saltando selección Gemini/Ollama)
+    const result = await generateAiReportWithOllama(finalReportItem)
 
-    const content = typeof result === 'string' ? result : result.content
+    const content = String(result?.content || '').trim()
     const webResearch = typeof result === 'string' ? '' : (result.webResearch || '')
-    const source = typeof result === 'string' ? '' : (result.source || '')
+    const source = typeof result === 'string' ? '' : (result.source || '') || ''
 
-    if (source) {
-      aiSource.value = source
-      console.log('[generateAiFinalReport] 🔌 Fuente:', source)
+    // ✅ NUEVO: Mostrar mensaje si se agotan los tokens de web search
+    webSearchMessage.value = typeof result === 'string' ? '' : (result.message || '')
+
+    // ✅ NUEVO: Establecer la fuente (modelo IA) para que aparezca en el título de la vista previa
+    aiSource.value = source || (typeof result !== 'string' ? result.source || '' : '')
+
+    if (aiSource.value) {
+      console.log('[generateAiFinalReport] 🔌 Fuente:', aiSource.value)
     }
 
     forceRefreshTokens()
@@ -742,12 +767,14 @@ const generateAiFinalReport = async (finalReportItem) => {
     }
 
     clearInterval(tokenInterval)
-    return { content, webResearch, source, sections: result.sections || null }
+    return { content, webResearch, source: aiSource.value || '', sections: result.sections || null }
     
   } catch (error) {
     console.error('[generateAiFinalReport] ❌ Error generando informe con IA:', error)
     clearInterval(tokenInterval)
-    return finalReportItem.finalReport || buildFallbackConclusion()
+    aiSource.value = ''
+    const fallbackContent = finalReportItem.finalReport || buildFallbackConclusion()
+    return { content: String(fallbackContent), webResearch: '', source: '', sections: null }
   }
 }
 
@@ -827,8 +854,6 @@ const previewPdf = async () => {
   isLoading.value = true
   forceRefreshTokens()
   
-  await correctComments()
-  
   startPreview('Vista previa del informe sin IA', 'Construyendo PDF...')
   try {
     const reportItem = buildFinalReportItem()
@@ -849,13 +874,11 @@ const previewPdfWithAi = async () => {
   aiSource.value = ''
   forceRefreshTokens()
   
-  await correctComments()
-  
   const currentSnapshot = getCommentsSnapshot()
   const useCache = cachedAiSections.value && lastCommentsSnapshot.value === currentSnapshot
   
   startPreview(
-    'Vista previa del informe con IA',
+    'Vista previa del informe',
     useCache
       ? 'Generando PDF con texto de IA pre-generado...'
       : 'Generando informe con IA...',
@@ -892,9 +915,13 @@ const previewPdfWithAi = async () => {
     }
 
     const sourceLabel = aiSourceLabel.value
-    previewTitle.value = sourceLabel
-      ? `Vista previa del informe con IA (${sourceLabel})`
-      : 'Vista previa del informe con IA'
+    const hasLabel = sourceLabel && sourceLabel !== 'Sin investigación web'
+
+    previewTitle.value = hasLabel
+      ? `Vista previa del informe (${sourceLabel})`
+      : aiSource.value
+      ? `Vista previa del informe (${aiSource.value})`
+      : 'Vista previa del informe (sin IA)'
 
     await openPdfPreview(finalReportItem, '_ai', { showQuickSummary: false }, generateHeuristicPdfWithAi)
   } catch (error) {

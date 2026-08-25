@@ -1,3 +1,7 @@
+import { buildHeuristicEvidence } from './buildHeuristicEvidence'
+import { getSeverityLabelFromPercentage } from './pdfGenerator'
+import { getSeverityLabel } from './statistics'
+
 const DEFAULT_MODEL = 'qwen2.5:latest'
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -54,7 +58,7 @@ function detectNielsenTognazziniMethodology(testStructure = []) {
     normalizeHeuristicName,
   )
 
-  let matches = 0 
+  let matches = 0
   for (const ref of referenceNormalized) {
     const found = testHeuristics.some(
       (test) =>
@@ -112,50 +116,14 @@ function stripHtml(value = '') {
     .trim()
 }
 
-function getSeverity(compliance) {
-  const value = toFiniteNumber(compliance)
-  if (value == null) return 'Dato no disponible'
-  if (value < 50) return 'Crítico'
-  if (value < 75) return 'Moderado'
-  if (value < 90) return 'Leve'
-  return 'Óptimo'
-}
 
-function getHeuristicIndex(name = '') {
-  const match = String(name).match(/\d+/)
-  return match ? Number(match[0]) - 1 : -1
-}
-
-function getHeuristicTitle(heuristicStat, testStructure = []) {
-  const index = getHeuristicIndex(heuristicStat?.name)
-  const heuristic = testStructure[index]
-  return (
-    heuristic?.title ||
-    heuristic?.name ||
-    heuristicStat?.title ||
-    heuristicStat?.name ||
-    'Dato no disponible'
-  )
-}
-
-function getWarningsByHeuristic(reportItem, heuristicName) {
-  const rows = reportItem?.statisticsByEvaluatorAnswer?.items || []
-  const row = rows.find((item) => item?.heuristic === heuristicName)
-  if (!row) return 0
-  return Object.entries(row)
-    .filter(([key]) => key.startsWith('Ev'))
-    .reduce((total, [, value]) => {
-      const numericValue = toFiniteNumber(value, 0)
-      return total + (numericValue < 0 ? 1 : 0)
-    }, 0)
-}
-
-function getQuestionSummaries(reportItem, heuristicIndex) {
+function getQuestionSummaries(reportItem, heuristicIndex, evidence) {
   const testStructure = reportItem?.testStructure || []
   const allAnswers = reportItem?.allAnswers || []
   const heuristic = testStructure[heuristicIndex]
   if (!heuristic) return []
 
+  const evidenceQuestions = evidence?.heuristics?.[heuristicIndex]?.questionSummaries || []
   const questions = Array.isArray(heuristic?.questions)
     ? heuristic.questions
     : Array.isArray(heuristic?.heuristicQuestions)
@@ -163,98 +131,35 @@ function getQuestionSummaries(reportItem, heuristicIndex) {
       : []
 
   return questions.map((question, questionIndex) => {
-    const values = allAnswers
-      .map(
-        (answer) =>
-          answer?.heuristicQuestions?.[heuristicIndex]?.heuristicQuestions?.[
-            questionIndex
-          ]?.heuristicAnswer?.value,
-      )
-      .filter((v) => v != null && Number.isFinite(Number(v)))
-      .map(Number)
-
-    const warnings = allAnswers.filter(
-      (answer) =>
-        answer?.heuristicQuestions?.[heuristicIndex]?.heuristicQuestions?.[
-          questionIndex
-        ]?.heuristicAnswer?.warning === true,
-    ).length
-
-    const avg = values.length
-      ? values.reduce((sum, v) => sum + v, 0) / values.length
-      : null
-
-    const maxPossible = Math.max(...values, 1)
-
-    const title =
-      question?.title ||
-      question?.question ||
-      question?.name ||
-      `Pregunta ${questionIndex + 1}`
-
+    const evQ = evidenceQuestions[questionIndex] || {}
+    const title = question?.title || question?.question || question?.name || `Pregunta ${questionIndex + 1}`
     const questionLabel = `Q${questionIndex + 1}`
-
     const descriptions = (question.descriptions || [])
       .map((d) => (d.title ? `${d.title}: ${d.text || ''}` : d.text || ''))
       .filter(Boolean)
       .join('; ')
 
-    const questionText = stripHtml(question?.text || '')
 
-    const imageUrls = allAnswers
-      .flatMap((answer) => {
-        const qData =
-          answer?.heuristicQuestions?.[heuristicIndex]?.heuristicQuestions?.[
-            questionIndex
-          ]
-        if (!qData) return []
-        const imgs = Array.isArray(qData.images) ? qData.images : []
-        const fromLegacy = qData.answerImageUrl ? [qData.answerImageUrl] : []
-        return [...imgs.map((img) => img.url).filter(Boolean), ...fromLegacy]
-      })
-      .filter(Boolean)
-
-    const commentDetails = []
-    allAnswers.forEach((answer, answerIdx) => {
-      const qData =
-        answer?.heuristicQuestions?.[heuristicIndex]?.heuristicQuestions?.[
-          questionIndex
-        ]
-      if (!qData) return
-      const texts = []
-      if (Array.isArray(qData.comments)) {
-        qData.comments.forEach((c) => {
-          if (c?.text) texts.push(c.text)
-        })
-      }
-      if (texts.length === 0 && qData.heuristicComment) {
-        texts.push(qData.heuristicComment)
-      }
-      texts.forEach((text) => {
-        commentDetails.push({
-          evaluator: `Evaluador ${answerIdx + 1}`,
-          text,
-          questionIndex: questionIndex + 1,
-        })
-      })
-    })
+    const imageUrls = allAnswers.flatMap((answer) => {
+      const qData = answer?.heuristicQuestions?.[heuristicIndex]?.heuristicQuestions?.[questionIndex]
+      if (!qData) return []
+      const imgs = Array.isArray(qData.images) ? qData.images : []
+      const fromLegacy = qData.answerImageUrl ? [qData.answerImageUrl] : []
+      return [...imgs.map((img) => img.url).filter(Boolean), ...fromLegacy]
+    }).filter(Boolean)
 
     return {
       title: stripHtml(title),
       questionLabel,
       descriptions: descriptions || null,
-      text: questionText,
-      average: avg != null ? avg : null,
-      averagePercent:
-        avg != null && maxPossible > 0
-          ? ((avg / maxPossible) * 100).toFixed(1) + '%'
-          : 'N/D',
-      maxPossible,
-      evaluatorCount: values.length,
-      values: values.map((v) => v.toFixed(1)),
+      text: stripHtml(question?.text || ''),
+      average: evQ.average ?? null,
+      averagePercent: evQ.averagePercentage != null ? evQ.averagePercentage.toFixed(1) + '%' : 'N/D',
+      warnings: evQ.warnings || 0,
+      evaluatorCount: evQ.evaluatorCount || 0,
       imageUrls: [...new Set(imageUrls)].slice(0, 5),
       imageCount: imageUrls.length,
-      commentDetails,
+      commentDetails: evQ.commentDetails || [],
     }
   })
 }
@@ -298,19 +203,25 @@ function classifyHeuristics(heuristics = []) {
   return { optimal, warning, critical }
 }
 
-function buildHeuristicDetailData(reportItem, heuristicStats) {
+function buildHeuristicDetailData(reportItem, heuristicStats, evidence) {
   return heuristicStats.map((item, index) => {
-    const questions = getQuestionSummaries(reportItem, index)
+    const questions = getQuestionSummaries(reportItem, index, evidence)
+    const evidenceItem =
+      evidence?.heuristics?.find((h) => h.title === item.name) ||
+      evidence?.heuristics?.[index] ||
+      {}
     return {
       name: item.name,
-      title: getHeuristicTitle(item, reportItem?.testStructure || []),
-      compliance: toFiniteNumber(item?.percentage),
-      severity: getSeverity(toFiniteNumber(item?.percentage)),
-      standardDeviation: toFiniteNumber(item?.sd),
+      title: evidenceItem.title || item.name || 'Dato no disponible',
+      position: evidenceItem.position ?? index + 1,
+      compliance: evidenceItem.percentage ?? toFiniteNumber(item?.percentage),
+      severity:
+        evidenceItem.severity || getSeverityLabel(toFiniteNumber(item?.percentage)),
+      standardDeviation: evidenceItem.sd ?? toFiniteNumber(item?.sd),
       average: toFiniteNumber(item?.average),
       max: toFiniteNumber(item?.max),
       min: toFiniteNumber(item?.min),
-      warnings: getWarningsByHeuristic(reportItem, item?.name),
+      warnings: evidenceItem.totalWarnings ?? 0,
       questionSummary: formatQuestionSummary(questions),
       questions,
       imageSummary:
@@ -321,6 +232,10 @@ function buildHeuristicDetailData(reportItem, heuristicStats) {
               `${q.questionLabel} (${q.title}): ${q.imageCount} imagen(es)`,
           )
           .join('; ') || null,
+      questionAverageMean: evidenceItem.questionAverageMean ?? null,
+      questionAverageMeanPercentage:
+        evidenceItem.questionAverageMeanPercentage ?? null,
+      evaluatorCount: evidenceItem.evaluatorCount ?? null,
       allComments: questions.flatMap((q) => q.commentDetails || []),
       manualComment: (() => {
         const heuId = reportItem?.testStructure?.[index]?.id
@@ -343,23 +258,30 @@ export function buildHeuristicReportPrompt(
   webResearchContent = '',
 ) {
   const heuristicStats = reportItem?.statisticsByHeuristics?.items || []
+  const evidence = buildHeuristicEvidence({
+    allAnswers: reportItem?.allAnswers || [],
+    testStructure: reportItem?.testStructure || [],
+    heuristicsStatistics: heuristicStats,
+    heuristicComments: reportItem?.heuristicComments || {},
+    testOptions: reportItem?.allOptions || [],
+  })
   const generalStatistics = reportItem?.generalStatistics || {}
   const evaluatorItems = reportItem?.statisticsTable?.items || []
   const testName = reportItem?.title || 'Dato no disponible'
   const testUrl = reportItem?.testUrl || ''
   const testDescription = stripHtml(reportItem?.testDescription)
   const globalCompliance = toFiniteNumber(generalStatistics?.average)
-  const globalSeverity = getSeverity(globalCompliance)
-  const heuristics = buildHeuristicDetailData(reportItem, heuristicStats)
+  const globalSeverity = getSeverityLabel(globalCompliance)
+  const heuristics = buildHeuristicDetailData(reportItem, heuristicStats, evidence)
   const globalWarnings = heuristics.reduce(
     (total, h) => total + (h.warnings || 0),
     0,
   )
   const { optimal, critical } = classifyHeuristics(heuristics)
-  const sortedByImpact = [...heuristics].sort(
+  const sortedByImpactCompliance = [...heuristics].sort(
     (a, b) => (a.compliance ?? 100) - (b.compliance ?? 100),
   )
-  const top3Critical = sortedByImpact.slice(0, 3)
+  const top3Critical = sortedByImpactCompliance.slice(0, 3)
   const evaluatorSummary = formatEvaluatorsSummary(evaluatorItems)
 
   console.log('[aiReportPrompt] 📝 Construyendo prompt para IA...')
@@ -385,9 +307,8 @@ export function buildHeuristicReportPrompt(
     })),
   })
 
-  const heuristicsDetailText = sortedByImpact
-    .map((h, i) => {
-      const rank = i + 1
+  const heuristicsDetailText = sortedByImpactCompliance
+    .map((h) => {
       const imageLine = h.imageSummary
         ? `  Evidencias visuales: ${h.imageSummary}`
         : ''
@@ -401,10 +322,12 @@ export function buildHeuristicReportPrompt(
               .join('\n')}`
           : `  Comentarios de evaluadores: ${h.manualComment ? `"${h.manualComment}"` : 'Sin comentarios'}`
       return `
---- Heurística #${rank}: ${h.title} (${h.compliance != null ? h.compliance.toFixed(2) + '%' : 'N/D'}) ---
+--- Heurística H${h.position} ---
   Severidad: ${h.severity}
   Desviación típica: ${h.standardDeviation != null ? h.standardDeviation.toFixed(2) : 'N/D'}
   Rango de puntuaciones: ${h.min != null ? h.min.toFixed(2) : 'N/D'} - ${h.max != null ? h.max.toFixed(2) : 'N/D'}
+  Media de medias por pregunta: ${h.questionAverageMean != null ? h.questionAverageMean.toFixed(2) : 'N/D'} (${h.questionAverageMeanPercentage != null ? h.questionAverageMeanPercentage.toFixed(1) + '%' : 'N/D'})
+  Evaluadores que participaron: ${h.evaluatorCount ?? 'N/D'}
   Warnings: ${h.warnings}
   Preguntas:
 ${h.questionSummary}
@@ -603,8 +526,8 @@ Combina la priorización y el análisis detallado en UNA SOLA SECCIÓN.
 RESTRICCIÓN DE EXTENSIÓN:
 - Analiza en DETALLE (con los 4 bloques) todas las heurísticas con severidad 
   CRÍTICA, GRAVE o MODERADA (cumplimiento < 90%).
-- Las heurísticas con severidad LEVE (cumplimiento >= 90%) méncionalas 
-  en UNA sola frase cada una al final, sin bloques.
+- Las heurísticas con severidad LEVE (cumplimiento >= 90%),
+ méncionalas Para los 4 bloques UNA sola frase resumen en cada uno.
 
 
 CRITERIOS DE SEVERIDAD:
@@ -618,26 +541,28 @@ INSTRUCCIÓN DE FORMATO OBLIGATORIA:
 Escribe CADA análisis de heurística usando EXACTAMENTE este formato:
 
 
-H{numero} — {cumplimiento}% — {Nombre de la heurística}
+H{numero} 
 [ESTADO_ACTUAL]
 (2 frases) Interpretación cualitativa breve.
 [/ESTADO_ACTUAL]
-[IMPACTO_EXPERIENCIA]
-(1-2 frases) Efecto concreto en el usuario.Si hay información web disponible, integra cómo afecta a usuarios reales.
-[/IMPACTO_EXPERIENCIA]
-[PLAN_ACCION]
+[IMPACTO_NEGATIVO]
+(1-2 frases) Efecto negativo concreto en el usuario, considerando un porcentaje de cumplimiento de [PORCENTAJE]% y una media de respuestas de [MEDIA]  en cada heurística de la media de las medias por pregunta con [N] evaluadores participantes 
+como indicador de consistencia del dato. Si hay información web disponible, integra cómo afecta a usuarios reales.
+[/IMPACTO_NEGATIVO]
+[PROPUESTAS_DE_MEJORA]
 (2 recomendaciones específicas y técnicas). Qué mejoraría concretamente en la experiencia y usabilidad si se corrige esta heurística. Basándote en los comentarios de evaluadores 
-y, si está disponible, en la investigación web.
-[/PLAN_ACCION]
+y, si está disponible, en la investigación web.redactadas en infinitivo o como posibilidad y no uses "se ha de", "se debe" ni "es necesario que".)
+[/PROPUESTAS_DE_MEJORA]
 [RESUMEN_EJECUTIVO]
 (1 frase) Resumen para el equipo de desarrollo.
 [/RESUMEN_EJECUTIVO]
 
 
 IMPORTANTE:
-- Cada heurística DEBE empezar con su encabezado: H{numero} — {cumplimiento}% — {Nombre}
-- Todas las heurísticas CRÍTICA, GRAVE o MODERADA (< 90%): los 4 bloques completos.
-- Las heurísticas Leves (>= 90%): UNA sola frase resumen cada una.
+- Cada heurística DEBE empezar con su encabezado: H{numero}
+- {numero} = el H{n} FIJO de esa heurística en los datos, NO un correlativo según el orden de análisis.
+- {cumplimiento}% = exactamente el dato indicado, sin recalcular.
+- Analiza en el orden dado abajo (menor a mayor cumplimiento), pero mantén el {numero} original de cada heurística.
 
 Datos disponibles para cada heurística:
 ${heuristicsDetailText}
@@ -670,7 +595,7 @@ Tu análisis debe:
 ==============================================================
 ===SECCION:CONCLUSION===
 ==============================================================
-Redacta 6-8 frases finales que:
+Redacta 8-12 frases finales que:
 
 Datos globales:
 - Cumplimiento global: ${globalCompliance != null ? globalCompliance.toFixed(2) + '%' : 'N/D'} (${globalSeverity})
@@ -686,7 +611,7 @@ Tu conclusión debe:
 5. Cerrar con una valoración profesional honesta del estado del producto.
 
   ${reportItem?.finalReport ? `\nNota del equipo evaluador (úsala como contexto, no la copies): "${stripHtml(reportItem.finalReport)}"` : ''}
-
+  
   ${
     webResearchContent
       ? `==============================================================
@@ -711,19 +636,39 @@ Instrucciones específicas para usar la investigación web:
 export function buildOllamaRequestBody(
   reportItem,
   model = process.env.VUE_APP_OLLAMA_MODEL || DEFAULT_MODEL,
+  webResearchContent = '',
 ) {
+  let userContent = buildHeuristicReportPrompt(reportItem, webResearchContent)
+
+  // Limitar el contenido web para no saturar al modelo local
+  const MAX_WEB_RESEARCH_CHARS = 3000
+  if (userContent.length > 30000) {
+    // Si el prompt total es muy largo, truncar la parte de web research
+    const webStart = userContent.indexOf('===SECCION:INVESTIGACION_WEB_ADICIONAL===')
+    if (webStart > 0) {
+      const beforeWeb = userContent.substring(0, webStart)
+      const afterWebMarker = userContent.indexOf('\n\n', webStart + 40)
+      if (afterWebMarker > 0) {
+        const webSection = userContent.substring(afterWebMarker, afterWebMarker + MAX_WEB_RESEARCH_CHARS)
+        const rest = userContent.substring(afterWebMarker + MAX_WEB_RESEARCH_CHARS)
+        userContent = beforeWeb + webSection + '\n\n[Contenido web truncado por longitud]\n' + rest
+      }
+    }
+  }
+
   return {
     model,
     stream: false,
     options: {
       temperature: 0.4,
       top_p: 0.9,
-      num_predict: 6000,
+      num_predict: 4000,
+      num_ctx: 8192,
       repeat_penalty: 1.15,
     },
     messages: [
       { role: 'system', content: SYSTEM_PROMPT },
-      { role: 'user', content: buildHeuristicReportPrompt(reportItem) },
+      { role: 'user', content: userContent },
     ],
   }
 }

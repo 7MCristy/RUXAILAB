@@ -270,7 +270,7 @@ const answers = computed(() => {
 const setInnerHtml = () => {
   const textarea = document.getElementById('myTextarea')
   if (textarea) {
-    textarea.innerHTML = test.value.studyConclusion || ''
+    textarea.innerHTML = String(test.value.studyConclusion || '')
   }
 }
 

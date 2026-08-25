@@ -1,11 +1,15 @@
 <template>
   <div v-if="answers">
+    <p>{{ showFinalResult }}</p>
+    <p>imageTotalsByHeuristic: {{ imageTotalsByHeuristic }}</p>
+    <p>optionResponseTotals: {{ optionResponseTotals }}</p>
+
     <v-overlay :model-value="loading">
       <v-progress-circular indeterminate size="64" />
     </v-overlay>
     <IntroAnswer
       v-if="answers != null && intro == true"
-      @go-to-coops="goToCoops"
+      @go-to-coops="goToCoops"  
     />
     <v-row
       v-else-if="answers != null || intro == false"
@@ -47,8 +51,6 @@
               :option-response-totals="optionResponseTotals"
               :test-title="testTitle"
               :evaluator-identity="singleEvaluatorIdentity"
-              :total-comments="totalComments"
-              :total-images="totalImages"
             />
 
             <!-- Tab 2 - Evaluators -->
@@ -102,7 +104,9 @@ import {
   standardDeviation,
   finalResult,
   statistics,
+  FinalResultWarnings,
   calcFinalResult,
+  calcResultsWarnings,
   formatTimeSpentFromMs,
 } from '@/ux/Heuristic/utils/statistics'
 import {
@@ -137,55 +141,6 @@ const loading = ref(false) // Note: Check if Vuex getter 'loading' is needed
 const array_scores = ref([])
 
 const showFinalResult = computed(() => finalResult(resultEvaluator.value))
-
-const totalImages = computed(() => {
-  if (!Array.isArray(imageTotalsByHeuristic.value)) return 0
-  return imageTotalsByHeuristic.value.reduce(
-    (sum, item) => sum + (Number(item.totalImages) || 0),
-    0,
-  )
-})
-
-const totalComments = computed(() => {
-  if (!Array.isArray(answers.value)) return 0
-
-  let count = 0
-  answers.value.forEach((evaluator) => {
-    if (!Array.isArray(evaluator?.heuristicQuestions)) return
-
-    evaluator.heuristicQuestions.forEach((heuristic) => {
-      if (!Array.isArray(heuristic?.heuristicQuestions)) return
-
-      heuristic.heuristicQuestions.forEach((question) => {
-        // Count comments from question-level
-        const questionComments = question?.comments || []
-        if (Array.isArray(questionComments)) {
-          count += questionComments.length
-        }
-
-        // Count comments from heuristicAnswer level
-        const heuristicAnswerComments =
-          question?.heuristicAnswer?.comments || []
-        if (Array.isArray(heuristicAnswerComments)) {
-          count += heuristicAnswerComments.length
-        }
-
-        // Count legacy string comments
-        if (question?.heuristicComment && question.heuristicComment.trim()) {
-          count += 1
-        }
-        if (
-          question?.heuristicAnswer?.heuristicComment &&
-          question.heuristicAnswer.heuristicComment.trim()
-        ) {
-          count += 1
-        }
-      })
-    })
-  })
-
-  return count
-})
 
 const imageTotalsByHeuristic = computed(() => {
   const totals = {}
@@ -278,16 +233,13 @@ const heuristicsEvaluator = computed(() => {
     let evaluatorIndex = 1
     resultEvaluator.value.forEach((evaluator) => {
       evaluator.id = `Ev${evaluatorIndex}`
-      const headerText = `Ev. ${evaluatorIndex}`
-      const header = table.header.find((h) => h.value === evaluator.id)
+      const header = table.header.find((h) => h.text === evaluator.id)
       if (!header) {
         table.header.push({
-          text: headerText,
+          text: evaluator.id,
           align: 'center',
           value: evaluator.id,
         })
-      } else {
-        header.text = headerText
       }
       if (evaluator.heuristics && Array.isArray(evaluator.heuristics)) {
         evaluator.heuristics.forEach((heuristic) => {
@@ -497,13 +449,8 @@ const singleEvaluatorIdentity = computed(() => {
 
   if (!evaluatorUserDocId) return ''
 
-  const participants = [
-    test.value?.testAdmin,
-    ...(test.value?.cooperators || []),
-  ]
-  const evaluator = participants.find(
-    (item) => item?.userDocId === evaluatorUserDocId,
-  )
+  const participants = [test.value?.testAdmin, ...(test.value?.cooperators || [])]
+  const evaluator = participants.find((item) => item?.userDocId === evaluatorUserDocId)
 
   return (
     evaluator?.fullName ||

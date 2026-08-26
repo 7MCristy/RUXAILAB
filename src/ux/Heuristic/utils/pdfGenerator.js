@@ -1,6 +1,10 @@
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
-import { formatTimeSpentFromMs } from '@/ux/Heuristic/utils/statistics'
+import {
+  formatTimeSpentFromMs,
+  calculateTestTotals,
+  calculateResponseTotals,
+} from '@/ux/Heuristic/utils/statistics'
 import { buildHeuristicEvidence } from './buildHeuristicEvidence'
 import { parseHeuristicAnalysis } from '@/app/services/geminiReportService'
 
@@ -70,6 +74,17 @@ function getSeverityLabelFromPercentage(value) {
 }
 
 function normalizeText(value) {
+  if (value && typeof value === 'object') {
+    if (typeof value.content === 'string') return normalizeText(value.content)
+    if (typeof value.text === 'string') return normalizeText(value.text)
+    if (typeof value.value === 'string') return normalizeText(value.value)
+    try {
+      return normalizeText(JSON.stringify(value))
+    } catch {
+      return ''
+    }
+  }
+
   return String(value ?? '')
     .replace(/\s+/g, ' ')
     .trim()
@@ -139,27 +154,30 @@ function extractCommentTexts(answer) {
 
 function obtenerTextoImpactoNegativo(item) {
   const pctHeuristico = Number.isFinite(item.percentage) ? item.percentage : 0
+  const pctHeuristicoTexto = pctHeuristico.toFixed(2).replace('.', ',')
   const qs = item.questionSummaries || []
   const maxScale = 5
   const qsConPct = qs
     .filter((q) => Number.isFinite(q.average))
-    .map((q) => ({
-      title: q.title,
+    .map((q, index) => ({
+      questionNumber: index + 1,
       pct: (q.average / maxScale) * 100,
     }))
     .sort((a, b) => a.pct - b.pct)
   const bajas = qsConPct.filter((q) => q.pct < 50).slice(0, 2)
   if (bajas.length === 0) {
-    return `El heurístico muestra un cumplimiento global de ${pctHeuristico}%. No se identifican puntos débiles significativos en las preguntas analizadas.`
+    return `El heurístico muestra un cumplimiento global de ${pctHeuristicoTexto}%. No se identifican puntos débiles significativos en las preguntas analizadas.`
   }
-  const titulos = bajas.map((q) => `"${q.title.substring(0, 35)}"`).join(' y ')
+  const questionReferences = bajas
+    .map((q) => `la pregunta ${q.questionNumber}`)
+    .join(' y ')
   if (pctHeuristico < 50) {
-    return `Cumplimiento bajo (${pctHeuristico}%). Los promedios en ${titulos} están por debajo de las expectativas, indicando áreas que requieren revisión inmediata.`
+    return `Cumplimiento bajo (${pctHeuristicoTexto}%). Los promedios de ${questionReferences} están por debajo de las expectativas, indicando áreas que requieren revisión inmediata.`
   }
   if (pctHeuristico < 75) {
-    return `Cumplimiento parcial (${pctHeuristico}%). Existen debilidades en ${titulos} que restan calidad global a la experiencia.`
+    return `Cumplimiento parcial (${pctHeuristicoTexto}%). Existen debilidades en ${questionReferences} que restan calidad global a la experiencia.`
   }
-  return `Cumplimiento adecuado (${pctHeuristico}%). No obstante, ${titulos} presentan puntuaciones por debajo del máximo, sugiriendo oportunidades de mejora.`
+  return `Cumplimiento adecuado (${pctHeuristicoTexto}%). No obstante, ${questionReferences} presenta(n) puntuaciones por debajo del máximo, sugiriendo oportunidades de mejora.`
 }
 function getNumber(value, fallback = 0) {
   const numericValue = Number.parseFloat(
@@ -1026,38 +1044,18 @@ export async function generateHeuristicPdf(reportData, options = {}) {
     allAnswers &&
     allAnswers.length > 0
   ) {
-    const usageCount = {}
-    allOptions.forEach((opt) => {
-      if (opt.value != null) usageCount[opt.value] = 0
-    })
-
-    let totalAnswered = 0
-    allAnswers.forEach((answer) => {
-      const heuristics = answer?.heuristicQuestions || []
-      heuristics.forEach((h) => {
-        const questions = h?.heuristicQuestions || []
-        questions.forEach((q) => {
-          const val = q?.heuristicAnswer?.value
-          if (
-            val != null &&
-            Object.prototype.hasOwnProperty.call(usageCount, val)
-          ) {
-            usageCount[val]++
-            totalAnswered++
-          }
-        })
-      })
-    })
+    const { usageCount, totalAnswered } = calculateResponseTotals(
+      allAnswers,
+      allOptions,
+    )
 
     const totalNoAplica = evidence.heuristics.reduce(
-      (sum, item) => sum + (item.totalNoAplica || 0), 0,
+      (sum, item) => sum + (item.totalNoAplica || 0),
+      0,
     )
     const totalNoComprobar = totalWarnings
 
-    const totalQuestions = testStructure.reduce((sum, h) => {
-      const qs = h?.questions || h?.heuristicQuestions || []
-      return sum + qs.length
-    }, 0)
+    const totalQuestions = calculateTestTotals(testStructure)
     const totalExpected = totalQuestions * evaluatorCount
 
     const sortedOptions = [...allOptions]
@@ -1082,11 +1080,7 @@ export async function generateHeuristicPdf(reportData, options = {}) {
 
     const specialRows = []
     if (totalNoAplica > 0) {
-      const row = [
-        '—',
-        'No aplica',
-        String(totalNoAplica),
-      ]
+      const row = ['—', 'No aplica', String(totalNoAplica)]
       if (hasDescriptions) row.push('')
       specialRows.push(row)
     }
@@ -1305,12 +1299,12 @@ export async function generateHeuristicPdf(reportData, options = {}) {
         { size: 11, spacing: 5 },
       )
 
-      const questionRows = item.questionSummaries.map((q) => {
+      const questionRows = item.questionSummaries.map((q, questionIndex) => {
         const formattedAvg =
           typeof q.averagePercentage === 'number'
             ? q.averagePercentage.toFixed(2).replace('.', ',') + '%'
             : '—'
-        return [q.title, formattedAvg]
+        return [`Pregunta ${questionIndex + 1}: ${q.title}`, formattedAvg]
       })
 
       ensureSpace(questionRows.length * 14 + 50)
@@ -1546,7 +1540,7 @@ export async function generateHeuristicPdf(reportData, options = {}) {
         writeParagraph(aiBlock.resumenEjecutivo, { size: 10, spacing: 4 })
       }
     }
-  
+
     // Contenido extra no previsto, diferenciado visualmente
     if (aiBlock?.extras && Object.keys(aiBlock.extras).length > 0) {
       for (const [tagName, tagText] of Object.entries(aiBlock.extras)) {
@@ -1767,6 +1761,46 @@ export async function generateHeuristicPdf(reportData, options = {}) {
       const trimmed = para.trim()
       if (trimmed) writeParagraph(trimmed)
     }
+  } else {
+    const globalPctNum = Number(getNumber(evaluatorPercentages?.globalAverage || 0))
+    let riskLevel = 'óptimo'
+    if (globalPctNum < 60) riskLevel = 'crítico'
+    else if (globalPctNum < 75) riskLevel = 'mejorable'
+
+    const top3 = evidence.orderedByPercentage.slice(0, 3)
+    const top3Names = top3.map((h) => `${h.title} (${formatDecimal(h.percentage)}%)`).join(', ')
+
+    writeParagraph(
+      `El sitio presenta un nivel de usabilidad ${riskLevel}, con un cumplimiento global del ${Number(getNumber(evaluatorPercentages?.globalAverage || 0)).toFixed(2)}% y ${totalWarnings} advertencias detectadas.`,
+    )
+    if (top3.length > 0) {
+      writeParagraph(
+        `Las áreas más críticas son ${top3Names}, donde la baja tasa de cumplimiento indica barreras significativas para los usuarios. Estos problemas afectan directamente a la experiencia, generando fricción y posible abandono en tareas clave.`,
+      )
+    }
+    if (globalPctNum < 80) {
+      writeParagraph(
+        `Abordar estas deficiencias podría elevar la experiencia global a un nivel competitivo, reduciendo la tasa de error y mejorando la confianza del usuario.`,
+      )
+    } else {
+      writeParagraph(
+        `El sitio ya muestra un buen nivel, pero siempre hay margen para perfeccionar detalles que pulan la experiencia.`,
+      )
+    }
+    if (top3.length > 0) {
+      writeParagraph(
+        `Priorizar la corrección de "${top3[0].title}" por su alto impacto en la tarea principal y su posible bajo coste de implementación. En segundo lugar, abordar "${top3[1]?.title || 'los problemas de feedback y errores'}", que aunque requiere más esfuerzo, afecta a un volumen significativo de usuarios.`,
+      )
+    } else {
+      writeParagraph(
+        `Se recomienda realizar una revisión periódica para mantener la calidad y detectar posibles degradaciones.`,
+      )
+    }
+    writeParagraph(
+      globalPctNum < 70
+        ? `El producto muestra una base sólida en rendimiento técnico, pero la acumulación de problemas de usabilidad en áreas clave compromete su efectividad. Con mejoras específicas, tiene potencial para alcanzar un estándar notable.`
+        : `El producto muestra una base sólida en rendimiento técnico y un nivel de usabilidad aceptable. Se recomienda seguir iterando para consolidar la experiencia.`,
+    )
   }
   const warningText = useWarningTerm
     ? pluralize(totalWarnings, 'warning', 'warnings')

@@ -38,6 +38,7 @@ function getUsageData() {
   return loadUsage() || {
     jina: { used: 0, windowStart: Date.now() },
     gemini: { used: 0, windowStart: Date.now() },
+    tinyfish: { used: 0, windowStart: Date.now() },
   }
 }
 

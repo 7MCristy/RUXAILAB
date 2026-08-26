@@ -176,6 +176,7 @@ import PageWrapper from '@/shared/views/template/PageWrapper.vue'
 import IntroFinalReport from '@/ux/Heuristic/components/IntroFinalReport.vue'
 import TextareaForm from '@/shared/components/TextareaForm.vue'
 import { generateAiReportWithFallback } from '@/app/services/geminiReportService'
+import { calculateTestTotals } from '@/ux/Heuristic/utils/statistics'
 const store = useStore()
 const router = useRouter()
 
@@ -205,10 +206,7 @@ const commentsCount = computed(() => {
 })
 
 // Total de preguntas
-const totalQuestions = computed(() => {
-  const structure = test.value?.testStructure || []
-  return structure.reduce((sum, h) => sum + (h.questions?.length || 0), 0)
-})
+const totalQuestions = computed(() => calculateTestTotals(test.value?.testStructure || []))
 
 const getHeuristicCommentCount = (heuristic) => {
   const heuComments = heuristicComments[heuristic.id]

@@ -112,11 +112,18 @@
               v-if="geminiHasQuota"
               :key="'gemini-' + tokenUsage.gemini.remaining"
               size="small"
-              :color="tokenUsage.gemini.remaining < tokenUsage.gemini.total * 0.2 ? 'error' : tokenUsage.gemini.remaining < tokenUsage.gemini.total * 0.5 ? 'warning' : 'success'"
+              :color="
+                tokenUsage.gemini.remaining < tokenUsage.gemini.total * 0.2
+                  ? 'error'
+                  : tokenUsage.gemini.remaining < tokenUsage.gemini.total * 0.5
+                    ? 'warning'
+                    : 'success'
+              "
               variant="tonal"
               prepend-icon="mdi-robot-outline"
             >
-              Gemini: {{ tokenUsage.gemini.remaining.toLocaleString() }} / {{ tokenUsage.gemini.total.toLocaleString() }}
+              Gemini: {{ tokenUsage.gemini.remaining.toLocaleString() }} /
+              {{ tokenUsage.gemini.total.toLocaleString() }}
             </v-chip>
             <v-chip
               v-else-if="!geminiHasQuota && jinaHasQuota"
@@ -126,7 +133,8 @@
               variant="tonal"
               prepend-icon="mdi-web"
             >
-              Jina: {{ tokenUsage.jina.remaining.toLocaleString() }} / {{ tokenUsage.jina.total.toLocaleString() }}
+              Jina: {{ tokenUsage.jina.remaining.toLocaleString() }} /
+              {{ tokenUsage.jina.total.toLocaleString() }}
             </v-chip>
             <v-chip
               v-else-if="!geminiHasQuota && !jinaHasQuota && tinyfishHasQuota"
@@ -136,10 +144,16 @@
               variant="tonal"
               prepend-icon="mdi-brain"
             >
-              TinyFish: {{ tokenUsage.tinyfish.remaining.toLocaleString() }} / {{ tokenUsage.tinyfish.total.toLocaleString() }}
+              TinyFish: {{ tokenUsage.tinyfish.remaining.toLocaleString() }} /
+              {{ tokenUsage.tinyfish.total.toLocaleString() }}
             </v-chip>
             <v-chip
-              v-else-if="!geminiHasQuota && !jinaHasQuota && !tinyfishHasQuota && !isPrefetchingAi"
+              v-else-if="
+                !geminiHasQuota &&
+                !jinaHasQuota &&
+                !tinyfishHasQuota &&
+                !isPrefetchingAi
+              "
               :key="'ollama-chip'"
               size="small"
               color="warning"
@@ -240,10 +254,15 @@ import {
 } from '@/ux/Heuristic/utils/statistics'
 import { STUDY_TYPES } from '@/shared/constants/methodDefinitions'
 import {
-  generateAiReportWithOllama,
+  generateAiReportWithFallback,
   parseAiReportSections,
 } from '@/app/services/geminiReportService'
-import { getRemaining, hasQuota, getUsageData, LIMITS } from '@/app/services/tokenTracker'
+import {
+  getRemaining,
+  hasQuota,
+  getUsageData,
+  LIMITS,
+} from '@/app/services/tokenTracker'
 
 const store = useStore()
 const { t } = useI18n()
@@ -364,7 +383,6 @@ const correctComments = async () => {
 }
 */
 
-
 // ============================================================================
 // PREFETCH: Pre-generar secciones de IA cuando el componente se monta
 // para que estén listas cuando el usuario pida el PDF con IA
@@ -377,7 +395,10 @@ const prefetchAiSections = async () => {
   if (isPrefetchingAi.value) return
 
   const currentSnapshot = getCommentsSnapshot()
-  if (cachedAiSections.value && lastCommentsSnapshot.value === currentSnapshot) {
+  if (
+    cachedAiSections.value &&
+    lastCommentsSnapshot.value === currentSnapshot
+  ) {
     console.log('[Prefetch] ℹ️ Comentarios sin cambios, usando caché')
     return
   }
@@ -401,7 +422,10 @@ const prefetchAiSections = async () => {
     cachedAiContent.value = aiContent
     lastCommentsSnapshot.value = currentSnapshot
 
-    console.log('[Prefetch] ✅ Secciones IA cacheadas:', Object.keys(aiSections).filter(k => aiSections[k]))
+    console.log(
+      '[Prefetch] ✅ Secciones IA cacheadas:',
+      Object.keys(aiSections).filter((k) => aiSections[k]),
+    )
   } catch (error) {
     console.error('[Prefetch] ❌ Error pre-generando secciones IA:', error)
     prefetchError.value = error?.message || 'Error al generar texto con IA'
@@ -602,36 +626,93 @@ const buildFallbackConclusion = () => {
     }))
     .sort((left, right) => left.percentage - right.percentage)
 
-  const weakestHeuristics = rankingItems.slice(0, 2)
-
   if (!rankingItems.length) {
     return test.value.studyConclusion || ''
   }
 
-  const globalAverage = Number.parseFloat(
+  const globalCompliance = Number.parseFloat(
     statisticsData.value?.average ||
       evaluatorPercentages.value?.globalAverage ||
       0,
   )
-  const normalizedAverage = Number.isFinite(globalAverage)
-    ? globalAverage.toFixed(2)
-    : '0.00'
-  const weakestText = weakestHeuristics
-    .map(
-      (item) =>
-        `${item.name} (${Number.isFinite(item.percentage) ? item.percentage.toFixed(2) : '0.00'}%)`,
-    )
-    .join(' y ')
+  const globalSeverity = getSeverityLabel(globalCompliance)
+  const top3Critical = rankingItems.slice(0, 3)
+  const globalWarnings = rankingItems.filter(
+    (h) => h.percentage < 50,
+  ).length
 
-  return [
-    `El sistema presenta un cumplimiento global del ${normalizedAverage}%, con un nivel de severidad ${getSeverityLabel(normalizedAverage)}.`,
-    weakestText
-      ? `Las principales oportunidades de mejora se concentran en ${weakestText}, por lo que conviene priorizar estas heurísticas en la siguiente iteración de diseño.`
-      : '',
-    'La mejora de estos puntos permitiría reforzar la consistencia, reducir la fricción de uso y consolidar una experiencia más estable para los distintos perfiles de evaluación.',
-  ]
-    .filter(Boolean)
-    .join(' ')
+  const evaluatorItems = evaluatorPercentages.value?.items || []
+  const evaluatorSummary = evaluatorItems.length
+    ? evaluatorItems
+        .map((ev, i) => `Ev${i + 1}: ${ev.percentage}%`)
+        .join(', ')
+    : ''
+
+  // 1. Determinar nivel de riesgo
+  let riskLevel = 'óptimo'
+  if (globalCompliance < 60) riskLevel = 'crítico'
+  else if (globalCompliance < 75) riskLevel = 'mejorable'
+
+  const conclusion = []
+
+  // Bloque 1: Síntesis ejecutiva
+  conclusion.push(
+    `El sitio presenta un nivel de usabilidad ${riskLevel}, con un cumplimiento global del ${Number.isFinite(globalCompliance) ? globalCompliance.toFixed(1) : '0.0'}% y ${globalWarnings} advertencias detectadas.`,
+  )
+
+  // Bloque 2: Hallazgos clave con impacto
+  if (top3Critical.length > 0) {
+    const criticalAreas = top3Critical
+      .map(
+        (h) =>
+          `${h.name} (${Number.isFinite(h.percentage) ? h.percentage.toFixed(1) : '0.0'}%)`,
+      )
+      .join(', ')
+    conclusion.push(
+      `Las áreas más críticas son ${criticalAreas}, donde la baja tasa de cumplimiento indica barreras significativas para los usuarios.`,
+      `Estos problemas afectan directamente a la experiencia, generando fricción y posible abandono en tareas clave.`,
+    )
+  } else {
+    conclusion.push(
+      `No se han identificado áreas críticas por debajo del umbral, aunque se recomienda revisar los puntos con menor puntuación.`,
+    )
+  }
+
+  // Bloque 3: Potencial de mejora
+  if (globalCompliance < 80) {
+    conclusion.push(
+      `Abordar estas deficiencias podría elevar la experiencia global a un nivel competitivo, reduciendo la tasa de error y mejorando la confianza del usuario.`,
+    )
+  } else {
+    conclusion.push(
+      `El sitio ya muestra un buen nivel, pero siempre hay margen para perfeccionar detalles que pulan la experiencia.`,
+    )
+  }
+
+  // Bloque 4: Hoja de ruta
+  if (top3Critical.length > 0) {
+    const first = top3Critical[0].name
+    const second =
+      top3Critical[1]?.name || 'los problemas de feedback y errores'
+    conclusion.push(
+      `Priorizar la corrección de "${first}" por su alto impacto en la tarea principal y su posible bajo coste de implementación.`,
+      `En segundo lugar, abordar "${second}", que aunque requiere más esfuerzo, afecta a un volumen significativo de usuarios.`,
+    )
+  } else {
+    conclusion.push(
+      `Se recomienda realizar una revisión periódica para mantener la calidad y detectar posibles degradaciones.`,
+    )
+  }
+
+  // Bloque 5: Valoración profesional
+  const base = `El producto muestra una base sólida en rendimiento técnico`
+  const closure =
+    globalCompliance < 70
+      ? `, pero la acumulación de problemas de usabilidad en áreas clave compromete su efectividad. Con mejoras específicas, tiene potencial para alcanzar un estándar notable.`
+      : ` y un nivel de usabilidad aceptable. Se recomienda seguir iterando para consolidar la experiencia.`
+  conclusion.push(base + closure)
+
+  return conclusion.join(' ')
 }
 
 const processAnswers = (answersArray) => {
@@ -644,117 +725,135 @@ const processAnswers = (answersArray) => {
 }
 
 // ============================================================================
-  // FUNCIÓN HÍBRIDA: buildFinalReportItem
-  // - Mantiene la interfaz de checkboxes para el usuario
-  // - Pero SIEMPRE incluye todos los datos (como en la versión recuperada)
-  // - Añade logs detallados (como en la versión recuperada)
-  // ============================================================================
-  const buildFinalReportItem = () => {
-    statisticsData.value = finalResult(resultEvaluator.value)
-    const heuristicRankingItems = [...(heuristicsStatistics.value?.items || [])]
-      .map((item) => ({
-        ...item,
-        percentage: Number.parseFloat(item.percentage || '0'),
-      }))
-      .sort((left, right) => left.percentage - right.percentage)
-      .map((item, index) => ({
-        position: index + 1,
-        name: item.name,
-        percentage: item.percentage,
-        severity: getSeverityLabel(item.percentage),
-      }))
+// FUNCIÓN HÍBRIDA: buildFinalReportItem
+// - Mantiene la interfaz de checkboxes para el usuario
+// - Pero SIEMPRE incluye todos los datos (como en la versión recuperada)
+// - Añade logs detallados (como en la versión recuperada)
+// ============================================================================
+const buildFinalReportItem = () => {
+  statisticsData.value = finalResult(resultEvaluator.value)
+  const heuristicRankingItems = [...(heuristicsStatistics.value?.items || [])]
+    .map((item) => ({
+      ...item,
+      percentage: Number.parseFloat(item.percentage || '0'),
+    }))
+    .sort((left, right) => left.percentage - right.percentage)
+    .map((item, index) => ({
+      position: index + 1,
+      name: item.name,
+      percentage: item.percentage,
+      severity: getSeverityLabel(item.percentage),
+    }))
 
-    const testTitle = test.value.testTitle || test.value.title || ''
-    const testDescription = test.value.testDescription || test.value.description || ''
+  const testTitle = test.value.testTitle || test.value.title || ''
+  const testDescription =
+    test.value.testDescription || test.value.description || ''
 
-    const reportItem = {
-      testTitle,
-      title: testTitle,
-      testUrl: getTestUrl(),
-      creationDate: test.value.creationDate,
-      testDescription,
-      cooperatorsEmail: getCooperatorEmails(),
-      creatorEmail: pdfConfig.anonymizeEvaluators
-        ? null
-        : test.value.testAdmin?.email || '',
-      finalReport: test.value.studyConclusion || buildFallbackConclusion(),
-      studyConclusion: test.value.studyConclusion || buildFallbackConclusion(),
-      allOptions: test.value.testOptions,
-      // SIEMPRE incluir respuestas (versión recuperada)
-      allAnswers: processAnswers(answers.value),
-      finalResult: statisticsData.value,
-      finalResultData: statisticsData.value,
-      taskAnswers: processAnswers(Object.values(testAnswerDocument.value?.taskAnswers || {})),
-      testStructure: test.value.testStructure,
-      // SIEMPRE incluir estadísticas (versión recuperada)
-      statisticsByEvaluatorAnswer: heuristicsEvaluator.value,
-      heuristicsEvaluator: heuristicsEvaluator.value,
-      statisticsByHeuristics: heuristicsStatistics.value,
-      heuristicsStatistics: heuristicsStatistics.value,
-      timeByHeuristics: timeByHeuristics.value,
-      generalStatistics: statisticsData.value,
-      statisticsTable: store.state.Answer.evaluatorStatistics,
-      evaluatorTimeItems: store.state.Answer.evaluatorStatistics?.items || [],
-      type: testAnswerDocument.value?.type || STUDY_TYPES.HEURISTIC,
-      // SIEMPRE incluir comentarios originales
-      heuristicComments: props.heuristicComments,
-      // Log para verificar comentarios
-      _commentDebug: (() => {
-        const commentsToUse = props.heuristicComments
-        console.log('[buildFinalReportItem] 🎯 heuristicComments a incluir:', commentsToUse)
-        console.log('[buildFinalReportItem] 📊 Número de heurísticas con comentarios:', 
-          Object.keys(commentsToUse || {}).length)
-        console.log('[buildFinalReportItem] ⚡ Usando comentarios: ORIGINALES')
-        return null
-      })(),
-      evaluatorPercentages: evaluatorPercentages.value,
-      heuristicRanking: {
-        items: heuristicRankingItems,
-      },
-      participants: getCooperatorEmails().map((email) => ({ email })),
-      anonymized: pdfConfig.anonymizeEvaluators,
-    }
-
-    // Logs detallados (versión recuperada)
-    console.log('[FinalReportItem] 📦 Datos preparados para IA:', {
-      titulo: reportItem.title,
-      url: reportItem.testUrl,
-      descripcion: reportItem.testDescription?.substring(0, 100),
-      numHeuristicas: reportItem.statisticsByHeuristics?.items?.length || 0,
-      numEvaluadores: reportItem.statisticsTable?.items?.length || 0,
-      numRespuestas: reportItem.allAnswers?.length || 0,
-      numEstructuras: reportItem.testStructure?.length || 0,
-      cumplimientoGlobal: reportItem.generalStatistics?.average,
-      tieneComentarios: Object.keys(reportItem.heuristicComments || {}).length > 0,
-      rankingHeuristicas: heuristicRankingItems.map(h => `${h.name}: ${h.percentage}%`),
-    })
-
-    return reportItem
+  const reportItem = {
+    testTitle,
+    title: testTitle,
+    testUrl: getTestUrl(),
+    creationDate: test.value.creationDate,
+    testDescription,
+    cooperatorsEmail: getCooperatorEmails(),
+    creatorEmail: pdfConfig.anonymizeEvaluators
+      ? null
+      : test.value.testAdmin?.email || '',
+    finalReport: test.value.studyConclusion || '',
+    studyConclusion: test.value.studyConclusion || '',
+    allOptions: test.value.testOptions,
+    // SIEMPRE incluir respuestas (versión recuperada)
+    allAnswers: processAnswers(answers.value),
+    finalResult: statisticsData.value,
+    finalResultData: statisticsData.value,
+    taskAnswers: processAnswers(
+      Object.values(testAnswerDocument.value?.taskAnswers || {}),
+    ),
+    testStructure: test.value.testStructure,
+    // SIEMPRE incluir estadísticas (versión recuperada)
+    statisticsByEvaluatorAnswer: heuristicsEvaluator.value,
+    heuristicsEvaluator: heuristicsEvaluator.value,
+    statisticsByHeuristics: heuristicsStatistics.value,
+    heuristicsStatistics: heuristicsStatistics.value,
+    timeByHeuristics: timeByHeuristics.value,
+    generalStatistics: statisticsData.value,
+    statisticsTable: store.state.Answer.evaluatorStatistics,
+    evaluatorTimeItems: store.state.Answer.evaluatorStatistics?.items || [],
+    type: testAnswerDocument.value?.type || STUDY_TYPES.HEURISTIC,
+    // SIEMPRE incluir comentarios originales
+    heuristicComments: props.heuristicComments,
+    // Log para verificar comentarios
+    _commentDebug: (() => {
+      const commentsToUse = props.heuristicComments
+      console.log(
+        '[buildFinalReportItem] 🎯 heuristicComments a incluir:',
+        commentsToUse,
+      )
+      console.log(
+        '[buildFinalReportItem] 📊 Número de heurísticas con comentarios:',
+        Object.keys(commentsToUse || {}).length,
+      )
+      console.log('[buildFinalReportItem] ⚡ Usando comentarios: ORIGINALES')
+      return null
+    })(),
+    evaluatorPercentages: evaluatorPercentages.value,
+    heuristicRanking: {
+      items: heuristicRankingItems,
+    },
+    participants: getCooperatorEmails().map((email) => ({ email })),
+    anonymized: pdfConfig.anonymizeEvaluators,
   }
+
+  // Logs detallados (versión recuperada)
+  console.log('[FinalReportItem] 📦 Datos preparados para IA:', {
+    titulo: reportItem.title,
+    url: reportItem.testUrl,
+    descripcion: reportItem.testDescription?.substring(0, 100),
+    numHeuristicas: reportItem.statisticsByHeuristics?.items?.length || 0,
+    numEvaluadores: reportItem.statisticsTable?.items?.length || 0,
+    numRespuestas: reportItem.allAnswers?.length || 0,
+    numEstructuras: reportItem.testStructure?.length || 0,
+    cumplimientoGlobal: reportItem.generalStatistics?.average,
+    tieneComentarios:
+      Object.keys(reportItem.heuristicComments || {}).length > 0,
+    rankingHeuristicas: heuristicRankingItems.map(
+      (h) => `${h.name}: ${h.percentage}%`,
+    ),
+  })
+
+  return reportItem
+}
 
 // ============================================================================
 // FUNCIÓN: generateAiFinalReport (con logs detallados de la versión recuperada)
 // ============================================================================
 const generateAiFinalReport = async (finalReportItem) => {
-  console.log('[generateAiFinalReport] 🎯 Iniciando generación de informe con IA...')
+  console.log(
+    '[generateAiFinalReport] 🎯 Iniciando generación de informe con IA...',
+  )
 
   const tokenInterval = setInterval(() => {
     forceRefreshTokens()
   }, 1500)
 
   try {
-    // ✅ Temporal: Forzar Ollama directo para pruebas (saltando selección Gemini/Ollama)
-    const result = await generateAiReportWithOllama(finalReportItem)
+    // Usar flujo unificado: Ollama con fallback a texto genérico
+    const result = await generateAiReportWithFallback(finalReportItem, {
+      skipGemini: true,
+    })
 
     const content = String(result?.content || '').trim()
-    const webResearch = typeof result === 'string' ? '' : (result.webResearch || '')
-    const source = typeof result === 'string' ? '' : (result.source || '') || ''
+    const webResearch =
+      typeof result === 'string' ? '' : result.webResearch || ''
+    const source = typeof result === 'string' ? '' : result.source || '' || ''
 
     // ✅ NUEVO: Mostrar mensaje si se agotan los tokens de web search
-    webSearchMessage.value = typeof result === 'string' ? '' : (result.message || '')
+    webSearchMessage.value =
+      typeof result === 'string' ? '' : result.message || ''
 
     // ✅ NUEVO: Establecer la fuente (modelo IA) para que aparezca en el título de la vista previa
-    aiSource.value = source || (typeof result !== 'string' ? result.source || '' : '')
+    aiSource.value =
+      source || (typeof result !== 'string' ? result.source || '' : '')
 
     if (aiSource.value) {
       console.log('[generateAiFinalReport] 🔌 Fuente:', aiSource.value)
@@ -767,14 +866,25 @@ const generateAiFinalReport = async (finalReportItem) => {
     }
 
     clearInterval(tokenInterval)
-    return { content, webResearch, source: aiSource.value || '', sections: result.sections || null }
-    
+    return {
+      content,
+      webResearch,
+      source: aiSource.value || '',
+      sections: result.sections || null,
+    }
   } catch (error) {
-    console.error('[generateAiFinalReport] ❌ Error generando informe con IA:', error)
+    console.error(
+      '[generateAiFinalReport] ❌ Error generando informe con IA:',
+      error,
+    )
     clearInterval(tokenInterval)
     aiSource.value = ''
-    const fallbackContent = finalReportItem.finalReport || buildFallbackConclusion()
-    return { content: String(fallbackContent), webResearch: '', source: '', sections: null }
+    return {
+      content: '',
+      webResearch: '',
+      source: 'fallback',
+      sections: null,
+    }
   }
 }
 
@@ -853,7 +963,7 @@ const openPdfPreview = async (
 const previewPdf = async () => {
   isLoading.value = true
   forceRefreshTokens()
-  
+
   startPreview('Vista previa del informe sin IA', 'Construyendo PDF...')
   try {
     const reportItem = buildFinalReportItem()
@@ -862,7 +972,10 @@ const previewPdf = async () => {
     })
   } catch (error) {
     console.error('[previewPdf] ❌ Error:', error)
-    showPreviewError(error, 'No se pudo generar la vista previa. Verifica que el test tenga datos de evaluación.')
+    showPreviewError(
+      error,
+      'No se pudo generar la vista previa. Verifica que el test tenga datos de evaluación.',
+    )
   } finally {
     isLoading.value = false
     forceRefreshTokens()
@@ -873,10 +986,11 @@ const previewPdfWithAi = async () => {
   isLoading.value = true
   aiSource.value = ''
   forceRefreshTokens()
-  
+
   const currentSnapshot = getCommentsSnapshot()
-  const useCache = cachedAiSections.value && lastCommentsSnapshot.value === currentSnapshot
-  
+  const useCache =
+    cachedAiSections.value && lastCommentsSnapshot.value === currentSnapshot
+
   startPreview(
     'Vista previa del informe',
     useCache
@@ -900,8 +1014,10 @@ const previewPdfWithAi = async () => {
     }
 
     finalReportItem.aiSections = aiSections
-    finalReportItem.finalReport = aiSections.conclusion || cachedAiContent.value || ''
-    finalReportItem.studyConclusion = aiSections.conclusion || cachedAiContent.value || ''
+    finalReportItem.finalReport =
+      aiSections.conclusion || cachedAiContent.value?.content || ''
+    finalReportItem.studyConclusion =
+      aiSections.conclusion || cachedAiContent.value?.content || ''
 
     // Distribuir secciones parseadas
     if (aiSections) {
@@ -909,7 +1025,8 @@ const previewPdfWithAi = async () => {
       finalReportItem.aiIntroduccion = aiSections.introduccion || ''
       finalReportItem.aiPorcentajes = aiSections.porcentajes || ''
       finalReportItem.aiTiposRespuesta = aiSections.tipos_respuesta || ''
-      finalReportItem.aiAnalisisHeuristico = aiSections.analisis_heuristico || ''
+      finalReportItem.aiAnalisisHeuristico =
+        aiSections.analisis_heuristico || ''
       finalReportItem.aiComparativa = aiSections.comparativa || ''
       finalReportItem.aiConclusion = aiSections.conclusion || ''
     }
@@ -920,10 +1037,15 @@ const previewPdfWithAi = async () => {
     previewTitle.value = hasLabel
       ? `Vista previa del informe (${sourceLabel})`
       : aiSource.value
-      ? `Vista previa del informe (${aiSource.value})`
-      : 'Vista previa del informe (sin IA)'
+        ? `Vista previa del informe (${aiSource.value})`
+        : 'Vista previa del informe (sin IA)'
 
-    await openPdfPreview(finalReportItem, '_ai', { showQuickSummary: false }, generateHeuristicPdfWithAi)
+    await openPdfPreview(
+      finalReportItem,
+      '_ai',
+      { showQuickSummary: false },
+      generateHeuristicPdfWithAi,
+    )
   } catch (error) {
     console.error('[previewPdfWithAi] ❌ Error generando PDF con IA:', error)
     previewStatus.value =
@@ -931,12 +1053,15 @@ const previewPdfWithAi = async () => {
 
     try {
       const fallbackItem = buildFinalReportItem()
-      fallbackItem.finalReport = buildFallbackConclusion()
-      fallbackItem.studyConclusion = fallbackItem.finalReport
       previewTitle.value = 'Vista previa del informe (sin IA)'
-      await openPdfPreview(fallbackItem, '_ai_fallback', {
-        showQuickSummary: false,
-      }, generateHeuristicPdf)
+      await openPdfPreview(
+        fallbackItem,
+        '_ai_fallback',
+        {
+          showQuickSummary: false,
+        },
+        generateHeuristicPdf,
+      )
     } catch (fallbackError) {
       showPreviewError(
         fallbackError,
@@ -961,7 +1086,10 @@ watch(
   () => props.heuristicComments,
   () => {
     const currentSnapshot = getCommentsSnapshot()
-    if (cachedAiSections.value && lastCommentsSnapshot.value !== currentSnapshot) {
+    if (
+      cachedAiSections.value &&
+      lastCommentsSnapshot.value !== currentSnapshot
+    ) {
       console.log('[Prefetch] 🔄 Comentarios cambiados, invalidando caché IA')
       cachedAiSections.value = null
       cachedAiContent.value = ''

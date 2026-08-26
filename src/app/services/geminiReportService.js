@@ -248,10 +248,12 @@ export async function generateAiReportWithOllama(
       throw new Error('Ollama no está disponible')
     }
 
-    const body = buildOllamaRequestBody(finalReportItem)
+    const body = buildOllamaRequestBody(finalReportItem, model)
+    const bodyJson = JSON.stringify(body)
     console.log('[Ollama] Petición preparada:', {
       model: body.model,
       stream: body.stream,
+      bodySizeKB: (bodyJson.length / 1024).toFixed(1),
       promptChars: body.messages?.reduce(
         (total, message) => total + String(message.content || '').length,
         0,
@@ -260,11 +262,22 @@ export async function generateAiReportWithOllama(
     })
 
     const startedAt = Date.now()
-    const response = await fetch(ollamaUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    })
+    let response
+    try {
+      response = await fetch(ollamaUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: bodyJson,
+      })
+    } catch (fetchError) {
+      console.error('[Ollama] Fetch falló:', {
+        name: fetchError?.name,
+        message: fetchError?.message,
+        durationMs: Date.now() - startedAt,
+        url: ollamaUrl,
+      })
+      throw fetchError
+    }
 
     console.log('[Ollama] Respuesta HTTP:', {
       status: response.status,
@@ -293,22 +306,12 @@ export async function generateAiReportWithOllama(
       throw new Error('Ollama devolvió respuesta vacía')
     }
 
-    return { content, webResearch: '' }
+    return { content, webResearch: '', source: 'ollama' }
   } catch (error) {
     throw error
   }
 }
 
-/**
- * Genera la conclusión de fallback (sin IA)
- */
-function buildFallbackConclusionText() {
-  return `El sistema presenta un nivel de cumplimiento que requiere atención en múltiples áreas. 
-  
-Las heurísticas con menor puntuación indican oportunidades claras de mejora en la experiencia de usuario. Se recomienda priorizar la revisión de los criterios que obtuvieron las calificaciones más bajas, ya que estos representan los mayores puntos de fricción para los usuarios.
-
-La implementación de las mejoras sugeridas permitiría elevar significativamente la usabilidad general del sistema, reduciendo errores y aumentando la satisfacción de los usuarios en futuras iteraciones.`
-}
 
 // ════════════════════════════════════════════════════════════════════════════════
 // HELPERS: Parseo de respuesta IA en secciones
@@ -339,6 +342,7 @@ function cleanSectionText(text) {
   if (!text || typeof text !== 'string') return ''
   const original = text
   const cleaned = stripMarkdown(text)
+    .replace(/={3,}SECCION:\w+={3,}/gi, '')
     .replace(/\[PROPOSITO\]/gi, '')
     .replace(/\[\/PROPOSITO\]/gi, '')
     .replace(/\[ESTADO_ACTUAL\]/gi, '')
@@ -351,18 +355,62 @@ function cleanSectionText(text) {
     .replace(/\[\/RESUMEN_EJECUTIVO\]/gi, '')
     .replace(/\[IMPACTO_MEJORA\]/gi, '')
     .replace(/\[\/IMPACTO_MEJORA\]/gi, '')
+    .replace(/\[ESTADO_ACTUAL\]/gi, '')
+    .replace(/\[\/ESTADO_ACTUAL\]/gi, '')
+    .replace(/\[IMPACTO_NEGATIVO\]/gi, '')
+    .replace(/\[\/IMPACTO_NEGATIVO\]/gi, '')
+    .replace(/\[PROPUESTAS_DE_MEJORA\]/gi, '')
+    .replace(/\[\/PROPUESTAS_DE_MEJORA\]/gi, '')
     .replace(/\/PROPOSITO/gi, '')
     .replace(/\/ESTADO_ACTUAL/gi, '')
     .replace(/\/IMPACTO_EXPERIENCIA/gi, '')
     .replace(/\/PLAN_ACCION/gi, '')
     .replace(/\/RESUMEN_EJECUTIVO/gi, '')
     .replace(/\/IMPACTO_MEJORA/gi, '')
+    .replace(/\/IMPACTO_NEGATIVO/gi, '')
+    .replace(/\/PROPUESTAS_DE_MEJORA/gi, '')
     .replace(/\n{3,}/g, '\n\n')
     .trim()
   console.log(
     `[cleanSectionText] Original: ${original.length} chars → Limpio: ${cleaned.length} chars`,
   )
   return cleaned
+}
+
+/**
+ * Limpia residuos de instrucciones de formato que el modelo de IA copia textualmente.
+ * Elimina indicadores de longitud como "(1-2 frases)", "(2 recomendaciones...)", etc.
+ * @param {string} text - Texto generado por la IA
+ * @returns {string} Texto limpio
+ */
+function cleanAiOutput(text) {
+  if (!text || typeof text !== 'string') return text
+  return (
+    text
+      // Eliminar cualquier cosa entre paréntesis que contenga palabras clave de formato
+      .replace(
+        /\([^)]*\b(frases?|recomendaciones?|oraciones?|bloques?|párrafos?)\b[^)]*\)/gi,
+        '',
+      )
+      // Eliminar residual de etiquetas de ejemplo: [PROPUESTASDEMEJORA], [IMPACTONEGATIVO], etc.
+      .replace(/\[PROPUESTASDE?MEJORA\]/gi, '')
+      .replace(/\[IMPACTO?NEGATIVO\]/gi, '')
+      .replace(/\[ESTADOACTUAL\]/gi, '')
+      .replace(/\[RESUMENEJECUTIVO\]/gi, '')
+      // Eliminar etiquetas válidas sueltas en líneas propias (sin contenido después)
+      .replace(/^\s*\[ESTADO_ACTUAL\]\s*$/gm, '')
+      .replace(/^\s*\[IMPACTO_NEGATIVO\]\s*$/gm, '')
+      .replace(/^\s*\[PROPUESTAS_DE_MEJORA\]\s*$/gm, '')
+      .replace(/^\s*\[RESUMEN_EJECUTIVO\]\s*$/gm, '')
+      // Eliminar líneas que son solo instrucciones del prompt
+      .replace(/^\s*Aquí va\s*/gim, '')
+      .replace(/^\s*Interpreta[^[\n]*$/gm, '')
+      .replace(/^\s*Efecto negativo[^[\n]*$/gm, '')
+      .replace(/^\s*Qué mejoraría[^[\n]*$/gm, '')
+      // Limpiar líneas vacías múltiples
+      .replace(/\n{3,}/g, '\n\n')
+      .trim()
+  )
 }
 
 /**
@@ -384,6 +432,8 @@ export function parseAiReportSections(content) {
   if (typeof textContent !== 'string') {
     textContent = String(textContent || '').trim()
   }
+  // Limpiar residuos de instrucciones de formato del modelo
+  textContent = cleanAiOutput(textContent)
   if (!textContent || textContent.length === 0) {
     console.log(
       '[parseAiReportSections] ❌ Contenido inválido:',
@@ -409,7 +459,7 @@ export function parseAiReportSections(content) {
   }
 
   const regex = /===SECCION:(\w+)===/g
-  const parts = content.split(regex)
+  const parts = textContent.split(regex)
   const sections = {
     introduccion: '',
     porcentajes: '',
@@ -493,14 +543,16 @@ function distributeTextByKeywords(content) {
     ],
   }
   for (const line of lines) {
-    const lower = line.toLowerCase()
+    const trimmedLine = line.trim()
+    if (/^={3,}SECCION:\w+={3,}$/i.test(trimmedLine)) continue
+    const lower = trimmedLine.toLowerCase()
     for (const [section, keywords] of Object.entries(keywordMap)) {
       if (keywords.some((k) => lower.includes(k))) {
         currentSection = section
         break
       }
     }
-    sections[currentSection] += line + '\n'
+    sections[currentSection] += trimmedLine + '\n'
   }
   return Object.fromEntries(
     Object.entries(sections).map(([k, v]) => [k, cleanSectionText(v)]),
@@ -605,7 +657,6 @@ export async function generateAiReportWithFallback(
       'http://localhost:11434/api/chat',
     skipGemini = false,
     skipOllama = false,
-    buildFallback,
   } = options
 
   console.log('[AI] ===== INICIO GENERACIÓN INFORME CON IA =====')
@@ -682,20 +733,10 @@ export async function generateAiReportWithFallback(
     }
   }
 
-  // Fallback final: conclusión genérica o personalizada
-  console.log('[AI] 📝 Usando conclusión de fallback (sin IA)')
-  console.log('[AI] ⚠️ AMBAS IAs fallaron. Usando texto de respaldo.')
-  console.log('[AI] ===== FIN GENERACIÓN (Fallback) =====')
-  const fallbackText =
-    typeof buildFallback === 'function'
-      ? buildFallback()
-      : buildFallbackConclusionText()
-  return {
-    content: fallbackText,
-    webResearch: '',
-    source: 'fallback',
-    sections: null,
-  }
+  // Fallback final: lanzar error para que pdfGenerator use sus propios textos
+  console.log('[AI] ⚠️ AMBAS IAs fallaron. El PDF usará sus textos de respaldo.')
+  console.log('[AI] ===== FIN GENERACIÓN (Sin IA) =====')
+  throw new Error('No hay IA disponible. El PDF generará su propio contenido.')
 }
 
 /**

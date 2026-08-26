@@ -13,7 +13,7 @@ function getOllamaBaseUrl() {
 export const ollamaReport = functions.onRequest({
   opts: {
     cors: true,
-    timeoutSeconds: 300,
+    timeoutSeconds: 300000,
     memory: '1GiB',
   },
   handler: async (req, res) => {

@@ -1,6 +1,6 @@
 import { buildHeuristicEvidence } from './buildHeuristicEvidence'
 import { getSeverityLabelFromPercentage } from './pdfGenerator'
-import { getSeverityLabel } from './statistics'
+import { getSeverityLabel, calculateResponseTotals } from './statistics'
 
 const DEFAULT_MODEL = 'qwen2.5:latest'
 
@@ -116,14 +116,14 @@ function stripHtml(value = '') {
     .trim()
 }
 
-
 function getQuestionSummaries(reportItem, heuristicIndex, evidence) {
   const testStructure = reportItem?.testStructure || []
   const allAnswers = reportItem?.allAnswers || []
   const heuristic = testStructure[heuristicIndex]
   if (!heuristic) return []
 
-  const evidenceQuestions = evidence?.heuristics?.[heuristicIndex]?.questionSummaries || []
+  const evidenceQuestions =
+    evidence?.heuristics?.[heuristicIndex]?.questionSummaries || []
   const questions = Array.isArray(heuristic?.questions)
     ? heuristic.questions
     : Array.isArray(heuristic?.heuristicQuestions)
@@ -132,21 +132,29 @@ function getQuestionSummaries(reportItem, heuristicIndex, evidence) {
 
   return questions.map((question, questionIndex) => {
     const evQ = evidenceQuestions[questionIndex] || {}
-    const title = question?.title || question?.question || question?.name || `Pregunta ${questionIndex + 1}`
+    const title =
+      question?.title ||
+      question?.question ||
+      question?.name ||
+      `Pregunta ${questionIndex + 1}`
     const questionLabel = `Q${questionIndex + 1}`
     const descriptions = (question.descriptions || [])
       .map((d) => (d.title ? `${d.title}: ${d.text || ''}` : d.text || ''))
       .filter(Boolean)
       .join('; ')
 
-
-    const imageUrls = allAnswers.flatMap((answer) => {
-      const qData = answer?.heuristicQuestions?.[heuristicIndex]?.heuristicQuestions?.[questionIndex]
-      if (!qData) return []
-      const imgs = Array.isArray(qData.images) ? qData.images : []
-      const fromLegacy = qData.answerImageUrl ? [qData.answerImageUrl] : []
-      return [...imgs.map((img) => img.url).filter(Boolean), ...fromLegacy]
-    }).filter(Boolean)
+    const imageUrls = allAnswers
+      .flatMap((answer) => {
+        const qData =
+          answer?.heuristicQuestions?.[heuristicIndex]?.heuristicQuestions?.[
+            questionIndex
+          ]
+        if (!qData) return []
+        const imgs = Array.isArray(qData.images) ? qData.images : []
+        const fromLegacy = qData.answerImageUrl ? [qData.answerImageUrl] : []
+        return [...imgs.map((img) => img.url).filter(Boolean), ...fromLegacy]
+      })
+      .filter(Boolean)
 
     return {
       title: stripHtml(title),
@@ -154,7 +162,10 @@ function getQuestionSummaries(reportItem, heuristicIndex, evidence) {
       descriptions: descriptions || null,
       text: stripHtml(question?.text || ''),
       average: evQ.average ?? null,
-      averagePercent: evQ.averagePercentage != null ? evQ.averagePercentage.toFixed(1) + '%' : 'N/D',
+      averagePercent:
+        evQ.averagePercentage != null
+          ? evQ.averagePercentage.toFixed(1) + '%'
+          : 'N/D',
       warnings: evQ.warnings || 0,
       evaluatorCount: evQ.evaluatorCount || 0,
       imageUrls: [...new Set(imageUrls)].slice(0, 5),
@@ -214,9 +225,13 @@ function buildHeuristicDetailData(reportItem, heuristicStats, evidence) {
       name: item.name,
       title: evidenceItem.title || item.name || 'Dato no disponible',
       position: evidenceItem.position ?? index + 1,
-      compliance: evidenceItem.percentage ?? toFiniteNumber(item?.percentage),
+      compliance:
+        Math.round(
+          (evidenceItem.percentage ?? toFiniteNumber(item?.percentage)) * 100,
+        ) / 100,
       severity:
-        evidenceItem.severity || getSeverityLabel(toFiniteNumber(item?.percentage)),
+        evidenceItem.severity ||
+        getSeverityLabel(toFiniteNumber(item?.percentage)),
       standardDeviation: evidenceItem.sd ?? toFiniteNumber(item?.sd),
       average: toFiniteNumber(item?.average),
       max: toFiniteNumber(item?.max),
@@ -234,7 +249,9 @@ function buildHeuristicDetailData(reportItem, heuristicStats, evidence) {
           .join('; ') || null,
       questionAverageMean: evidenceItem.questionAverageMean ?? null,
       questionAverageMeanPercentage:
-        evidenceItem.questionAverageMeanPercentage ?? null,
+        evidenceItem.questionAverageMeanPercentage != null
+          ? Math.round(evidenceItem.questionAverageMeanPercentage * 10) / 10
+          : null,
       evaluatorCount: evidenceItem.evaluatorCount ?? null,
       allComments: questions.flatMap((q) => q.commentDetails || []),
       manualComment: (() => {
@@ -253,10 +270,78 @@ function buildHeuristicDetailData(reportItem, heuristicStats, evidence) {
   })
 }
 
+/**
+ * Genera el texto de detalle de cada heurística para el prompt.
+ *
+ * @param {Array} sortedHeuristics - Heurísticas ordenadas por impacto
+ * @param {Object} options
+ * @param {boolean} options.condensed - Si true, las heurísticas Leves se resumen en una línea
+ * @returns {string} Texto formateado
+ */
+function buildHeuristicsDetailText(
+  sortedHeuristics,
+  { condensed = false } = {},
+) {
+  return sortedHeuristics
+    .map((h) => {
+      const isLeve = h.severity === 'Leve'
+      const isModerada = h.severity === 'Moderada'
+
+      if (condensed && isLeve) {
+        return `--- H${h.position} (${h.severity}, ${h.compliance != null ? h.compliance.toFixed(1) + '%' : 'N/D'}) --- Sin problemas relevantes.`
+      }
+
+      if (condensed && isModerada) {
+        const comments =
+          h.allComments && h.allComments.length > 0
+            ? ` Comentarios: ${h.allComments.map((c) => `"${c.text}"`).join('; ')}`
+            : ''
+        return `--- H${h.position} (${h.severity}, ${h.compliance != null ? h.compliance.toFixed(1) + '%' : 'N/D'}) | SD: ${h.standardDeviation != null ? h.standardDeviation.toFixed(2) : 'N/D'} | Warnings: ${h.warnings}${comments}`
+      }
+
+      if (condensed) {
+        const comments =
+          h.allComments && h.allComments.length > 0
+            ? ` Comentarios: ${h.allComments.map((c) => `"${c.text}"`).join('; ')}`
+            : ''
+        return `--- H${h.position} (${h.severity}, ${h.compliance != null ? h.compliance.toFixed(1) + '%' : 'N/D'}) | SD: ${h.standardDeviation != null ? h.standardDeviation.toFixed(2) : 'N/D'} | Warnings: ${h.warnings}${comments}`
+      }
+
+      const imageLine = h.imageSummary
+        ? `  Evidencias visuales: ${h.imageSummary}`
+        : ''
+      const commentsBlock =
+        h.allComments && h.allComments.length > 0
+          ? `  Comentarios de evaluadores:\n${h.allComments
+              .map(
+                (c) =>
+                  `    - [${c.evaluator}] Q${c.questionIndex}: "${c.text}"`,
+              )
+              .join('\n')}`
+          : `  Comentarios de evaluadores: ${h.manualComment ? `"${h.manualComment}"` : 'Sin comentarios'}`
+      return `
+--- Heurística H${h.position} ---
+  Severidad: ${h.severity}
+  Desviación típica: ${h.standardDeviation != null ? h.standardDeviation.toFixed(2) : 'N/D'}
+  Rango de puntuaciones: ${h.min != null ? h.min.toFixed(2) : 'N/D'} - ${h.max != null ? h.max.toFixed(2) : 'N/D'}
+  Media de medias por pregunta: ${h.questionAverageMean != null ? h.questionAverageMean.toFixed(2) : 'N/D'} (${h.questionAverageMeanPercentage != null ? h.questionAverageMeanPercentage.toFixed(1) + '%' : 'N/D'})
+  Evaluadores que participaron: ${h.evaluatorCount ?? 'N/D'}
+  Warnings: ${h.warnings}
+  Preguntas:
+${h.questionSummary}
+${imageLine}
+${commentsBlock}
+`.trim()
+    })
+    .join('\n\n')
+}
+
 export function buildHeuristicReportPrompt(
   reportItem,
   webResearchContent = '',
+  options = {},
 ) {
+  const { condensed = false } = options
   const heuristicStats = reportItem?.statisticsByHeuristics?.items || []
   const evidence = buildHeuristicEvidence({
     allAnswers: reportItem?.allAnswers || [],
@@ -272,7 +357,11 @@ export function buildHeuristicReportPrompt(
   const testDescription = stripHtml(reportItem?.testDescription)
   const globalCompliance = toFiniteNumber(generalStatistics?.average)
   const globalSeverity = getSeverityLabel(globalCompliance)
-  const heuristics = buildHeuristicDetailData(reportItem, heuristicStats, evidence)
+  const heuristics = buildHeuristicDetailData(
+    reportItem,
+    heuristicStats,
+    evidence,
+  )
   const globalWarnings = heuristics.reduce(
     (total, h) => total + (h.warnings || 0),
     0,
@@ -307,35 +396,10 @@ export function buildHeuristicReportPrompt(
     })),
   })
 
-  const heuristicsDetailText = sortedByImpactCompliance
-    .map((h) => {
-      const imageLine = h.imageSummary
-        ? `  Evidencias visuales: ${h.imageSummary}`
-        : ''
-      const commentsBlock =
-        h.allComments && h.allComments.length > 0
-          ? `  Comentarios de evaluadores:\n${h.allComments
-              .map(
-                (c) =>
-                  `    - [${c.evaluator}] Q${c.questionIndex}: "${c.text}"`,
-              )
-              .join('\n')}`
-          : `  Comentarios de evaluadores: ${h.manualComment ? `"${h.manualComment}"` : 'Sin comentarios'}`
-      return `
---- Heurística H${h.position} ---
-  Severidad: ${h.severity}
-  Desviación típica: ${h.standardDeviation != null ? h.standardDeviation.toFixed(2) : 'N/D'}
-  Rango de puntuaciones: ${h.min != null ? h.min.toFixed(2) : 'N/D'} - ${h.max != null ? h.max.toFixed(2) : 'N/D'}
-  Media de medias por pregunta: ${h.questionAverageMean != null ? h.questionAverageMean.toFixed(2) : 'N/D'} (${h.questionAverageMeanPercentage != null ? h.questionAverageMeanPercentage.toFixed(1) + '%' : 'N/D'})
-  Evaluadores que participaron: ${h.evaluatorCount ?? 'N/D'}
-  Warnings: ${h.warnings}
-  Preguntas:
-${h.questionSummary}
-${imageLine}
-${commentsBlock}
-`.trim()
-    })
-    .join('\n\n')
+  const heuristicsDetailText = buildHeuristicsDetailText(
+    sortedByImpactCompliance,
+    { condensed },
+  )
 
   const highSdHeuristics = [...heuristics]
     .filter((h) => h.standardDeviation != null)
@@ -390,40 +454,12 @@ ${commentsBlock}
   const allAnswers = reportItem?.allAnswers || []
   let responseTypesText = ''
   if (allOptions.length > 0 && allAnswers.length > 0) {
-    const usageCount = {}
-    allOptions.forEach((opt) => {
-      if (opt.value != null) usageCount[opt.value] = 0
-    })
-    let totalAnswered = 0
-    let totalPossible = 0
-    allAnswers.forEach((answer) => {
-      const heuristics = answer?.heuristicQuestions || []
-      heuristics.forEach((h) => {
-        const questions = h?.heuristicQuestions || []
-        questions.forEach((q) => {
-          const val = q?.heuristicAnswer?.value
-          const isWarning = q?.heuristicAnswer?.warning === true
-          if (
-            val != null &&
-            Object.prototype.hasOwnProperty.call(usageCount, val)
-          ) {
-            usageCount[val]++
-            totalAnswered++
-            totalPossible++
-          } else if (isWarning) {
-            totalPossible++
-          }
-        })
-      })
-    })
+    const { usageCount, totalAnswered, totalPossible } =
+      calculateResponseTotals(allAnswers, allOptions)
     const sortedOptions = [...allOptions]
       .filter((opt) => opt.value != null)
       .sort((a, b) => (usageCount[b.value] || 0) - (usageCount[a.value] || 0))
     responseTypesText = sortedOptions
-      .map(
-        (opt) =>
-          `  - ${opt.text || opt.label || 'Sin nombre'}: ${usageCount[opt.value] || 0} usos`,
-      )
       .map(
         (opt) =>
           `  - ${opt.text || opt.label || 'Sin nombre'}: ${usageCount[opt.value] || 0} usos`,
@@ -484,7 +520,7 @@ Redacta 4-5 frases en prosa continua que:
 Sin viñetas. Párrafo continuo y fluido.
 
 ==============================================================
-===SECCION:PORCENTAJES_DE_USABILIDAD_Y_ANÁLISIS_GLOBAL===
+===SECCION:PORCENTAJES===
 ==============================================================
 Redacta un único párrafo denso de 6-8 frases que:
 - Sintetice el estado de madurez UX del sistema con criterio profesional.
@@ -503,7 +539,7 @@ ${
   responseTypesText
     ? `
 =============================================================
-===SECCION:TIPOS_DE_RESPUESTA_POR_USO===
+===SECCION:TIPOS_RESPUESTA===
 =============================================================
 Redacta 2-3 frases que expliquen:
 1. Qué representan los tipos de respuesta (las opciones de puntuación disponibles en el test).
@@ -538,24 +574,27 @@ CRITERIOS DE SEVERIDAD:
 
 
 INSTRUCCIÓN DE FORMATO OBLIGATORIA:
-Escribe CADA análisis de heurística usando EXACTAMENTE este formato:
+Escribe CADA análisis de heurística usando EXACTAMENTE este esquema. NO copies las etiquetas entre corchetes ni los indicadores de longitud entre paréntesis, solo escribe el contenido:
 
-
-H{numero} 
+H{numero}
 [ESTADO_ACTUAL]
-(2 frases) Interpretación cualitativa breve.
+Aquí va tu interpretación cualitativa breve en 2 frases.
 [/ESTADO_ACTUAL]
 [IMPACTO_NEGATIVO]
-(1-2 frases) Efecto negativo concreto en el usuario, considerando un porcentaje de cumplimiento de [PORCENTAJE]% y una media de respuestas de [MEDIA]  en cada heurística de la media de las medias por pregunta con [N] evaluadores participantes 
-como indicador de consistencia del dato. Si hay información web disponible, integra cómo afecta a usuarios reales.
+Aquí va el efecto negativo concreto en el usuario, considerando el porcentaje de cumplimiento y la media de respuestas. Si hay información web, integra cómo afecta a usuarios reales.
 [/IMPACTO_NEGATIVO]
 [PROPUESTAS_DE_MEJORA]
-(2 recomendaciones específicas y técnicas). Qué mejoraría concretamente en la experiencia y usabilidad si se corrige esta heurística. Basándote en los comentarios de evaluadores 
-y, si está disponible, en la investigación web.redactadas en infinitivo o como posibilidad y no uses "se ha de", "se debe" ni "es necesario que".)
+Aquí van 2 recomendaciones específicas y técnicas en infinitivo. Basándote en comentarios de evaluadores y, si está disponible, en la investigación web.
 [/PROPUESTAS_DE_MEJORA]
 [RESUMEN_EJECUTIVO]
-(1 frase) Resumen para el equipo de desarrollo.
+Aquí va 1 frase resumen para el equipo de desarrollo.
 [/RESUMEN_EJECUTIVO]
+
+REGLAS DE FORMATO:
+- NO escribas "(1-2 frases)", "(2 recomendaciones)", "(1 frase)" ni nada entre paréntesis indicando longitud.
+- NO escribas instrucciones como "Interpreta...", "Efecto negativo...", "Qué mejoraría...".
+- Solo escribe el contenido analítico directamente dentro de cada bloque.
+- Cada bloque DEBE cerrarse con la etiqueta de cierre [/ETIQUETA].
 
 
 IMPORTANTE:
@@ -575,7 +614,7 @@ IMPORTANTE:
 - NO incluyas tablas ni datos numéricos en tu texto. Solo prosa analítica. Las tablas las genera el PDF automáticamente.
 
 ==============================================================
-===SECCION:COMPARATIVA_DE_PUNTUACIONES_POR_EVALUADOR===
+===SECCION:COMPARATIVA===
 ================================================================
 Redacta 5-6 frases que:
 
@@ -592,10 +631,13 @@ Tu análisis debe:
 4. Concluir sobre la validez y representatividad del estudio.
 5. Si hay comentarios de evaluadores, úsalos para enriquecer el análisis.
 
+
+
 ==============================================================
 ===SECCION:CONCLUSION===
 ==============================================================
-Redacta 8-12 frases finales que:
+
+Redacta la conclusión final en 8-12 frases, siguiendo este orden:
 
 Datos globales:
 - Cumplimiento global: ${globalCompliance != null ? globalCompliance.toFixed(2) + '%' : 'N/D'} (${globalSeverity})
@@ -603,20 +645,22 @@ Datos globales:
 - Total warnings: ${globalWarnings}
 - Promedio de evaluadores: ${evaluatorSummary}
 
-Tu conclusión debe:
-1. Recapitular el estado general con perspectiva estratégica (no repetir números, sintetizar).
-2. Destacar las 2-3 áreas de mejora más urgentes y POR QUÉ (impacto en el usuario).
-3. Evaluar el potencial de mejora: si se resuelven los problemas críticos, ¿cómo mejora la experiencia?
-4. Proponer un roadmap: qué atacar primero y en qué orden, con criterio de impacto vs. esfuerzo.
-5. Cerrar con una valoración profesional honesta del estado del producto.
+1. Síntesis (1-2 fr): Estado global cualitativo (${globalCompliance}%, gravedad ${globalSeverity}).
+2. Hallazgos (2-3 fr): 2-3 áreas críticas (${top3Critical.map((h) => h.title).join(', ')}). Explica por qué impactan al usuario.
+3. Potencial (1-2 fr): Cómo mejora la experiencia si se resuelven.
+4. Roadmap (2-3 fr): Priorización "impacto vs. esfuerzo". Primero qué, después qué.
+5. Cierre (1 fr): Valoración profesional honesta.
 
-  ${reportItem?.finalReport ? `\nNota del equipo evaluador (úsala como contexto, no la copies): "${stripHtml(reportItem.finalReport)}"` : ''}
-  
-  ${
-    webResearchContent
-      ? `==============================================================
+${reportItem?.finalReport ? `Contexto evaluador: "${stripHtml(reportItem.finalReport)}" (úsalo, no copies)` : ''}
+${webResearchContent ? `\nContexto web: ${webResearchContent} (integra solo si aporta a los hallazgos o roadmap)` : ''}
+
+No uses viñetas ni números. Narrativa continua y profesional. Exactamente 8-12 frases.
+
+${
+  webResearchContent
+    ? `==============================================================
 ===SECCION:INVESTIGACION_WEB_ADICIONAL===
-=============================================================
+==============================================================
 A continuación se incluye información obtenida de una investigación web en tiempo real sobre el sitio evaluado. Úsala como contexto adicional para enriquecer tu análisis y recomendaciones, pero NO la copies textualmente. Debes integrarla con los datos del test para ofrecer una visión más completa y actualizada.
 
 ${webResearchContent}
@@ -626,35 +670,47 @@ Instrucciones específicas para usar la investigación web:
 - Si el sitio ha cambiado respecto a lo que muestran los datos del test, indícalo.
 - Usa la información para contextualizar mejor las recomendaciones.
 - Si la investigación web no aporta nada relevante, simplemente ignórala y basa tu informe en los datos del test.`
-      : ''
-  }
+    : ''
+}
 
-  FIN DEL INFORME
+FIN DEL INFORME
 `.trim()
 }
+
 
 export function buildOllamaRequestBody(
   reportItem,
   model = process.env.VUE_APP_OLLAMA_MODEL || DEFAULT_MODEL,
   webResearchContent = '',
 ) {
-  let userContent = buildHeuristicReportPrompt(reportItem, webResearchContent)
+  let userContent = buildHeuristicReportPrompt(reportItem, webResearchContent, {
+    condensed: true,
+  })
 
-  // Limitar el contenido web para no saturar al modelo local
-  const MAX_WEB_RESEARCH_CHARS = 3000
-  if (userContent.length > 30000) {
-    // Si el prompt total es muy largo, truncar la parte de web research
-    const webStart = userContent.indexOf('===SECCION:INVESTIGACION_WEB_ADICIONAL===')
-    if (webStart > 0) {
-      const beforeWeb = userContent.substring(0, webStart)
-      const afterWebMarker = userContent.indexOf('\n\n', webStart + 40)
-      if (afterWebMarker > 0) {
-        const webSection = userContent.substring(afterWebMarker, afterWebMarker + MAX_WEB_RESEARCH_CHARS)
-        const rest = userContent.substring(afterWebMarker + MAX_WEB_RESEARCH_CHARS)
-        userContent = beforeWeb + webSection + '\n\n[Contenido web truncado por longitud]\n' + rest
-      }
-    }
+  // Limitar el prompt para que quepa en num_ctx (16384 tokens - num_predict - margen)
+  // ~13,500 tokens disponibles para prompt → ~47,000 chars máx
+  const MAX_PROMPT_CHARS = 40000
+  if (userContent.length > MAX_PROMPT_CHARS) {
+    userContent =
+      userContent.substring(0, MAX_PROMPT_CHARS) +
+      '\n\n[Contenido truncado por límite de contexto del modelo local]'
   }
+
+  // ─── Parámetros Ollama optimizados para CPU (qwen2.5:1.5b) ───────────────
+  // num_ctx 16384: permite prompt grande + respuesta completa (6 secciones)
+  // num_predict 4000: genera ~16,000 chars (~4,000 tokens) — valor que funcionaba antes
+  // num_thread 4: usa todos los cores de CPU disponibles
+  const NUM_CTX = 16384
+  const NUM_PREDICT = 4000
+
+  console.log('[Ollama] Token budget:', {
+    promptChars: userContent.length + SYSTEM_PROMPT.length,
+    estimatedPromptTokens: Math.ceil(
+      (userContent.length + SYSTEM_PROMPT.length) / 3.5,
+    ),
+    num_ctx: NUM_CTX,
+    num_predict: NUM_PREDICT,
+  })
 
   return {
     model,
@@ -662,9 +718,10 @@ export function buildOllamaRequestBody(
     options: {
       temperature: 0.4,
       top_p: 0.9,
-      num_predict: 4000,
-      num_ctx: 7500,
-      repeat_penalty: 1.15,
+      num_predict: NUM_PREDICT,
+      num_ctx: NUM_CTX,
+      num_thread: 4,
+      repeat_penalty: 1.05,
     },
     messages: [
       { role: 'system', content: SYSTEM_PROMPT },

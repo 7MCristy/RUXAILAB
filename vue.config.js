@@ -1,10 +1,14 @@
 const webpack = require('webpack')
 
+const DEV_SERVER_PORT = Number(process.env.PORT) || 3000
+
 module.exports = {
   productionSourceMap: false,
   css: { sourceMap: false },
 
   devServer: {
+    host: 'localhost',
+    port: DEV_SERVER_PORT,
     headers: {
       'Cross-Origin-Opener-Policy': 'unsafe-none',
       'Cross-Origin-Embedder-Policy': 'unsafe-none',
@@ -14,6 +18,8 @@ module.exports = {
         target: 'http://localhost:11434',
         changeOrigin: true,
         pathRewrite: { '^/ollama-proxy': '' },
+        timeout: 600000,
+        proxyTimeout: 600000,
         onProxyReq(proxyReq, req) {
           console.log('[Ollama proxy] Solicitud:', req.method, req.url)
         },

@@ -1152,6 +1152,66 @@ function extractEvaluatorComments(resultEvaluator, participants = []) {
   return commentsByHeuristic
 }
 
+/**
+ * Calcula el total de preguntas del test a partir de la estructura.
+ * Fuente ÚNICA de verdad para totalQuestions en toda la aplicación.
+ *
+ * @param {Array} testStructure - Array de heurísticas del test
+ * @returns {number} Total de preguntas
+ */
+function calculateTestTotals(testStructure) {
+  if (!Array.isArray(testStructure)) return 0
+  return testStructure.reduce((sum, h) => {
+    const qs = h?.questions || h?.heuristicQuestions || []
+    return sum + qs.length
+  }, 0)
+}
+
+/**
+ * Calcula los totales de respuestas: usageCount por tipo, totalAnswered y totalPossible.
+ * Fuente ÚNICA de verdad para estos cálculos en toda la aplicación.
+ *
+ * @param {Array} allAnswers - Array de respuestas de evaluadores
+ * @param {Array} allOptions - Array de opciones del test
+ * @returns {{ usageCount: Object, totalAnswered: number, totalPossible: number }}
+ */
+function calculateResponseTotals(allAnswers, allOptions) {
+  const usageCount = {}
+  if (Array.isArray(allOptions)) {
+    allOptions.forEach((opt) => {
+      if (opt.value != null) usageCount[opt.value] = 0
+    })
+  }
+
+  let totalAnswered = 0
+  let totalPossible = 0
+
+  if (Array.isArray(allAnswers)) {
+    allAnswers.forEach((answer) => {
+      const heuristics = answer?.heuristicQuestions || []
+      heuristics.forEach((h) => {
+        const questions = h?.heuristicQuestions || []
+        questions.forEach((q) => {
+          const val = q?.heuristicAnswer?.value
+          const isWarning = q?.heuristicAnswer?.warning === true
+          if (
+            val != null &&
+            Object.prototype.hasOwnProperty.call(usageCount, val)
+          ) {
+            usageCount[val]++
+            totalAnswered++
+            totalPossible++
+          } else if (isWarning) {
+            totalPossible++
+          }
+        })
+      })
+    })
+  }
+
+  return { usageCount, totalAnswered, totalPossible }
+}
+
 export {
   percentage,
   standardDeviation,
@@ -1169,6 +1229,8 @@ export {
   buildEvaluatorPercentages,
   buildHeuristicRanking,
   extractEvaluatorComments,
-  getQuestionCommentTexts,      // ← NUEVO
+  getQuestionCommentTexts,
   classifyQuestionResponse,
+  calculateTestTotals,
+  calculateResponseTotals,
 }

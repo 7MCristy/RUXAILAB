@@ -71,7 +71,11 @@ async function searchWithJina(query) {
         throw error
       }
     },
-    { retries: 2, baseDelay: 2000, label: `Jina search: ${query.substring(0, 50)}` },
+    {
+      retries: 2,
+      baseDelay: 2000,
+      label: `Jina search: ${query.substring(0, 50)}`,
+    },
   )
 }
 
@@ -113,7 +117,11 @@ async function readUrlWithJina(url) {
         throw error
       }
     },
-    { retries: 2, baseDelay: 2000, label: `Jina read: ${url.substring(0, 50)}` },
+    {
+      retries: 2,
+      baseDelay: 2000,
+      label: `Jina read: ${url.substring(0, 50)}`,
+    },
   )
 }
 
@@ -126,7 +134,15 @@ async function searchWithTinyFish(query) {
   return retryWithBackoff(
     async () => {
       const apiKey = process.env.VUE_APP_TINYFISH_API_KEY
+      const startedAt = Date.now()
+
+      console.log('[TinyFish] Iniciando búsqueda:', {
+        query: query.substring(0, 80),
+        apiKeyConfigured: Boolean(apiKey),
+      })
+
       if (!apiKey) {
+        console.error('[TinyFish] API key no configurada')
         throw new Error('TinyFish API key no configurada')
       }
 
@@ -145,18 +161,43 @@ async function searchWithTinyFish(query) {
         })
         clearTimeout(timeoutId)
 
+        console.log('[TinyFish] Respuesta HTTP:', {
+          status: response.status,
+          ok: response.ok,
+          durationMs: Date.now() - startedAt,
+        })
+
         if (!response.ok) {
-          throw new Error(`TinyFish HTTP ${response.status}`)
+          const errorBody = (await response.text()).slice(0, 300)
+          console.error('[TinyFish] Cuerpo de error:', errorBody)
+          throw new Error(
+            `TinyFish HTTP ${response.status}${errorBody ? ` - ${errorBody}` : ''}`,
+          )
         }
 
         const data = await response.json()
-        return data?.results || []
+        const results = Array.isArray(data?.results) ? data.results : []
+        console.log('[TinyFish] Búsqueda completada:', {
+          resultCount: results.length,
+          responseKeys: Object.keys(data || {}),
+          durationMs: Date.now() - startedAt,
+        })
+        return results
       } catch (error) {
         clearTimeout(timeoutId)
+        console.error('[TinyFish] Error en la búsqueda:', {
+          name: error?.name,
+          message: error?.message,
+          durationMs: Date.now() - startedAt,
+        })
         throw error
       }
     },
-    { retries: 1, baseDelay: 3000, label: `TinyFish: ${query.substring(0, 50)}` },
+    {
+      retries: 1,
+      baseDelay: 3000,
+      label: `TinyFish: ${query.substring(0, 50)}`,
+    },
   )
 }
 
@@ -183,11 +224,7 @@ function tinyFishResultsToMarkdown(results) {
  * @param {string} options.testTitle - Título del test
  * @returns {Promise<{content: string, source: string}>}
  */
-export async function researchWebsite({
-  testUrl,
-  testDescription,
-  testTitle,
-}) {
+export async function researchWebsite({ testUrl, testDescription, testTitle }) {
   const queries = []
   if (testUrl) {
     queries.push(`Análisis de usabilidad y UX de ${testUrl}`)
@@ -216,7 +253,11 @@ export async function researchWebsite({
             `=== CONTENIDO DEL SITIO EVALUADO (${testUrl}) ===\n${siteContent}`,
           )
         } catch (readError) {
-          console.error('[WebSearch] Jina read failed for URL:', testUrl, readError)
+          console.error(
+            '[WebSearch] Jina read failed for URL:',
+            testUrl,
+            readError,
+          )
           trackTokens('jina', estimateTokens(testUrl))
         }
       }
@@ -231,7 +272,11 @@ export async function researchWebsite({
             `=== RESULTADOS DE BÚSQUEDA: "${query}" ===\n${searchResults}`,
           )
         } catch (searchError) {
-          console.error('[WebSearch] Jina search failed for query:', query, searchError)
+          console.error(
+            '[WebSearch] Jina search failed for query:',
+            query,
+            searchError,
+          )
           trackTokens('jina', estimateTokens(query))
         }
       }
@@ -250,6 +295,10 @@ export async function researchWebsite({
   if (!hasQuota('tinyfish')) {
     console.warn('[WebSearch] ⚠️ Sin cuota de TinyFish disponible')
   } else {
+    console.log('[TinyFish] Disponible como fallback:', {
+      queriesToProcess: uniqueQueries.slice(0, 1).length,
+      remainingTokens: getRemaining('tinyfish').remaining,
+    })
     try {
       const tinyFishResults = []
       for (const query of uniqueQueries.slice(0, 1)) {
@@ -258,15 +307,30 @@ export async function researchWebsite({
           const results = await searchWithTinyFish(query)
           trackTokens('tinyfish', estimateTokens(JSON.stringify(results)))
           tinyFishResults.push(...results)
+          console.log('[TinyFish] Resultados acumulados:', {
+            resultCount: tinyFishResults.length,
+          })
         } catch (tfError) {
-          console.error('[WebSearch] TinyFish search failed for query:', query, tfError)
+          console.error(
+            '[WebSearch] TinyFish search failed for query:',
+            query,
+            tfError,
+          )
           trackTokens('tinyfish', estimateTokens(query))
         }
       }
 
       if (tinyFishResults.length > 0) {
-        return { content: tinyFishResultsToMarkdown(tinyFishResults), source: 'tinyfish' }
+        console.log('[TinyFish] Investigación completada correctamente:', {
+          resultCount: tinyFishResults.length,
+        })
+        return {
+          content: tinyFishResultsToMarkdown(tinyFishResults),
+          source: 'tinyfish',
+        }
       }
+
+      console.warn('[TinyFish] La petición terminó sin resultados')
     } catch (tinyFishError) {
       console.error('[WebSearch] TinyFish search failed:', tinyFishError)
       trackTokens('tinyfish', estimateTokens(uniqueQueries[0] || ''))
@@ -284,7 +348,8 @@ export async function researchWebsite({
     return {
       content: '',
       source: 'none',
-      message: 'No quedan tokens disponibles en ningún servicio de búsqueda web (Jina y TinyFish agotados).',
+      message:
+        'No quedan tokens disponibles en ningún servicio de búsqueda web (Jina y TinyFish agotados).',
     }
   }
 

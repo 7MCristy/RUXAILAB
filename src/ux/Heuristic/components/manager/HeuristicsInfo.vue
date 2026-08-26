@@ -106,6 +106,7 @@
 <script setup>
 import { computed } from 'vue'
 import { useRouter } from 'vue-router'
+import { calculateTestTotals } from '@/ux/Heuristic/utils/statistics'
 
 const props = defineProps({
   test: {
@@ -126,13 +127,7 @@ const navigateToEdit = () => {
 // Computed properties
 const heuristicsCount = computed(() => props.test?.testStructure?.length || 0)
 
-const questionsCount = computed(() => {
-  if (!props.test?.testStructure) return 0
-  if (!props.test.testStructure.length) return 0
-  return props.test.testStructure.reduce((total, heuristic) => {
-    return total + (heuristic.questions?.length || 0)
-  }, 0)
-})
+const questionsCount = computed(() => calculateTestTotals(props.test?.testStructure || []))
 
 const optionsCount = computed(() => {
   if (!props.test?.testStructure) return 0

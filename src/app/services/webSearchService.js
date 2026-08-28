@@ -4,12 +4,16 @@ import {
   estimateTokens,
   getRemaining,
 } from './tokenTracker'
+import { Readability } from '@mozilla/readability'
 
 const JINA_SEARCH_URL = 'https://s.jina.ai'
 const JINA_READ_URL = 'https://r.jina.ai'
 const TINYFISH_SEARCH_URL = 'https://api.search.tinyfish.ai'
 
 const TIMEOUT_MS = 25000
+const READABILITY_MAX_CHARS = 4000
+const CORS_PROXY_URL =
+  process.env.VUE_APP_CORS_PROXY_URL || 'https://corsproxy.io/?'
 
 function getJinaApiKey() {
   return process.env.VUE_APP_JINA_API_KEY || ''
@@ -31,6 +35,72 @@ async function retryWithBackoff(
       await new Promise((resolve) => setTimeout(resolve, delay))
     }
   }
+}
+
+/**
+ * Lee y extrae contenido limpio de una URL usando Readability (local).
+ * Fetch raw HTML vía proxy CORS → JSDOM + @mozilla/readability.
+ *
+ * @param {string} url - URL a leer
+ * @returns {Promise<string>} Contenido limpio en texto plano (truncado a READABILITY_MAX_CHARS)
+ */
+async function readWithReadability(url) {
+  return retryWithBackoff(
+    async () => {
+      const proxiedUrl = `${CORS_PROXY_URL}${encodeURIComponent(url)}`
+
+      const controller = new AbortController()
+      const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS)
+
+      try {
+        const response = await fetch(proxiedUrl, {
+          signal: controller.signal,
+          headers: { Accept: 'text/html' },
+        })
+        clearTimeout(timeoutId)
+
+        if (!response.ok) {
+          throw new Error(`Readability proxy HTTP ${response.status}`)
+        }
+
+        const html = await response.text()
+        const doc = new DOMParser().parseFromString(html, 'text/html')
+        const article = new Readability(doc).parse()
+
+        if (!article || !article.textContent) {
+          throw new Error('Readability no pudo extraer contenido')
+        }
+
+        const content = article.textContent
+          .substring(0, READABILITY_MAX_CHARS)
+          .trim()
+
+        if (content.length < 50) {
+          throw new Error('Readability extrae contenido demasiado corto')
+        }
+
+        const title = article.title || ''
+        const excerpt = article.excerpt || ''
+        const result = [
+          title ? `Título: ${title}` : '',
+          excerpt ? `Resumen: ${excerpt}` : '',
+          content,
+        ]
+          .filter(Boolean)
+          .join('\n')
+
+        return result
+      } catch (error) {
+        clearTimeout(timeoutId)
+        throw error
+      }
+    },
+    {
+      retries: 2,
+      baseDelay: 2000,
+      label: `Readability: ${url.substring(0, 50)}`,
+    },
+  )
 }
 
 /**
@@ -215,8 +285,7 @@ function tinyFishResultsToMarkdown(results) {
 
 /**
  * Investiga la web sobre el sitio evaluado.
- * Primario: Jina AI (search + read URL).
- * Fallback: TinyFish si Jina falla.
+ * Prioridad: Readability JS (local, 0 tokens) → Jina AI → TinyFish.
  *
  * @param {Object} options
  * @param {string} options.testUrl - URL del sitio a evaluar
@@ -238,6 +307,28 @@ export async function researchWebsite({ testUrl, testDescription, testTitle }) {
 
   const uniqueQueries = [...new Set(queries.filter(Boolean))]
   const allContent = []
+
+  // 0. Intentar Readability JS (local, sin tokens)
+  if (testUrl) {
+    try {
+      console.log('[WebSearch] 📖 Intentando Readability JS para:', testUrl)
+      const readableContent = await readWithReadability(testUrl)
+      trackTokens('readability', estimateTokens(readableContent))
+      allContent.push(
+        `=== CONTENIDO DEL SITIO EVALUADO (${testUrl}) ===\n${readableContent}`,
+      )
+      console.log('[WebSearch] ✅ Readability extrajo contenido:', {
+        chars: readableContent.length,
+        tokens: estimateTokens(readableContent),
+      })
+      return { content: allContent.join('\n\n'), source: 'readability' }
+    } catch (readabilityError) {
+      console.warn(
+        '[WebSearch] ⚠️ Readability falló, continuando con Jina:',
+        readabilityError.message,
+      )
+    }
+  }
 
   // 1. Intentar Jina AI
   if (!hasQuota('jina')) {
@@ -337,19 +428,19 @@ export async function researchWebsite({ testUrl, testDescription, testTitle }) {
     }
   }
 
-  // 3. Sin resultados - ambos servicios agotados
+  // 3. Sin resultados - todos los servicios agotados
   const jinaExhausted = !hasQuota('jina')
   const tinyfishExhausted = !hasQuota('tinyfish')
 
   if (jinaExhausted && tinyfishExhausted) {
     console.warn(
-      '[WebSearch] ⚠️ Cuota agotada en Jina y TinyFish. No hay más tokens disponibles para investigación web.',
+      '[WebSearch] ⚠️ Cuota agotada en Jina y TinyFish. Readability no obtuvo contenido. No hay más fuentes disponibles.',
     )
     return {
       content: '',
       source: 'none',
       message:
-        'No quedan tokens disponibles en ningún servicio de búsqueda web (Jina y TinyFish agotados).',
+        'No quedan fuentes disponibles para investigación web (Readability, Jina y TinyFish agotados).',
     }
   }
 

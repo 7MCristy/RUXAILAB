@@ -4,7 +4,8 @@ const LIMITS = {
   jina: { total: 10_000_000_000, resetMs: 30 * 24 * 60 * 60 * 1000 },
   gemini: { total: 10_000_000_000, resetMs: 24 * 60 * 60 * 1000 },
   tinyfish: { total: 10_000_000, resetMs: 24 * 60 * 60 * 1000 },
-  ollama: { total: 10_000_000_000, resetMs: 24 * 60 * 60 * 1000 }, // ← Ilimitado para pruebas locales
+  ollama: { total: 10_000_000_000, resetMs: 24 * 60 * 60 * 1000 },
+  readability: { total: 10_000_000_000, resetMs: 24 * 60 * 60 * 1000 }, // ← Local, sin cuota API
 }
 
 function loadUsage() {
@@ -39,6 +40,7 @@ function getUsageData() {
     jina: { used: 0, windowStart: Date.now() },
     gemini: { used: 0, windowStart: Date.now() },
     tinyfish: { used: 0, windowStart: Date.now() },
+    readability: { used: 0, windowStart: Date.now() },
   }
 }
 

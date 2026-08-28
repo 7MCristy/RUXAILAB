@@ -1022,6 +1022,8 @@ const previewPdfWithAi = async () => {
       finalReportItem.aiTiposRespuesta = aiSections.tipos_respuesta || ''
       finalReportItem.aiAnalisisHeuristico =
         aiSections.analisis_heuristico || ''
+      finalReportItem.aiAnalisisHeuristicoBlocks =
+        aiSections.analisis_heuristico_blocks || []
       finalReportItem.aiComparativa = aiSections.comparativa || ''
       finalReportItem.aiConclusion = aiSections.conclusion || ''
     }

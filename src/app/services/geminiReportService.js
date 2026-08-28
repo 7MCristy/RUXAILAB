@@ -342,34 +342,20 @@ function cleanSectionText(text) {
   if (!text || typeof text !== 'string') return ''
   const original = text
   const cleaned = stripMarkdown(text)
+    // Limpiar delimitadores ===SECCION:XXX===
     .replace(/={3,}SECCION:\w+={3,}/gi, '')
+    // Limpiar títulos residuales de sección (SECCION: XXX sin ===)
+    .replace(/^\s*SECCION:\s*.+$/gim, '')
+    // Limpiar headers markdown ## Titulo
     .replace(/^##\s+.+$/gm, '')
-    .replace(/\[PROPOSITO\]/gi, '')
-    .replace(/\[\/PROPOSITO\]/gi, '')
-    .replace(/\[ESTADO_ACTUAL\]/gi, '')
-    .replace(/\[\/ESTADO_ACTUAL\]/gi, '')
-    .replace(/\[IMPACTO_EXPERIENCIA\]/gi, '')
-    .replace(/\[\/IMPACTO_EXPERIENCIA\]/gi, '')
-    .replace(/\[PLAN_ACCION\]/gi, '')
-    .replace(/\[\/PLAN_ACCION\]/gi, '')
-    .replace(/\[RESUMEN_EJECUTIVO\]/gi, '')
-    .replace(/\[\/RESUMEN_EJECUTIVO\]/gi, '')
-    .replace(/\[IMPACTO_MEJORA\]/gi, '')
-    .replace(/\[\/IMPACTO_MEJORA\]/gi, '')
-    .replace(/\[ESTADO_ACTUAL\]/gi, '')
-    .replace(/\[\/ESTADO_ACTUAL\]/gi, '')
-    .replace(/\[IMPACTO_NEGATIVO\]/gi, '')
-    .replace(/\[\/IMPACTO_NEGATIVO\]/gi, '')
-    .replace(/\[PROPUESTAS_DE_MEJORA\]/gi, '')
-    .replace(/\[\/PROPUESTAS_DE_MEJORA\]/gi, '')
-    .replace(/\/PROPOSITO/gi, '')
-    .replace(/\/ESTADO_ACTUAL/gi, '')
-    .replace(/\/IMPACTO_EXPERIENCIA/gi, '')
-    .replace(/\/PLAN_ACCION/gi, '')
-    .replace(/\/RESUMEN_EJECUTIVO/gi, '')
-    .replace(/\/IMPACTO_MEJORA/gi, '')
-    .replace(/\/IMPACTO_NEGATIVO/gi, '')
-    .replace(/\/PROPUESTAS_DE_MEJORA/gi, '')
+    // Limpiar títulos numerados "1. Introducción", "2. Porcentajes", etc.
+    .replace(/^\d+\.\s+(?:Introducción|Porcentajes|Tipos de respuesta|Análisis|Comparativa|Conclusión).*/gim, '')
+    // Limpiar títulos TODO CAPS que son de sección
+    .replace(/^(?:INTRODUCCIÓN|PORCENTAJES|TIPOS DE RESPUESTA|ANÁLISIS HEURÍSTICO|COMPARATIVA|CONCLUSION|CIERRE)[\s:]*$/gim, '')
+    // Limpiar títulos con guiones "— Titulo —"
+    .replace(/^[-—]\s+(?:Introducción|Porcentajes|Tipos|Análisis|Comparativa|Conclusión|Cierre).+[-—]\s*$/gim, '')
+    // NO eliminar [ESTADO_ACTUAL], [IMPACTO_NEGATIVO], etc. — los usa parseHeuristicAnalysis
+    // Limpiar líneas vacías múltiples
     .replace(/\n{3,}/g, '\n\n')
     .trim()
   console.log(
@@ -417,7 +403,7 @@ function cleanAiOutput(text) {
 /**
  * Parsea la respuesta de IA en secciones usando delimitadores ===SECCION:NOMBRE===
  * @param {string} content - Texto completo generado por la IA
- * @returns {Object} Secciones: { introduccion, porcentajes, tipos_respuesta, analisis_heuristico, comparativa, conclusion }
+ * @returns {Object} Secciones: { introduccion, porcentajes, tipos_respuesta, analisis_heuristico, analisis_heuristico_blocks, comparativa, conclusion }
  */
 export function parseAiReportSections(content) {
   console.log('═══════════════════════════════════════════════════════════════')
@@ -445,6 +431,7 @@ export function parseAiReportSections(content) {
       porcentajes: '',
       tipos_respuesta: '',
       analisis_heuristico: '',
+      analisis_heuristico_blocks: [],
       comparativa: '',
       conclusion: '',
     }
@@ -495,9 +482,27 @@ export function parseAiReportSections(content) {
     Object.assign(sections, distributeTextByKeywords(content))
   }
 
+  // Pre-parsear análisis heurístico ANTES de limpiar (para extraer sub-bloques)
+  if (sections.analisis_heuristico) {
+    sections.analisis_heuristico_blocks = parseHeuristicAnalysis(sections.analisis_heuristico)
+    console.log(
+      '[parseAiReportSections] 🧩 Bloques heurísticos pre-parseados:',
+      sections.analisis_heuristico_blocks.length,
+    )
+  } else {
+    sections.analisis_heuristico_blocks = []
+  }
+
+  // Ahora limpiar todas las secciones (incluyendo etiquetas [ESTADO_ACTUAL] etc.)
+  for (const key of Object.keys(sections)) {
+    if (key !== 'analisis_heuristico_blocks') {
+      sections[key] = cleanSectionText(sections[key])
+    }
+  }
+
   console.log(
     '[parseAiReportSections] 📊 Estado final:',
-    Object.fromEntries(Object.entries(sections).map(([k, v]) => [k, v.length])),
+    Object.fromEntries(Object.entries(sections).filter(([k]) => k !== 'analisis_heuristico_blocks').map(([k, v]) => [k, v.length])),
   )
   console.log('═══════════════════════════════════════════════════════════════')
   return sections

@@ -101,7 +101,7 @@ NORMAS OBLIGATORIAS:
 - Varía el vocabulario entre secciones. No repitas las mismas frases de transición.
 - USA VOCABULARIO TÉCNICO DE UX: "fricción", "carga cognitiva", "affordance", "feedback", "consistencia", "heurística", "tasa de error", "eficiencia", "satisfacción percibida".
 - NO uses relleno. Cada frase debe aportar información concreta y valor analítico.
-- SEPARA cada sección usando UNO de estos dos formatos aceptados: (1) ===SECCION:NOMBRE=== o (2) ## Nombre de Sección. Ambos son válidos y el sistema de parseo los detecta para separar las secciones del PDF. NO uses encabezados numerados como "1. Introducción". Ejemplo válido: ## Introducción seguido del texto de la sección.
+- Separa cada sección con el delimitador ===SECCION:NOMBRE=== en una línea aparte. Ejemplo: ===SECCION:INTRODUCCION===. El PDF los genera automáticamente.
 `.trim()
 
 function toFiniteNumber(value, fallback = null) {
@@ -478,7 +478,7 @@ INSTRUCCIONES CRÍTICAS:
 - Haz referencias concretas al tipo de sitio web y su contexto de uso (basándote en la URL y descripción).
 - Las recomendaciones deben ser específicas, técnicas y aplicables directamente al sistema evaluado.
 - Mantén un tono profesional, riguroso y útil para un equipo de producto.
-- OBLIGATORIO: Cada sección DEBE comenzar con un encabezado Markdown ## en una línea separada: ## Introducción, ## Porcentajes, ## Tipos de Respuesta, ## Análisis Heurístico, ## Comparativa, ## Conclusión. Sin estos encabezados el sistema NO puede separar las secciones y todo el texto irá a una sola sección del PDF. NO uses "1. Introducción" ni ===SECCION:NOMBRE===.
+- OBLIGATORIO: Separa cada sección con el delimitador ===SECCION:NOMBRE=== en una línea aparte. Ejemplo: ===SECCION:INTRODUCCION===. Sin estos delimitadores el sistema NO puede separar las secciones del PDF. Los delimitadores válidos son: ===SECCION:INTRODUCCION===, ===SECCION:PORCENTAJES===, ===SECCION:TIPOS_RESPUESTA===, ===SECCION:ANALISIS_HEURISTICO===, ===SECCION:COMPARATIVA===, ===SECCION:CONCLUSION===.
 
 DATOS DEL SISTEMA EVALUADO:
 - Nombre: ${testName}
@@ -507,7 +507,7 @@ INSTRUCCIONES PARA ANÁLISIS CUALITATIVO:
 - Cuando cites datos numéricos, usa la media redondeada a 1 decimal.
 - Si hay alta dispersión (desviación típica > 0.5), señala que la experiencia puede variar según el perfil del usuario.
 
-## Introducción
+===SECCION:INTRODUCCION===
 Redacta 4-5 frases en prosa continua que:
 1. Presenten el sistema evaluado (nombre${testUrl ? ' y URL' : ''}), indicando qué tipo de sitio web o aplicación es.
 2. Contextualicen la evaluación heurística: por qué es relevante${methodologyText ? `, qué metodología se usó (${methodologyText})` : ''}.
@@ -517,7 +517,7 @@ Redacta 4-5 frases en prosa continua que:
 
 Sin viñetas. Párrafo continuo y fluido.
 
-## Porcentajes
+===SECCION:PORCENTAJES===
 Redacta un único párrafo denso de 6-8 frases que:
 - Sintetice el estado de madurez UX del sistema con criterio profesional.
 - Mencione las fortalezas: heurísticas con mejor rendimiento:
@@ -534,7 +534,7 @@ Sin viñetas. Párrafo continuo.
 ${
   responseTypesText
     ? `
-## Tipos de Respuesta
+===SECCION:TIPOS_RESPUESTA===
 Redacta 2-3 frases que expliquen:
 1. Qué representan los tipos de respuesta (las opciones de puntuación disponibles en el test).
 2. Cuáles son los tipos más y menos utilizados y qué sugiere eso sobre el comportamiento de los evaluadores.
@@ -547,7 +547,7 @@ Sin viñetas. Párrafo continuo y analítico.`
     : ''
 }
 
-## Análisis Heurístico
+===SECCION:ANALISIS_HEURISTICO===
 Combina la priorización y el análisis detallado en UNA SOLA SECCIÓN.
 
 
@@ -605,7 +605,7 @@ IMPORTANTE:
 - El número debe ser correlativo (1, 2, 3...).
 - NO incluyas tablas ni datos numéricos en tu texto. Solo prosa analítica. Las tablas las genera el PDF automáticamente.
 
-## Comparativa
+===SECCION:COMPARATIVA===
 Redacta 5-6 frases que:
 
 Puntuaciones individuales:
@@ -623,7 +623,7 @@ Tu análisis debe:
 
 
 
-## Conclusión
+===SECCION:CONCLUSION===
 
 Redacta la conclusión final en 8-12 frases, siguiendo este orden:
 
@@ -646,7 +646,7 @@ No uses viñetas ni números. Narrativa continua y profesional. Exactamente 8-12
 
 ${
   webResearchContent
-    ? `## Investigación Web Adicional
+    ? `===SECCION:INVESTIGACION_WEB===
 A continuación se incluye información obtenida de una investigación web en tiempo real sobre el sitio evaluado. Úsala como contexto adicional para enriquecer tu análisis y recomendaciones, pero NO la copies textualmente. Debes integrarla con los datos del test para ofrecer una visión más completa y actualizada.
 
 ${webResearchContent}

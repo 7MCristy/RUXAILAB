@@ -1239,12 +1239,12 @@ export async function generateHeuristicPdf(reportData, options = {}) {
   y = doc.lastAutoTable.finalY + 20
 
   // ─── 4. ANALISIS DETALLADO ────────────────────────────────────────────────
-  const aiHeuristicBlocks = parseHeuristicAnalysis(
-    reportData.aiAnalisisHeuristico || '',
-  )
+  const aiHeuristicBlocks = (reportData.aiAnalisisHeuristicoBlocks?.length)
+    ? reportData.aiAnalisisHeuristicoBlocks
+    : parseHeuristicAnalysis(reportData.aiAnalisisHeuristico || '')
   console.log(
     '[PDF] aiHeuristicBlocks parseados:',
-    Object.keys(aiHeuristicBlocks).length,
+    aiHeuristicBlocks.length,
     'bloques',
   )
   doc.addPage()
@@ -1278,8 +1278,7 @@ export async function generateHeuristicPdf(reportData, options = {}) {
       { heuristicTitle: item.title },
       0,
     )
-    const purposeText =
-      aiBlock?.proposito || getHeuristicPurposeText(heuristicTitle)
+    const purposeText = getHeuristicPurposeText(heuristicTitle)
 
     if (purposeText) {
       writeParagraph(`Esta heurística evalúa: ${purposeText}`, {
@@ -1507,18 +1506,7 @@ export async function generateHeuristicPdf(reportData, options = {}) {
       spacing: 2,
     })
 
-    if (aiBlock?.impactoMejora) {
-      writeParagraph('Impacto de la mejora:', {
-        bold: true,
-        size: 10,
-        spacing: 2,
-      })
-      writeParagraph(aiBlock.impactoMejora, { size: 10, spacing: 4 })
-    } else {
-      writeParagraph(buildPositiveImpact(item), { size: 10, spacing: 4 })
-    }
-
-    // ── Análisis de IA para esta heurística ─────────────────────────
+    writeParagraph(buildPositiveImpact(item), { size: 10, spacing: 4 })
 
     if (aiBlock) {
       // Heurística crítica/grave/moderada: 4 bloques

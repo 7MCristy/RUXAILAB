@@ -235,7 +235,7 @@ export async function generateAiReportWithOllama(
 ) {
   try {
     const baseUrl = ollamaUrl.replace('/api/chat', '')
-    const model = process.env.VUE_APP_OLLAMA_MODEL || 'qwen2.5:3b'
+    const model = process.env.VUE_APP_OLLAMA_MODEL || 'qwen2.5:1.5b'
 
     console.log('[Ollama] Inicio de generación:', {
       url: ollamaUrl,
@@ -343,6 +343,7 @@ function cleanSectionText(text) {
   const original = text
   const cleaned = stripMarkdown(text)
     .replace(/={3,}SECCION:\w+={3,}/gi, '')
+    .replace(/^##\s+.+$/gm, '')
     .replace(/\[PROPOSITO\]/gi, '')
     .replace(/\[\/PROPOSITO\]/gi, '')
     .replace(/\[ESTADO_ACTUAL\]/gi, '')
@@ -481,7 +482,15 @@ export function parseAiReportSections(content) {
   const hasAnySection = Object.values(sections).some((s) => s.length > 0)
   if (!hasAnySection) {
     console.log(
-      '[parseAiReportSections] ⚠️ SIN DELIMITADORES - usando fallback',
+      '[parseAiReportSections] ⚠️ SIN DELIMITADORES ===SECCION=== - detectando ## headers markdown',
+    )
+    Object.assign(sections, parseMarkdownHeaders(textContent))
+  }
+
+  const hasAnyAfterMarkdown = Object.values(sections).some((s) => s.length > 0)
+  if (!hasAnyAfterMarkdown) {
+    console.log(
+      '[parseAiReportSections] ⚠️ SIN HEADERS MARKDOWN - usando fallback por keywords',
     )
     Object.assign(sections, distributeTextByKeywords(content))
   }
@@ -491,6 +500,45 @@ export function parseAiReportSections(content) {
     Object.fromEntries(Object.entries(sections).map(([k, v]) => [k, v.length])),
   )
   console.log('═══════════════════════════════════════════════════════════════')
+  return sections
+}
+
+/**
+ * Parsea secciones por headers markdown (## Nombre) cuando el modelo no usa ===SECCION:===
+ */
+function parseMarkdownHeaders(textContent) {
+  const sections = {
+    introduccion: '',
+    porcentajes: '',
+    tipos_respuesta: '',
+    analisis_heuristico: '',
+    comparativa: '',
+    conclusion: '',
+  }
+  const headerNameMap = {
+    'introducción': 'introduccion',
+    'introduccion': 'introduccion',
+    'porcentajes': 'porcentajes',
+    'tipos de respuesta': 'tipos_respuesta',
+    'análisis heurístico': 'analisis_heuristico',
+    'analisis heuristico': 'analisis_heuristico',
+    'comparativa': 'comparativa',
+    'conclusión': 'conclusion',
+    'conclusion': 'conclusion',
+  }
+  const headerRegex = /^##\s+(.+)$/gm
+  const matches = [...textContent.matchAll(headerRegex)]
+  if (matches.length === 0) return sections
+
+  for (let i = 0; i < matches.length; i++) {
+    const headerTitle = matches[i][1].trim().toLowerCase()
+    const key = headerNameMap[headerTitle]
+    if (!key) continue
+    const startIdx = matches[i].index + matches[i][0].length
+    const endIdx = i + 1 < matches.length ? matches[i + 1].index : textContent.length
+    const sectionText = textContent.slice(startIdx, endIdx).trim()
+    sections[key] = cleanSectionText(sectionText)
+  }
   return sections
 }
 
@@ -545,6 +593,7 @@ function distributeTextByKeywords(content) {
   for (const line of lines) {
     const trimmedLine = line.trim()
     if (/^={3,}SECCION:\w+={3,}$/i.test(trimmedLine)) continue
+    if (/^##\s+/.test(trimmedLine)) continue
     const lower = trimmedLine.toLowerCase()
     for (const [section, keywords] of Object.entries(keywordMap)) {
       if (keywords.some((k) => lower.includes(k))) {

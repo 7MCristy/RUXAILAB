@@ -109,7 +109,7 @@
         <div class="d-flex ga-2 align-center">
           <div class="d-flex ga-4 mr-2">
             <v-chip
-              v-if="geminiHasQuota"
+              v-if="!usingOllama"
               :key="'gemini-' + tokenUsage.gemini.remaining"
               size="small"
               :color="
@@ -126,51 +126,40 @@
               {{ tokenUsage.gemini.total.toLocaleString() }}
             </v-chip>
             <v-chip
-              v-else-if="!geminiHasQuota && jinaHasQuota"
-              :key="'jina-chip'"
-              size="small"
-              color="info"
-              variant="tonal"
-              prepend-icon="mdi-web"
-            >
-              Jina: {{ tokenUsage.jina.remaining.toLocaleString() }} /
-              {{ tokenUsage.jina.total.toLocaleString() }}
-            </v-chip>
-            <v-chip
-              v-else-if="!geminiHasQuota && !jinaHasQuota && tinyfishHasQuota"
-              :key="'tinyfish-chip'"
-              size="small"
-              color="success"
-              variant="tonal"
-              prepend-icon="mdi-brain"
-            >
-              TinyFish: {{ tokenUsage.tinyfish.remaining.toLocaleString() }} /
-              {{ tokenUsage.tinyfish.total.toLocaleString() }}
-            </v-chip>
-            <v-chip
-              v-else-if="
-                !geminiHasQuota &&
-                !jinaHasQuota &&
-                !tinyfishHasQuota &&
-                !isPrefetchingAi
-              "
+              v-else
               :key="'ollama-chip'"
               size="small"
               color="warning"
               variant="tonal"
               prepend-icon="mdi-desktop-tower"
             >
-              Ollama (local)
+              Ollama: {{ ollamaModelName }} (local)
             </v-chip>
-            <v-chip
-              v-else-if="isPrefetchingAi"
-              size="small"
-              color="info"
-              variant="tonal"
-              prepend-icon="mdi-loading mdi-spin"
-            >
-              IA no disponible
-            </v-chip>
+            <template v-if="!usingOllama">
+              <v-chip
+                v-if="jinaHasQuota"
+                :key="'jina-chip'"
+                size="small"
+                color="info"
+                variant="tonal"
+                prepend-icon="mdi-web"
+              >
+                Jina: {{ tokenUsage.jina.remaining.toLocaleString() }} /
+                {{ tokenUsage.jina.total.toLocaleString() }}
+              </v-chip>
+              <v-chip
+                v-else
+                :key="'tinyfish-chip'"
+                size="small"
+                color="success"
+                variant="tonal"
+                prepend-icon="mdi-brain"
+              >
+                TinyFish:
+                {{ tokenUsage.tinyfish.remaining.toLocaleString() }} /
+                {{ tokenUsage.tinyfish.total.toLocaleString() }}
+              </v-chip>
+            </template>
           </div>
           <v-btn :disabled="isLoading" color="blue-grey" @click="previewPdf">
             <span v-if="!isLoading">Vista previa sin IA</span>
@@ -296,7 +285,7 @@ const webSearchMessage = ref('') // ✅ NUEVO: Mensaje cuando se agotan los serv
 const aiSourceLabel = computed(() => {
   const labels = {
     gemini: 'Gemini AI',
-    ollama: 'Ollama (local)',
+    ollama: `Ollama: ${ollamaModelName.value} (local)`,
     fallback: 'Texto de respaldo',
     jina: 'Jina AI',
     tinyfish: 'TinyFish',
@@ -324,6 +313,14 @@ const tinyfishHasQuota = computed(() => {
   const data = getUsageData()?.tinyfish
   return data && data.used < (LIMITS?.tinyfish?.total || 10_000_000)
 })
+const ollamaModelName = computed(
+  () => process.env.VUE_APP_OLLAMA_MODEL || 'qwen2.5:1.5b',
+)
+const skipGemini = ref(true)
+const usingOllama = computed(
+  () =>
+    skipGemini.value || !geminiHasQuota.value || aiSource.value === 'ollama',
+)
 
 // Configuración de PDF (para UI, pero NO filtra datos en buildFinalReportItem)
 const pdfConfig = reactive({
@@ -1014,10 +1011,8 @@ const previewPdfWithAi = async () => {
     }
 
     finalReportItem.aiSections = aiSections
-    finalReportItem.finalReport =
-      aiSections.conclusion || cachedAiContent.value?.content || ''
-    finalReportItem.studyConclusion =
-      aiSections.conclusion || cachedAiContent.value?.content || ''
+    finalReportItem.finalReport = aiSections.conclusion || ''
+    finalReportItem.studyConclusion = aiSections.conclusion || ''
 
     // Distribuir secciones parseadas
     if (aiSections) {

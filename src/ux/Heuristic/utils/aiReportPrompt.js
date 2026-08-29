@@ -95,13 +95,12 @@ NORMAS OBLIGATORIAS:
 - Si un dato no está disponible, indícalo con "Dato no disponible".
 - INTERPRETA los datos cualitativamente: no te limites a repetir números, explica QUÉ SIGNIFICAN para la experiencia del usuario y QUÉ IMPLICAN para el negocio.
 - Las recomendaciones deben ser ACCIONABLES, específicas y priorizadas. Nada de "mejorar la usabilidad".
-- NO incluyas encabezados Markdown (# o ##). El PDF los genera automáticamente.
-- NO incluyas etiquetas , ni razonamiento interno.
-- Devuelve SOLO el texto explicativo cualitativo en base a los datos pasados del informe , sin prefacios ni explicaciones.
+- NO incluyas etiquetas <thinking>, ni razonamiento interno.
+- Devuelve SOLO el texto explicativo cualitativo en base a los datos pasados del informe, sin prefacios ni explicaciones.
 - Varía el vocabulario entre secciones. No repitas las mismas frases de transición.
 - USA VOCABULARIO TÉCNICO DE UX: "fricción", "carga cognitiva", "affordance", "feedback", "consistencia", "heurística", "tasa de error", "eficiencia", "satisfacción percibida".
 - NO uses relleno. Cada frase debe aportar información concreta y valor analítico.
-- Separa cada sección con el delimitador ===SECCION:NOMBRE=== en una línea aparte. Ejemplo: ===SECCION:INTRODUCCION===. El PDF los genera automáticamente.
+- Separa cada sección con el formato que se te indique en el prompt del usuario. El PDF los genera automáticamente.
 `.trim()
 
 function toFiniteNumber(value, fallback = null) {
@@ -336,12 +335,36 @@ ${commentsBlock}
     .join('\n\n')
 }
 
+/**
+ * Genera el marcador de sección según el formato.
+ * @param {string} name - Nombre de la sección (ej: 'INTRODUCCION', 'análisis heurístico')
+ * @param {string} format - 'separators' (===SECCION:NOMBRE===) o 'markdown' (## Nombre)
+ * @returns {string} Marcador de sección
+ */
+function sectionMarker(name, format) {
+  if (format === 'markdown') {
+    // Para Ollama/Qwen: usa ## Headers (mejor identificación)
+    const titleMap = {
+      INTRODUCCION: 'Introducción',
+      PORCENTAJES: 'Porcentajes',
+      TIPOS_RESPUESTA: 'Tipos de Respuesta',
+      ANALISIS_HEURISTICO: 'Análisis Heurístico',
+      COMPARATIVA: 'Comparativa',
+      CONCLUSION: 'Conclusión',
+      INVESTIGACION_WEB: 'Investigación Web Adicional',
+    }
+    return `## ${titleMap[name] || name}`
+  }
+  // Para Gemini: usa ===SECCION:NOMBRE===
+  return `===SECCION:${name}===`
+}
+
 export function buildHeuristicReportPrompt(
   reportItem,
   webResearchContent = '',
   options = {},
 ) {
-  const { condensed = false } = options
+  const { condensed = false, format = 'separators' } = options
   const heuristicStats = reportItem?.statisticsByHeuristics?.items || []
   const evidence = buildHeuristicEvidence({
     allAnswers: reportItem?.allAnswers || [],
@@ -478,7 +501,7 @@ INSTRUCCIONES CRÍTICAS:
 - Haz referencias concretas al tipo de sitio web y su contexto de uso (basándote en la URL y descripción).
 - Las recomendaciones deben ser específicas, técnicas y aplicables directamente al sistema evaluado.
 - Mantén un tono profesional, riguroso y útil para un equipo de producto.
-- OBLIGATORIO: Separa cada sección con el delimitador ===SECCION:NOMBRE=== en una línea aparte. Ejemplo: ===SECCION:INTRODUCCION===. Sin estos delimitadores el sistema NO puede separar las secciones del PDF. Los delimitadores válidos son: ===SECCION:INTRODUCCION===, ===SECCION:PORCENTAJES===, ===SECCION:TIPOS_RESPUESTA===, ===SECCION:ANALISIS_HEURISTICO===, ===SECCION:COMPARATIVA===, ===SECCION:CONCLUSION===.
+- OBLIGATORIO: Separa cada sección con el marcador que se te indica: ${sectionMarker('INTRODUCCION', format)}, ${sectionMarker('PORCENTAJES', format)}, ${sectionMarker('TIPOS_RESPUESTA', format)}, ${sectionMarker('ANALISIS_HEURISTICO', format)}, ${sectionMarker('COMPARATIVA', format)}, ${sectionMarker('CONCLUSION', format)}. Sin estos marcadores el sistema NO puede separar las secciones del PDF.
 
 DATOS DEL SISTEMA EVALUADO:
 - Nombre: ${testName}
@@ -507,7 +530,7 @@ INSTRUCCIONES PARA ANÁLISIS CUALITATIVO:
 - Cuando cites datos numéricos, usa la media redondeada a 1 decimal.
 - Si hay alta dispersión (desviación típica > 0.5), señala que la experiencia puede variar según el perfil del usuario.
 
-===SECCION:INTRODUCCION===
+${sectionMarker('INTRODUCCION', format)}
 Redacta 4-5 frases en prosa continua que:
 1. Presenten el sistema evaluado (nombre${testUrl ? ' y URL' : ''}), indicando qué tipo de sitio web o aplicación es.
 2. Contextualicen la evaluación heurística: por qué es relevante${methodologyText ? `, qué metodología se usó (${methodologyText})` : ''}.
@@ -517,7 +540,7 @@ Redacta 4-5 frases en prosa continua que:
 
 Sin viñetas. Párrafo continuo y fluido.
 
-===SECCION:PORCENTAJES===
+${sectionMarker('PORCENTAJES', format)}
 Redacta un único párrafo denso de 6-8 frases que:
 - Sintetice el estado de madurez UX del sistema con criterio profesional.
 - Mencione las fortalezas: heurísticas con mejor rendimiento:
@@ -534,7 +557,7 @@ Sin viñetas. Párrafo continuo.
 ${
   responseTypesText
     ? `
-===SECCION:TIPOS_RESPUESTA===
+${sectionMarker('TIPOS_RESPUESTA', format)}
 Redacta 2-3 frases que expliquen:
 1. Qué representan los tipos de respuesta (las opciones de puntuación disponibles en el test).
 2. Cuáles son los tipos más y menos utilizados y qué sugiere eso sobre el comportamiento de los evaluadores.
@@ -547,7 +570,7 @@ Sin viñetas. Párrafo continuo y analítico.`
     : ''
 }
 
-===SECCION:ANALISIS_HEURISTICO===
+${sectionMarker('ANALISIS_HEURISTICO', format)}
 Combina la priorización y el análisis detallado en UNA SOLA SECCIÓN.
 
 
@@ -605,7 +628,7 @@ IMPORTANTE:
 - El número debe ser correlativo (1, 2, 3...).
 - NO incluyas tablas ni datos numéricos en tu texto. Solo prosa analítica. Las tablas las genera el PDF automáticamente.
 
-===SECCION:COMPARATIVA===
+${sectionMarker('COMPARATIVA', format)}
 Redacta 5-6 frases que:
 
 Puntuaciones individuales:
@@ -623,7 +646,7 @@ Tu análisis debe:
 
 
 
-===SECCION:CONCLUSION===
+${sectionMarker('CONCLUSION', format)}
 
 Redacta la conclusión final en 8-12 frases, siguiendo este orden:
 
@@ -646,7 +669,7 @@ No uses viñetas ni números. Narrativa continua y profesional. Exactamente 8-12
 
 ${
   webResearchContent
-    ? `===SECCION:INVESTIGACION_WEB===
+    ? `${sectionMarker('INVESTIGACION_WEB', format)}
 A continuación se incluye información obtenida de una investigación web en tiempo real sobre el sitio evaluado. Úsala como contexto adicional para enriquecer tu análisis y recomendaciones, pero NO la copies textualmente. Debes integrarla con los datos del test para ofrecer una visión más completa y actualizada.
 
 ${webResearchContent}
@@ -670,6 +693,7 @@ export function buildOllamaRequestBody(
 ) {
   let userContent = buildHeuristicReportPrompt(reportItem, webResearchContent, {
     condensed: true,
+    format: 'markdown',
   })
 
   // Limitar el prompt para que quepa en num_ctx (16384 tokens - num_predict - margen)

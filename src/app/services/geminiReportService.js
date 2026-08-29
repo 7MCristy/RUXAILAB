@@ -524,12 +524,21 @@ function parseMarkdownHeaders(textContent) {
     'introducción': 'introduccion',
     'introduccion': 'introduccion',
     'porcentajes': 'porcentajes',
+    'porcentajes de usabilidad': 'porcentajes',
+    'análisis global': 'porcentajes',
     'tipos de respuesta': 'tipos_respuesta',
+    'tipo de respuesta': 'tipos_respuesta',
     'análisis heurístico': 'analisis_heuristico',
     'analisis heuristico': 'analisis_heuristico',
+    'análisis detallado': 'analisis_heuristico',
+    'heurísticas priorizadas': 'analisis_heuristico',
     'comparativa': 'comparativa',
+    'comparativa de puntuaciones': 'comparativa',
     'conclusión': 'conclusion',
     'conclusion': 'conclusion',
+    'conclusiones': 'conclusion',
+    'cierre': 'conclusion',
+    'investigación web adicional': 'conclusion',
   }
   const headerRegex = /^##\s+(.+)$/gm
   const matches = [...textContent.matchAll(headerRegex)]
@@ -595,10 +604,31 @@ function distributeTextByKeywords(content) {
       'potencial de mejora',
     ],
   }
+  // Mapa de headers markdown a secciones (para fallback)
+  const headerFallbackMap = {
+    'introducción': 'introduccion',
+    'introduccion': 'introduccion',
+    'porcentajes': 'porcentajes',
+    'tipos de respuesta': 'tipos_respuesta',
+    'análisis heurístico': 'analisis_heuristico',
+    'analisis heuristico': 'analisis_heuristico',
+    'comparativa': 'comparativa',
+    'conclusión': 'conclusion',
+    'conclusion': 'conclusion',
+  }
   for (const line of lines) {
     const trimmedLine = line.trim()
     if (/^={3,}SECCION:\w+={3,}$/i.test(trimmedLine)) continue
-    if (/^##\s+/.test(trimmedLine)) continue
+    // Detectar ## Headers como marcadores de sección
+    const headerMatch = trimmedLine.match(/^##\s+(.+)$/i)
+    if (headerMatch) {
+      const headerName = headerMatch[1].trim().toLowerCase()
+      const mapped = headerFallbackMap[headerName]
+      if (mapped) {
+        currentSection = mapped
+        continue
+      }
+    }
     const lower = trimmedLine.toLowerCase()
     for (const [section, keywords] of Object.entries(keywordMap)) {
       if (keywords.some((k) => lower.includes(k))) {

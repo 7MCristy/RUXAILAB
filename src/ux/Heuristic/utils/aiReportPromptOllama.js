@@ -341,14 +341,14 @@ DATOS A ANALIZAR: exactamente ${slice.length} heurísticas, indicadas más abajo
 
 RESTRICCIÓN DE EXTENSIÓN:
 - Analiza en DETALLE (con los 4 bloques) todas las heurísticas con severidad CRÍTICA, GRAVE o MODERADA (cumplimiento < 90%).
-- Las heurísticas con severidad LEVE (cumplimiento >= 90%), menciónalas con UNA sola frase resumen por bloque.
+- Las heurísticas con severidad LEVE (cumplimiento >= 90%) TAMBIÉN deben llevar su propio encabezado H{numero} y los 4 bloques con sus etiquetas — NUNCA las omitas ni las agrupes en un párrafo aparte — pero cada bloque contiene SOLO 1 frase breve en vez de 2-3. TODAS las heurísticas del lote, sin excepción, deben aparecer con este esquema H{numero}/[ETIQUETA]...[/ETIQUETA].
 - Sé breve: cada bloque tiene el límite de frases indicado abajo. No lo superes ni repitas la misma idea con otras palabras dentro del mismo bloque.
 
 CRITERIOS DE SEVERIDAD:
 - CRÍTICA: cumplimiento < 50% → Análisis completo con 4 bloques
 - GRAVE: cumplimiento 50-74% → Análisis completo con 4 bloques
 - MODERADA: cumplimiento 75-89% → Análisis completo con 4 bloques
-- LEVE: cumplimiento >= 90% → Una sola frase resumen por bloque
+- LEVE: cumplimiento >= 90% → Los mismos 4 bloques con etiquetas, 1 frase c/u
 
 INSTRUCCIÓN DE FORMATO OBLIGATORIA:
 Escribe CADA análisis de heurística usando EXACTAMENTE este esquema. NO copies las etiquetas entre corchetes ni los indicadores de longitud entre paréntesis, solo escribe el contenido:
@@ -412,13 +412,27 @@ No uses viñetas ni números. Narrativa continua y profesional. Exactamente 8-12
  * pequeño divague o repita contenido dentro del análisis de una sola
  * heurística (que debe ser breve).
  */
+// Marcador temporal (zona de uso privado de Unicode) para proteger puntos
+// decimales al dividir en frases -- nunca aparece en texto real, a
+// diferencia de un espacio, que si podria confundirse con espacios
+// normales al restaurar.
+const DECIMAL_DOT_PLACEHOLDER = String.fromCharCode(57344)
+
 function truncateToSentences(text, maxSentences = 3) {
   if (!text) return ''
-  const sentences = String(text)
-    .trim()
-    .match(/[^.!?]+[.!?]+|\s*[^.!?]+$/g)
-  if (!sentences || sentences.length <= maxSentences) return String(text).trim()
-  return sentences.slice(0, maxSentences).join('').trim()
+  const str = String(text).trim()
+  // Protege puntos decimales (p.ej. "16.5%", muy frecuentes en este
+  // informe) para que NO se cuenten como fin de frase al dividir: si no,
+  // "16.5%. Aunque..." se partia en "16." + "5%." y se comia la frase
+  // siguiente sin necesidad, dejando el analisis mas corto de lo pedido.
+  const protectedStr = str.replace(
+    /(\d)\.(\d)/g,
+    `$1${DECIMAL_DOT_PLACEHOLDER}$2`,
+  )
+  const restore = (s) => s.split(DECIMAL_DOT_PLACEHOLDER).join('.')
+  const sentences = protectedStr.match(/[^.!?]+[.!?]+|\s*[^.!?]+$/g)
+  if (!sentences || sentences.length <= maxSentences) return restore(protectedStr)
+  return restore(sentences.slice(0, maxSentences).join('')).trim()
 }
 
 function normalizeForMatch(str = '') {
@@ -507,15 +521,24 @@ function parseFallbackHeuristicList(textString, sortedByImpact = []) {
 
 // Reconoce la etiqueta de cada subapartado sea cual sea el formato exacto
 // que use el modelo: con corchetes "[ESTADO_ACTUAL]"/"[/ESTADO_ACTUAL]",
-// sin corchetes "Estado Actual:", con guion bajo o con espacio, singular o
-// plural en "propuesta(s)". El grupo 1 indica si es la etiqueta de CIERRE
-// (empieza por "/"), para no tratarla como el inicio de un nuevo apartado.
-// OJO: anclada a inicio de línea (^, con [ \t]* — no \s* — delante) para
-// que NO matchee la frase "estado actual" cuando aparece dentro de una
-// oración normal (p.ej. "la media del estado actual es..."), solo cuando
-// es realmente el encabezado de un subapartado.
+// sin corchetes "Estado Actual:", con guion bajo, con espacio o sin
+// separador alguno ("ESTADOACTUAL" — se ha visto en la práctica que tanto
+// Ollama como Gemini a veces "comen" el guion bajo), singular o plural en
+// "propuesta(s)".
+//
+// Dos alternativas con reglas de anclaje DISTINTAS, porque en la práctica
+// los modelos meten varias etiquetas en la misma línea (p.ej.
+// "[/ESTADO_ACTUAL] [IMPACTO_NEGATIVO]texto..."):
+//   1) Forma con corchetes: NO se ancla a inicio de línea (los corchetes ya
+//      son una señal suficientemente inequívoca de que es una etiqueta, no
+//      prosa normal). slash1 indica si es la etiqueta de CIERRE.
+//   2) Forma sin corchetes "Estado Actual: ...": SÍ se ancla a inicio de
+//      línea (^, con [ \t]* — no \s*, que se comería la línea anterior),
+//      porque sin corchetes es la única forma de no confundirla con la
+//      frase "estado actual" apareciendo dentro de una oración normal
+//      (p.ej. "la media del estado actual es...").
 const LABEL_TOKEN_REGEX =
-  /^[ \t]*[-*]?\s*\[?(\/)?\s*(ESTADO[ _]ACTUAL|IMPACTO[ _]NEGATIVO|PROPUESTAS?[ _]DE[ _]MEJORA|RESUMEN[ _]EJECUTIVO)\s*\]?\s*:?/gim
+  /\[(?<slash1>\/)?\s*(?<label1>ESTADO[ _]?ACTUAL|IMPACTO[ _]?NEGATIVO|PROPUESTAS?[ _]?DE[ _]?MEJORA|RESUMEN[ _]?EJECUTIVO)\s*\]|^[ \t]*[-*]?\s*(?<label2>ESTADO[ _]?ACTUAL|IMPACTO[ _]?NEGATIVO|PROPUESTAS?[ _]?DE[ _]?MEJORA|RESUMEN[ _]?EJECUTIVO)\s*:/gim
 
 const LABEL_KEY_MAP = {
   ESTADOACTUAL: 'estadoActual',
@@ -555,12 +578,14 @@ function extractLabeledBlocks(blockText) {
     resumenEjecutivo: '',
   }
   const allMatches = [...blockText.matchAll(LABEL_TOKEN_REGEX)]
-  const openMatches = allMatches.filter((m) => !m[1])
+  // slash1 solo existe en la forma con corchetes y solo se rellena cuando
+  // es la etiqueta de CIERRE "[/...]" — esos matches no abren un apartado.
+  const openMatches = allMatches.filter((m) => !m.groups.slash1)
   if (openMatches.length === 0) return result
 
   for (let i = 0; i < openMatches.length; i++) {
-    const key =
-      LABEL_KEY_MAP[openMatches[i][2].toUpperCase().replace(/[ _]/g, '')]
+    const label = openMatches[i].groups.label1 || openMatches[i].groups.label2
+    const key = LABEL_KEY_MAP[label.toUpperCase().replace(/[ _]/g, '')]
     if (!key) continue
     const start = openMatches[i].index + openMatches[i][0].length
     const end =
@@ -574,32 +599,30 @@ function extractLabeledBlocks(blockText) {
 }
 
 /**
- * Parser principal: localiza cada heurística por su encabezado real
- * "H{numero}" (el único elemento que Qwen suele respetar de forma fiable,
- * porque se le pide explícitamente que use el H{n} FIJO de los datos) y,
- * dentro de cada bloque, extrae los subapartados con extractLabeledBlocks.
- * Si un bloque no tiene ninguna etiqueta reconocible, usa el contenido
- * completo del bloque como análisis general en lugar de perder el dato.
+ * Parser genérico y SIN dependencia de datos externos: localiza cada
+ * heurística por su encabezado real "H{numero}" (el único elemento que
+ * tanto Qwen como Gemini suelen respetar de forma fiable, porque se les
+ * pide explícitamente que usen el H{n} FIJO de los datos) y, dentro de
+ * cada bloque, extrae los subapartados con extractLabeledBlocks. Si un
+ * bloque no tiene ninguna etiqueta reconocible, usa el contenido completo
+ * del bloque como análisis general en lugar de perder el dato. Se
+ * reutiliza tanto desde el flujo de Ollama (parseHeuristicBlocksByHeader,
+ * que además valida contra los datos reales del lote) como desde
+ * geminiReportService.js (parseHeuristicAnalysis), que recibe todas las
+ * heurísticas en una sola llamada y no necesita esa validación.
  */
-function parseHeuristicBlocksByHeader(textString, sortedByImpact = []) {
+export function parseHeuristicBlocksGeneric(textString) {
   const blockStartRegex = /^H(\d+)\b/gm
   const starts = [...textString.matchAll(blockStartRegex)]
   if (starts.length === 0) return []
-
-  const dataByPosition = new Map()
-  for (const h of sortedByImpact) {
-    if (h?.position != null) dataByPosition.set(h.position, h)
-  }
 
   const seenPositions = new Set()
   const blocks = []
   for (let i = 0; i < starts.length; i++) {
     const position = parseInt(starts[i][1], 10)
-    const hData = dataByPosition.get(position)
-    // Descarta H{n} que no correspondan a ninguna heurística real de este
-    // lote (alucinación) y descarta repeticiones (Qwen a veces reescribe
-    // la misma heurística más adelante en la respuesta).
-    if (!hData || seenPositions.has(position)) continue
+    // Descarta repeticiones: el modelo a veces reescribe la misma
+    // heurística más adelante en la respuesta.
+    if (seenPositions.has(position)) continue
     seenPositions.add(position)
 
     const blockStart = starts[i].index
@@ -610,16 +633,12 @@ function parseHeuristicBlocksByHeader(textString, sortedByImpact = []) {
     const labeled = extractLabeledBlocks(blockText)
     const hasAnyLabel = Object.values(labeled).some(Boolean)
 
-    const compliance =
-      hData.compliance != null ? `${hData.compliance.toFixed(1)}%` : ''
-    const title = hData.title || ''
-
     if (hasAnyLabel) {
       blocks.push({
         id: `H${position}`,
         index: position - 1,
-        compliance,
-        title,
+        compliance: '',
+        title: '',
         estadoActual: truncateToSentences(labeled.estadoActual, 2),
         impactoExperiencia: truncateToSentences(labeled.impactoExperiencia, 3),
         planAccion: truncateToSentences(labeled.planAccion, 3),
@@ -635,8 +654,8 @@ function parseHeuristicBlocksByHeader(textString, sortedByImpact = []) {
       blocks.push({
         id: `H${position}`,
         index: position - 1,
-        compliance,
-        title,
+        compliance: '',
+        title: '',
         estadoActual: '',
         impactoExperiencia: '',
         planAccion: truncateToSentences(content, 3),
@@ -647,6 +666,30 @@ function parseHeuristicBlocksByHeader(textString, sortedByImpact = []) {
     }
   }
   return blocks
+}
+
+/**
+ * Variante para Ollama: además de parseHeuristicBlocksGeneric, valida cada
+ * H{n} contra los datos reales del lote (descarta alucinaciones que no
+ * correspondan a ninguna heurística de ESTE lote) y rellena compliance/title.
+ */
+function parseHeuristicBlocksByHeader(textString, sortedByImpact = []) {
+  const dataByPosition = new Map()
+  for (const h of sortedByImpact) {
+    if (h?.position != null) dataByPosition.set(h.position, h)
+  }
+
+  return parseHeuristicBlocksGeneric(textString)
+    .filter((block) => dataByPosition.has(block.index + 1))
+    .map((block) => {
+      const hData = dataByPosition.get(block.index + 1)
+      return {
+        ...block,
+        compliance:
+          hData.compliance != null ? `${hData.compliance.toFixed(1)}%` : '',
+        title: hData.title || '',
+      }
+    })
 }
 
 export function parseOllamaHeuristicBatch(textString, sortedByImpact = []) {

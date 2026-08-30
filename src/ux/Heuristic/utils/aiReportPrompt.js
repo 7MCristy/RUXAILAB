@@ -599,41 +599,43 @@ Combina la priorización y el análisis detallado en UNA SOLA SECCIÓN.
 
 
 RESTRICCIÓN DE EXTENSIÓN:
-- Analiza en DETALLE (con los 4 bloques) todas las heurísticas con severidad 
-  CRÍTICA, GRAVE o MODERADA (cumplimiento < 90%).
-- Las heurísticas con severidad LEVE (cumplimiento >= 90%),
- méncionalas Para los 4 bloques UNA sola frase resumen en cada uno.
-
+- Analiza en DETALLE (con los 4 bloques) todas las heurísticas con severidad
+  CRÍTICA, GRAVE o MODERADA (cumplimiento < 90%): 2-3 frases por bloque.
+- Las heurísticas con severidad LEVE (cumplimiento >= 90%) TAMBIÉN deben
+  llevar su propio encabezado H{numero} y los 4 bloques con sus etiquetas
+  — NUNCA las omitas ni las agrupes en un párrafo aparte — pero cada bloque
+  contiene SOLO 1 frase breve en vez de 2-3. TODAS las heurísticas, sin
+  excepción, deben aparecer con este esquema H{numero}/[ETIQUETA]...[/ETIQUETA].
 
 CRITERIOS DE SEVERIDAD:
-- CRÍTICA: cumplimiento < 50% → Análisis completo con 4 bloques
-- GRAVE: cumplimiento 50-74% → Análisis completo con 4 bloques  
-- MODERADA: cumplimiento 75-89% → Análisis completo con 4 bloques
-- LEVE: cumplimiento >= 90% → Una sola frase resumen
+- CRÍTICA: cumplimiento < 50% → Análisis completo con 4 bloques (2-3 frases c/u)
+- GRAVE: cumplimiento 50-74% → Análisis completo con 4 bloques (2-3 frases c/u)
+- MODERADA: cumplimiento 75-89% → Análisis completo con 4 bloques (2-3 frases c/u)
+- LEVE: cumplimiento >= 90% → Los mismos 4 bloques con etiquetas, 1 frase c/u
 
 
 INSTRUCCIÓN DE FORMATO OBLIGATORIA:
-Escribe CADA análisis de heurística usando EXACTAMENTE este esquema. NO copies las etiquetas entre corchetes ni los indicadores de longitud entre paréntesis, solo escribe el contenido:
+Escribe CADA análisis de heurística usando EXACTAMENTE este esquema. Sé conciso: no repitas la misma idea con otras palabras dentro del mismo bloque ni entre heurísticas. NO copies las etiquetas entre corchetes ni los indicadores de longitud entre paréntesis, solo escribe el contenido:
 
 H{numero}
 [ESTADO_ACTUAL]
-Aquí va tu interpretación cualitativa breve en 2 frases.
+Máximo 2 frases interpretando el estado cualitativo.
 [/ESTADO_ACTUAL]
 [IMPACTO_NEGATIVO]
-Aquí va el efecto negativo concreto en el usuario, considerando el porcentaje de cumplimiento y la media de respuestas. Si hay información web, integra cómo afecta a usuarios reales.
+Máximo 2 frases con el efecto negativo concreto en el usuario, considerando el porcentaje de cumplimiento y la media de respuestas. Si hay información web, integra cómo afecta a usuarios reales.
 [/IMPACTO_NEGATIVO]
 [PROPUESTAS_DE_MEJORA]
-Aquí van 2 recomendaciones específicas y técnicas en infinitivo. Basándote en comentarios de evaluadores y, si está disponible, en la investigación web.
+Máximo 2 recomendaciones específicas y técnicas en infinitivo, en frases cortas. Basándote en comentarios de evaluadores y, si está disponible, en la investigación web.
 [/PROPUESTAS_DE_MEJORA]
 [RESUMEN_EJECUTIVO]
-Aquí va 1 frase resumen para el equipo de desarrollo.
+Exactamente 1 frase resumen para el equipo de desarrollo.
 [/RESUMEN_EJECUTIVO]
 
 REGLAS DE FORMATO:
 - NO escribas "(1-2 frases)", "(2 recomendaciones)", "(1 frase)" ni nada entre paréntesis indicando longitud.
 - NO escribas instrucciones como "Interpreta...", "Efecto negativo...", "Qué mejoraría...".
 - Solo escribe el contenido analítico directamente dentro de cada bloque.
-- Cada bloque DEBE cerrarse con la etiqueta de cierre [/ETIQUETA].
+- Cada bloque DEBE cerrarse con la etiqueta de cierre [/ETIQUETA], escrita EXACTAMENTE así (con el guion bajo tal cual, sin omitirlo ni sustituirlo por espacio).
 
 
 IMPORTANTE:

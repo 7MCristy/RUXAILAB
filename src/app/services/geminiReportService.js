@@ -14,6 +14,7 @@ import {
 import {
   buildOllamaPlan,
   assembleOllamaReport,
+  parseHeuristicBlocksGeneric,
 } from '@/ux/Heuristic/utils/aiReportPromptOllama'
 import { researchWebsite } from './webSearchService'
 import {
@@ -25,12 +26,33 @@ import {
 
 // Configuración desde variables de entorno
 const GEMINI_API_KEY = process.env.VUE_APP_GEMINI_API_KEY
-const GEMINI_MODEL = process.env.VUE_APP_GEMINI_MODEL || 'gemini-1.5-flash'
-const GEMINI_TIMEOUT = 150000
+const GEMINI_MODEL = normalizeGeminiModel(
+  process.env.VUE_APP_GEMINI_MODEL || 'gemini-1.5-flash',
+)
+const GEMINI_TIMEOUT = Number(process.env.VUE_APP_GEMINI_TIMEOUT_MS || 150000)
+const OLLAMA_TIMEOUT_MS = Number(
+  process.env.VUE_APP_OLLAMA_TIMEOUT_MS || 300000,
+)
 const ENABLE_WEB_RESEARCH = process.env.VUE_APP_ENABLE_WEB_RESEARCH !== 'false'
 
 // Instancia del cliente Gemini (inicialización lazy)
 let geminiClient = null
+
+function normalizeGeminiModel(modelName) {
+  if (!modelName || typeof modelName !== 'string') return 'gemini-1.5-flash'
+
+  const normalized = modelName.trim()
+
+  const aliasMap = {
+    'gemini-2-flash': 'gemini-2.0-flash',
+    'gemini-2.0': 'gemini-2.0-flash',
+    'gemini-2': 'gemini-2.0-flash',
+    'gemini-3-flash': 'gemini-2.5-flash',
+    'gemini-3.5-flash': 'gemini-2.5-flash',
+  }
+
+  return aliasMap[normalized.toLowerCase()] || normalized
+}
 
 /**
  * Esquema de salida forzado para Gemini (responseSchema + responseMimeType:
@@ -157,7 +179,7 @@ export async function generateAiReportWithGemini(finalReportItem) {
     console.log('[Gemini] Configuración del modelo:', {
       model: GEMINI_MODEL,
       timeoutMs: GEMINI_TIMEOUT,
-      maxOutputTokens: 9500,
+      maxOutputTokens: 16384,
       enableWebResearch: ENABLE_WEB_RESEARCH,
       hasApiKey: Boolean(GEMINI_API_KEY),
     })
@@ -199,7 +221,7 @@ export async function generateAiReportWithGemini(finalReportItem) {
       config: {
         temperature: 0.35,
         topP: 0.85,
-        maxOutputTokens: 9500,
+        maxOutputTokens: 16384,
         systemInstruction: SYSTEM_PROMPT,
         responseMimeType: 'application/json',
         responseSchema: REPORT_JSON_SCHEMA,
@@ -312,16 +334,62 @@ export async function generateAiReportWithGemini(finalReportItem) {
  * @param {string} content - Texto crudo devuelto por Gemini
  * @returns {Object} Secciones: { introduccion, porcentajes, tipos_respuesta, analisis_heuristico, analisis_heuristico_blocks, comparativa, conclusion }
  */
+/**
+ * Repara una respuesta JSON incompleta (típicamente truncada por
+ * maxOutputTokens antes de cerrar el objeto). Extrae cada clave conocida
+ * directamente por regex en vez de recurrir a parseAiReportSections, que
+ * busca marcadores de texto libre (===SECCION:X===) que el prompt en modo
+ * JSON ya no genera — usarlo aquí solo produciría basura (fragmentos de
+ * JSON mal interpretados como prosa). Si el valor de una clave quedó
+ * cortado a mitad (sin comilla de cierre), se recupera lo que haya hasta el
+ * corte en vez de perder la clave entera.
+ */
+function repairTruncatedGeminiJson(content) {
+  const KEYS = [
+    'introduccion',
+    'porcentajes',
+    'tipos_respuesta',
+    'analisis_heuristico',
+    'comparativa',
+    'conclusion',
+  ]
+  const parsed = {}
+  for (const key of KEYS) {
+    const closedRegex = new RegExp(
+      `"${key}"\\s*:\\s*"((?:\\\\.|[^"\\\\])*)"`,
+      's',
+    )
+    const closedMatch = content.match(closedRegex)
+    let raw = closedMatch ? closedMatch[1] : null
+    if (raw == null) {
+      // El valor quedó truncado antes de la comilla de cierre: toma todo
+      // lo que haya desde la apertura hasta el final del texto recibido.
+      const openRegex = new RegExp(`"${key}"\\s*:\\s*"((?:\\\\.|[^"\\\\])*)$`, 's')
+      const openMatch = content.match(openRegex)
+      raw = openMatch ? openMatch[1] : ''
+    }
+    // El fragmento capturado sigue escapado como JSON (\n, \", etc.) —
+    // reutiliza JSON.parse para desescaparlo; si el propio fragmento
+    // termina a mitad de una secuencia de escape, cae al texto crudo.
+    try {
+      parsed[key] = JSON.parse(`"${raw}"`)
+    } catch {
+      parsed[key] = raw
+    }
+  }
+  return parsed
+}
+
 function parseGeminiJsonSections(content) {
   let parsed
   try {
     parsed = JSON.parse(content)
   } catch (jsonError) {
-    console.error(
-      '[Gemini] ❌ La respuesta no es JSON válido pese a responseSchema, usando fallback de texto libre:',
+    console.warn(
+      '[Gemini] ⚠️ JSON incompleto/inválido pese a responseSchema (probable corte por límite de tokens), reparando por clave:',
       jsonError.message,
     )
-    return parseAiReportSections(content)
+    parsed = repairTruncatedGeminiJson(content)
   }
 
   const sections = {
@@ -416,9 +484,6 @@ const generateAiReportWithOllama = async function (
     })
 
     // ─── Ejecutar llamadas en paralelo (máx 3 concurrentes) ──────────────
-    const OLLAMA_TIMEOUT_MS = Number(
-      process.env.VUE_APP_OLLAMA_TIMEOUT_MS || 300000, // 5 minutos
-    )
     const MAX_CONCURRENT = 3
     const MAX_ATTEMPTS = 2
     const results = {}
@@ -1018,76 +1083,15 @@ function distributeTextByKeywords(content) {
  */
 export function parseHeuristicAnalysis(text) {
   if (!text) return []
-
-  const blocks = []
-  // Divide por encabezados de heurística: el prompt (aiReportPrompt.js,
-  // sección ANALISIS_HEURISTICO) pide únicamente "H{numero}" en su propia
-  // línea — sin porcentaje ni título embebidos — así que el separador debe
-  // coincidir exactamente con eso.
-  const heuristicHeaderRegex = /^H(\d+)\b/gm
-
-  const headerMatches = [...text.matchAll(heuristicHeaderRegex)]
-  const seenIndices = new Set()
-
-  for (let i = 0; i < headerMatches.length; i++) {
-    const match = headerMatches[i]
-    const index = parseInt(match[1], 10) - 1
-    // Descarta repeticiones: el modelo a veces reescribe la misma
-    // heurística más adelante en la respuesta.
-    if (seenIndices.has(index)) continue
-    seenIndices.add(index)
-
-    const nextStart =
-      i + 1 < headerMatches.length ? headerMatches[i + 1].index : text.length
-    const blockText = text.slice(match.index, nextStart).trim()
-
-    const id = `H${match[1]}`
-
-    // Extraer sub-bloques [ETIQUETA]...[/ETIQUETA]. Las etiquetas deben
-    // coincidir EXACTAMENTE con las que pide aiReportPrompt.js:
-    // ESTADO_ACTUAL, IMPACTO_NEGATIVO, PROPUESTAS_DE_MEJORA, RESUMEN_EJECUTIVO.
-    const extract = (tag) => {
-      const regex = new RegExp(
-        `\\[${tag}\\]\\s*([\\s\\S]*?)\\[\\/${tag}\\]`,
-        'i',
-      )
-      const m = blockText.match(regex)
-      return m ? m[1].trim() : ''
-    }
-
-    const estadoActual = extract('ESTADO_ACTUAL')
-    const impactoExperiencia = extract('IMPACTO_NEGATIVO')
-    const planAccion = extract('PROPUESTAS_DE_MEJORA')
-    const resumenEjecutivo = extract('RESUMEN_EJECUTIVO')
-
-    // Heurísticas leves: si no tiene sub-bloques, es una frase resumen
-    const isLight =
-      !estadoActual && !impactoExperiencia && !planAccion && !resumenEjecutivo
-    const lightSummary = isLight
-      ? blockText
-          .replace(/^H\d+[^\n]*\n?/, '')
-          .replace(/\[\/?ESTADO_ACTUAL\]/gi, '')
-          .replace(/\[\/?IMPACTO_NEGATIVO\]/gi, '')
-          .replace(/\[\/?PROPUESTAS_DE_MEJORA\]/gi, '')
-          .replace(/\[\/?RESUMEN_EJECUTIVO\]/gi, '')
-          .trim()
-      : ''
-
-    blocks.push({
-      id,
-      index,
-      compliance: '',
-      title: '',
-      estadoActual,
-      impactoExperiencia,
-      planAccion,
-      resumenEjecutivo,
-      impactoMejora: '',
-      lightSummary,
-    })
-  }
-
-  return blocks
+  // Reutiliza el mismo parser tolerante que usa Ollama (aiReportPromptOllama.js):
+  // localiza cada heurística por su encabezado real "H{numero}" y extrae los
+  // subapartados [ESTADO_ACTUAL]/[IMPACTO_NEGATIVO]/[PROPUESTAS_DE_MEJORA]/
+  // [RESUMEN_EJECUTIVO] tolerando variaciones de formato (con o sin
+  // corchetes, con o sin guion bajo, o sin separador alguno entre palabras
+  // — se ha observado que Gemini a veces "come" el guion bajo de las
+  // etiquetas). Antes este archivo tenía su propio parser desincronizado
+  // con el formato real del prompt, lo que dejaba siempre 0 bloques.
+  return parseHeuristicBlocksGeneric(text)
 }
 
 /**

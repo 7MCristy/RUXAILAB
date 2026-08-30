@@ -1,8 +1,6 @@
-import { buildHeuristicEvidence } from './buildHeuristicEvidence'
-import { getSeverityLabelFromPercentage } from './pdfGenerator'
+import { OLLAMA_MODEL, GEMINI_MODEL } from '@/shared/constants/models'
 import { getSeverityLabel, calculateResponseTotals } from './statistics'
-
-const DEFAULT_MODEL = 'qwen2.5:latest'
+import { buildHeuristicEvidence } from './buildHeuristicEvidence'
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // HEURÍSTICAS DE REFERENCIA: 15 heurísticas Nielsen + Tognazzini
@@ -531,18 +529,23 @@ INSTRUCCIONES PARA ANÁLISIS CUALITATIVO:
 - Si hay alta dispersión (desviación típica > 0.5), señala que la experiencia puede variar según el perfil del usuario.
 
 ${sectionMarker('INTRODUCCION', format)}
-Redacta 4-5 frases en prosa continua que:
-1. Presenten el sistema evaluado (nombre${testUrl ? ' y URL' : ''}), indicando qué tipo de sitio web o aplicación es.
-2. Contextualicen la evaluación heurística: por qué es relevante${methodologyText ? `, qué metodología se usó (${methodologyText})` : ''}.
-3. Indiquen cuántos evaluadores participaron y el contexto de la evaluación.
-4. Mencionen el cumplimiento global (${globalCompliance != null ? globalCompliance.toFixed(2) + '%' : 'N/D'}) y su severidad (${globalSeverity}) como dato de partida.
-5. Incorporen la descripción del sistema si está disponible.
+Redacta 5-7 párrafos en prosa continua y tono formal que organicen la información siguiente sin presentar aún resultados, porcentajes ni recomendaciones:
 
-Sin viñetas. Párrafo continuo y fluido.
+1. Presenta la organización, empresa o proyecto y su ámbito de actuación.
+2. Explica el problema o necesidad que pretende resolver el sistema.
+3. Describe la solución y sus principales componentes tecnológicos.
+4. Menciona el contexto institucional, empresarial o de investigación.
+5. Explica el propósito de la evaluación heurística.
+6. Identifica a los usuarios principales y los objetivos del estudio.
+${webResearchContent ? '7. Si aporta contexto real y relevante, integra brevemente información verificada sobre el sitio obtenida mediante investigación web (sin citarla como fuente externa ni copiarla textualmente).' : ''}
+
+Utiliza únicamente la información proporcionada. No presentes todavía resultados, porcentajes ni recomendaciones. Escribe en prosa continua, con un tono formal y claro.
+${webResearchContent ? `\nContexto adicional obtenido mediante investigación web sobre el sitio evaluado (úsalo solo si aporta valor real para situar el sistema, no lo copies textualmente):\n${webResearchContent}` : ''}
 
 ${sectionMarker('PORCENTAJES', format)}
 Redacta un único párrafo denso de 6-8 frases que:
 - Sintetice el estado de madurez UX del sistema con criterio profesional.
+- Presente el porcentaje global de cumplimiento y su nivel de severidad.
 - Mencione las fortalezas: heurísticas con mejor rendimiento:
   ${optimal.length ? optimal.map((h) => `${h.title} (${h.compliance?.toFixed(1)}%)`).join(', ') : 'Ninguna destacable'}
 - Señale las debilidades críticas que requieren intervención urgente:
@@ -688,7 +691,7 @@ FIN DEL INFORME
 
 export function buildOllamaRequestBody(
   reportItem,
-  model = process.env.VUE_APP_OLLAMA_MODEL || DEFAULT_MODEL,
+  model = process.env.VUE_APP_OLLAMA_MODEL || OLLAMA_MODEL,
   webResearchContent = '',
 ) {
   let userContent = buildHeuristicReportPrompt(reportItem, webResearchContent, {
@@ -698,7 +701,7 @@ export function buildOllamaRequestBody(
 
   // Limitar el prompt para que quepa en num_ctx (16384 tokens - num_predict - margen)
   // ~13,500 tokens disponibles para prompt → ~47,000 chars máx
-  const MAX_PROMPT_CHARS = 40000
+  const MAX_PROMPT_CHARS = 40000 // son aprox 13,500 tokens (3.5 chars/token)
   if (userContent.length > MAX_PROMPT_CHARS) {
     userContent =
       userContent.substring(0, MAX_PROMPT_CHARS) +
@@ -709,8 +712,8 @@ export function buildOllamaRequestBody(
   // num_ctx 24576: permite prompt grande + respuesta completa (6 secciones)
   // num_predict 4000: genera ~16,000 chars (~4,000 tokens) — informe completo
   // num_thread 4: usa todos los cores de CPU disponibles
-  const NUM_CTX = 5500
-  const NUM_PREDICT = 5900
+  const NUM_CTX = 16700
+  const NUM_PREDICT = 7800
 
   console.log('[Ollama] Token budget:', {
     promptChars: userContent.length + SYSTEM_PROMPT.length,
@@ -737,4 +740,18 @@ export function buildOllamaRequestBody(
       { role: 'user', content: userContent },
     ],
   }
+}
+
+// ─── Exportaciones para reutilización en aiReportPromptOllama.js ─────────────
+
+export {
+  toFiniteNumber,
+  stripHtml,
+  classifyHeuristics,
+  formatEvaluatorsSummary,
+  detectNielsenTognazziniMethodology,
+  getQuestionSummaries,
+  buildHeuristicDetailData,
+  buildHeuristicsDetailText,
+  sectionMarker,
 }

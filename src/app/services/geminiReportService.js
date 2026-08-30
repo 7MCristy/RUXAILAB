@@ -9,9 +9,12 @@
 import { GoogleGenAI } from '@google/genai'
 import {
   buildHeuristicReportPrompt,
-  buildOllamaRequestBody,
   SYSTEM_PROMPT,
 } from '@/ux/Heuristic/utils/aiReportPrompt'
+import {
+  buildOllamaPlan,
+  assembleOllamaReport,
+} from '@/ux/Heuristic/utils/aiReportPromptOllama'
 import { researchWebsite } from './webSearchService'
 import {
   hasQuota,
@@ -29,15 +32,16 @@ const ENABLE_WEB_RESEARCH = process.env.VUE_APP_ENABLE_WEB_RESEARCH !== 'false'
 // Instancia del cliente Gemini (inicialización lazy)
 let geminiClient = null
 
-async function checkOllamaAvailable(url = 'http://localhost:11434') {
-  const tagsUrl = `${url.replace(/\/$/, '')}/api/tags`
+async function checkOllamaAvailable(
+  tagsUrl = 'http://localhost:11434/api/tags',
+) {
   const startedAt = Date.now()
 
   try {
     console.log('[Ollama] Comprobando disponibilidad:', tagsUrl)
     const response = await fetch(tagsUrl, {
       method: 'GET',
-      signal: AbortSignal.timeout(8000),
+      signal: AbortSignal.timeout(10000),
     })
 
     console.log('[Ollama] Disponibilidad HTTP:', {
@@ -222,96 +226,279 @@ export async function generateAiReportWithGemini(finalReportItem) {
 }
 
 /**
- * Genera informe con Ollama usando buildOllamaRequestBody
+ * Genera informe con Ollama usando múltiples llamadas pequeñas.
+ *
+ * Arquitectura:
+ * - Llamada 1: Introducción + Porcentajes (con web research si disponible)
+ * - Llamada 2+: Análisis heurístico por lotes (JSON forzado)
+ * - Última llamada: Conclusión (con web research ya obtenido)
  *
  * @param {Object} finalReportItem - Datos del informe
  * @param {string} ollamaUrl - URL de Ollama (default: localhost:11434)
- * @returns {Promise<string>} Contenido del informe
+ * @returns {Promise<Object>} { content, sections, webResearch, source }
  */
-export async function generateAiReportWithOllama(
+const generateAiReportWithOllama = async function (
   finalReportItem,
   ollamaUrl = process.env.VUE_APP_OLLAMA_API_URL ||
     'http://localhost:11434/api/chat',
 ) {
   try {
-    const baseUrl = ollamaUrl.replace('/api/chat', '')
-    const model = process.env.VUE_APP_OLLAMA_MODEL || 'qwen2.5:1.5b'
+    const model = process.env.VUE_APP_OLLAMA_MODEL || 'qwen2.5:3b'
 
     console.log('[Ollama] Inicio de generación:', {
       url: ollamaUrl,
-      baseUrl,
       model,
     })
 
-    const isAvailable = await checkOllamaAvailable(baseUrl)
+    // Verificar disponibilidad usando la URL directa de /api/tags
+    // Construir URL de tags a partir de la URL base (sin /api/chat)
+    const baseUrl = ollamaUrl.replace(/\/api\/chat\/?$/, '')
+    const tagsUrl = `${baseUrl}/api/tags`
+
+    const isAvailable = await checkOllamaAvailable(tagsUrl)
     if (!isAvailable) {
       throw new Error('Ollama no está disponible')
     }
 
-    const body = buildOllamaRequestBody(finalReportItem, model)
-    const bodyJson = JSON.stringify(body)
-    console.log('[Ollama] Petición preparada:', {
-      model: body.model,
-      stream: body.stream,
-      bodySizeKB: (bodyJson.length / 1024).toFixed(1),
-      promptChars: body.messages?.reduce(
-        (total, message) => total + String(message.content || '').length,
-        0,
-      ),
-      messageCount: body.messages?.length || 0,
-    })
-
-    const startedAt = Date.now()
-    let response
-    try {
-      response = await fetch(ollamaUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: bodyJson,
-      })
-    } catch (fetchError) {
-      console.error('[Ollama] Fetch falló:', {
-        name: fetchError?.name,
-        message: fetchError?.message,
-        durationMs: Date.now() - startedAt,
-        url: ollamaUrl,
-      })
-      throw fetchError
+    // Investigación web RAG
+    let webResearchContent = ''
+    if (ENABLE_WEB_RESEARCH) {
+      try {
+        console.log('[Ollama] 🌐 Iniciando investigación web...')
+        const webResult = await researchWebsite({
+          testUrl: finalReportItem.testUrl,
+          testDescription: finalReportItem.testDescription,
+          testTitle: finalReportItem.title,
+        })
+        webResearchContent = webResult.content
+        console.log('[Ollama] ✅ Investigación web completada:', {
+          source: webResult.source,
+          contentLength: webResearchContent.length,
+        })
+      } catch (webError) {
+        console.warn('[Ollama] ⚠️ Investigación web falló:', webError.message)
+      }
+    } else {
+      console.log('[Ollama] ⚠️ Investigación web deshabilitada')
     }
 
-    console.log('[Ollama] Respuesta HTTP:', {
-      status: response.status,
-      ok: response.ok,
-      durationMs: Date.now() - startedAt,
+    // Construir plan (múltiples llamadas)
+    const plan = buildOllamaPlan(finalReportItem, model, webResearchContent)
+    console.log('[Ollama] 📋 Plan:', {
+      totalCalls: plan.calls.length,
+      calls: plan.calls.map((c) => c.key),
+      meta: plan.meta,
     })
 
-    if (!response.ok) {
-      const errorBody = (await response.text()).slice(0, 500)
-      console.error('[Ollama] Cuerpo de error:', errorBody)
-      throw new Error(
-        `Ollama HTTP ${response.status}: ${response.statusText}${errorBody ? ` - ${errorBody}` : ''}`,
+    // ─── Ejecutar llamadas en paralelo (máx 3 concurrentes) ──────────────
+    const OLLAMA_TIMEOUT_MS = Number(
+      process.env.VUE_APP_OLLAMA_TIMEOUT_MS || 300000, // 5 minutos
+    )
+    const MAX_CONCURRENT = 3
+    const MAX_ATTEMPTS = 2
+    const results = {}
+    const startedAt = Date.now()
+
+    console.log('[Ollama] 🔧 Config:', {
+      timeout: OLLAMA_TIMEOUT_MS,
+      maxConcurrent: MAX_CONCURRENT,
+      maxAttempts: MAX_ATTEMPTS,
+    })
+
+    async function callOllamaOnce(call, workerId) {
+      console.log(
+        `[Ollama] 🌐 Worker ${workerId} → ${call.key}: Iniciando fetch...`,
+      )
+      const fetchStarted = Date.now()
+
+      const response = await fetch(ollamaUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(call.requestBody),
+        signal: AbortSignal.timeout(OLLAMA_TIMEOUT_MS),
+      })
+
+      console.log(
+        `[Ollama] 🌐 Worker ${workerId} → ${call.key}: HTTP ${response.status} (${Date.now() - fetchStarted}ms)`,
+      )
+
+      if (!response.ok) {
+        const errorBody = (await response.text()).slice(0, 300)
+        throw new Error(`HTTP ${response.status}: ${errorBody}`)
+      }
+
+      console.log(
+        `[Ollama] 🌐 Worker ${workerId} → ${call.key}: Parseando JSON...`,
+      )
+      const data = await response.json()
+
+      console.log(
+        `[Ollama] 🌐 Worker ${workerId} → ${call.key}: done=${data?.done}, eval_count=${data?.eval_count}`,
+      )
+
+      const content = String(data?.message?.content || '').trim()
+      console.log(
+        `[Ollama] 🌐 Worker ${workerId} → ${call.key}: contenido extraído = ${content.length} chars`,
+      )
+
+      if (!content) throw new Error('Respuesta vacía del modelo')
+      return content
+    }
+
+    async function callWithRetry(call, workerId) {
+      const taskIndex = plan.calls.findIndex((c) => c.key === call.key)
+      console.log(
+        `[Ollama] 📌 Worker ${workerId} tomó tarea ${taskIndex + 1}/${plan.calls.length}: ${call.key}`,
+      )
+
+      for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+        try {
+          console.log(
+            `[Ollama] ⏱️ Worker ${workerId} → ${call.key}: intento ${attempt}/${MAX_ATTEMPTS}...`,
+          )
+          const content = await callOllamaOnce(call, workerId)
+          console.log(
+            `[Ollama] ✅ Worker ${workerId} → ${call.key}: ÉXITO (intento ${attempt})`,
+          )
+          return { key: call.key, content, error: null }
+        } catch (err) {
+          console.warn(
+            `[Ollama] ⚠️ Worker ${workerId} → ${call.key}: FALLO intento ${attempt}/${MAX_ATTEMPTS}:`,
+            err.message,
+          )
+          if (attempt < MAX_ATTEMPTS) {
+            const waitMs = 2000 * attempt
+            console.log(
+              `[Ollama] ⏳ Worker ${workerId} → ${call.key}: Esperando ${waitMs}ms antes de reintentar...`,
+            )
+            await new Promise((r) => setTimeout(r, waitMs))
+          }
+        }
+      }
+      console.error(
+        `[Ollama] ❌ Worker ${workerId} → ${call.key}: AGOTÓ TODOS LOS REINTENTOS`,
+      )
+      return {
+        key: call.key,
+        content: null,
+        error: 'Todos los reintentos fallaron',
+      }
+    }
+
+    // Lanzar todas las tareas en paralelo con concurrencia limitada
+    const tasks = plan.calls.map((call) => () => callWithRetry(call, 0))
+    let cursor = 0
+
+    console.log('[Ollama] 🚀 Lanzando workers:', {
+      totalTasks: tasks.length,
+      workers: Math.min(MAX_CONCURRENT, tasks.length),
+    })
+
+    async function worker(workerId) {
+      console.log(`[Ollama] 👷 Worker ${workerId} iniciado`)
+      while (cursor < tasks.length) {
+        const i = cursor++
+        console.log(
+          `[Ollama] 👷 Worker ${workerId}: procesando tarea ${i + 1}/${tasks.length}`,
+        )
+        const result = await tasks[i]()
+        results[result.key] = result.content
+        console.log(
+          `[Ollama] 👷 Worker ${workerId}: tarea ${i + 1} guardada en results["${result.key}"] = ${result.content ? result.content.length + ' chars' : 'NULL'}`,
+        )
+      }
+      console.log(
+        `[Ollama] 👷 Worker ${workerId}: no hay más tareas, terminando`,
       )
     }
 
-    const data = await response.json()
-    const content = String(data?.message?.content || '').trim()
+    await Promise.all(
+      Array.from({ length: Math.min(MAX_CONCURRENT, tasks.length) }, (_, i) =>
+        worker(i),
+      ),
+    )
 
-    console.log('[Ollama] JSON recibido:', {
-      hasMessage: Boolean(data?.message),
-      responseChars: content.length,
-      done: data?.done,
+    console.log(
+      '[Ollama] 🔍 Todos los workers terminaron. Results keys:',
+      Object.keys(results),
+    )
+
+    const exitosas = Object.values(results).filter(Boolean).length
+    const fallidas = Object.values(results).filter((v) => v === null).length
+    console.log('[Ollama] 📊 Resumen ejecución:', {
+      total: plan.calls.length,
+      exitosas,
+      fallidas,
+      totalDurationMs: Date.now() - startedAt,
     })
 
-    if (!content) {
-      throw new Error('Ollama devolvió respuesta vacía')
+    for (const call of plan.calls) {
+      const val = results[call.key]
+      console.log(
+        `[Ollama] 📋 result["${call.key}"] = ${val ? `${val.length} chars` : 'NULL'}`,
+      )
     }
 
-    return { content, webResearch: '', source: 'ollama' }
+    if (fallidas > 0) {
+      const fallidasKeys = plan.calls
+        .filter((c) => !results[c.key])
+        .map((c) => c.key)
+        .join(', ')
+      throw new Error(
+        `Faltan respuestas de Ollama (${fallidas}/${plan.calls.length}): ${fallidasKeys}. No se puede generar el PDF incompleto.`,
+      )
+    }
+
+    if (exitosas === 0) {
+      throw new Error('Todas las llamadas a Ollama fallaron')
+    }
+
+    console.log('[Ollama] 🏗️ Iniciando ensamblaje...')
+    console.log('[Ollama] 🏗️ Results antes de ensamblar:', {
+      intro_porcentajes: results.intro_porcentajes ? 'OK' : 'NULL',
+      analisis_lotes: plan.calls
+        .filter((c) => c.key.startsWith('analisis_lote_'))
+        .map((c) => `${c.key}: ${results[c.key] ? 'OK' : 'NULL'}`)
+        .join(', '),
+      conclusion: results.conclusion ? 'OK' : 'NULL',
+    })
+
+    const assembled = assembleOllamaReport(
+      results,
+      plan.meta.sortedByImpact || [],
+    )
+
+    console.log('[Ollama] 📊 Ensamblaje completado:', {
+      introduccion: assembled.introduccion.length,
+      porcentajes: assembled.porcentajes.length,
+      tipos_respuesta: assembled.tipos_respuesta.length,
+      analisisBlocks: assembled.analisis_heuristico_blocks.length,
+      comparativa: assembled.comparativa.length,
+      conclusion: assembled.conclusion.length,
+      totalDurationMs: Date.now() - startedAt,
+    })
+
+    const fullContent = [
+      assembled.introduccion,
+      assembled.porcentajes,
+      assembled.tipos_respuesta,
+      assembled.analisis_heuristico,
+      assembled.comparativa,
+      assembled.conclusion,
+    ]
+      .filter(Boolean)
+      .join('\n\n')
+
+    return {
+      content: fullContent,
+      sections: assembled,
+      webResearch: webResearchContent,
+      source: 'ollama',
+    }
   } catch (error) {
     throw error
   }
 }
-
 
 // ════════════════════════════════════════════════════════════════════════════════
 // HELPERS: Parseo de respuesta IA en secciones
@@ -345,15 +532,31 @@ function cleanSectionText(text) {
     // Limpiar delimitadores ===SECCION:XXX===
     .replace(/={3,}SECCION:\w+={3,}/gi, '')
     // Limpiar títulos residuales de sección (SECCION: XXX sin ===)
-    .replace(/^\s*SECCION:\s*.+$/gim, '')
+    // OJO: [ \t]* y no \s*, que se comería la línea en blanco anterior y
+    // fusionaría dos párrafos en uno al eliminar la línea de título.
+    .replace(/^[ \t]*SECCION:\s*.+$/gim, '')
     // Limpiar headers markdown ## Titulo
     .replace(/^##\s+.+$/gm, '')
     // Limpiar títulos numerados "1. Introducción", "2. Porcentajes", etc.
-    .replace(/^\d+\.\s+(?:Introducción|Porcentajes|Tipos de respuesta|Análisis|Comparativa|Conclusión).*/gim, '')
+    .replace(
+      /^\d+\.\s+(?:Introducción|Porcentajes|Tipos de respuesta|Análisis|Comparativa|Conclusión).*/gim,
+      '',
+    )
     // Limpiar títulos TODO CAPS que son de sección
-    .replace(/^(?:INTRODUCCIÓN|PORCENTAJES|TIPOS DE RESPUESTA|ANÁLISIS HEURÍSTICO|COMPARATIVA|CONCLUSION|CIERRE)[\s:]*$/gim, '')
+    .replace(
+      /^(?:INTRODUCCIÓN|PORCENTAJES|TIPOS DE RESPUESTA|ANÁLISIS HEURÍSTICO|COMPARATIVA|CONCLUSION|CIERRE)[\s:]*$/gim,
+      '',
+    )
     // Limpiar títulos con guiones "— Titulo —"
-    .replace(/^[-—]\s+(?:Introducción|Porcentajes|Tipos|Análisis|Comparativa|Conclusión|Cierre).+[-—]\s*$/gim, '')
+    .replace(
+      /^[-—]\s+(?:Introducción|Porcentajes|Tipos|Análisis|Comparativa|Conclusión|Cierre).+[-—]\s*$/gim,
+      '',
+    )
+    // Limpiar etiquetas de subapartado de la conclusión que el modelo repite literalmente
+    .replace(
+      /^[ \t]*(?:\d+\.\s*)?(?:Síntesis|Hallazgos|Potencial|Roadmap|Cierre)\s*:\s*/gim,
+      '',
+    )
     // NO eliminar [ESTADO_ACTUAL], [IMPACTO_NEGATIVO], etc. — los usa parseHeuristicAnalysis
     // Limpiar líneas vacías múltiples
     .replace(/\n{3,}/g, '\n\n')
@@ -484,7 +687,9 @@ export function parseAiReportSections(content) {
 
   // Pre-parsear análisis heurístico ANTES de limpiar (para extraer sub-bloques)
   if (sections.analisis_heuristico) {
-    sections.analisis_heuristico_blocks = parseHeuristicAnalysis(sections.analisis_heuristico)
+    sections.analisis_heuristico_blocks = parseHeuristicAnalysis(
+      sections.analisis_heuristico,
+    )
     console.log(
       '[parseAiReportSections] 🧩 Bloques heurísticos pre-parseados:',
       sections.analisis_heuristico_blocks.length,
@@ -502,7 +707,11 @@ export function parseAiReportSections(content) {
 
   console.log(
     '[parseAiReportSections] 📊 Estado final:',
-    Object.fromEntries(Object.entries(sections).filter(([k]) => k !== 'analisis_heuristico_blocks').map(([k, v]) => [k, v.length])),
+    Object.fromEntries(
+      Object.entries(sections)
+        .filter(([k]) => k !== 'analisis_heuristico_blocks')
+        .map(([k, v]) => [k, v.length]),
+    ),
   )
   console.log('═══════════════════════════════════════════════════════════════')
   return sections
@@ -521,9 +730,9 @@ function parseMarkdownHeaders(textContent) {
     conclusion: '',
   }
   const headerNameMap = {
-    'introducción': 'introduccion',
-    'introduccion': 'introduccion',
-    'porcentajes': 'porcentajes',
+    introducción: 'introduccion',
+    introduccion: 'introduccion',
+    porcentajes: 'porcentajes',
     'porcentajes de usabilidad': 'porcentajes',
     'análisis global': 'porcentajes',
     'tipos de respuesta': 'tipos_respuesta',
@@ -532,12 +741,12 @@ function parseMarkdownHeaders(textContent) {
     'analisis heuristico': 'analisis_heuristico',
     'análisis detallado': 'analisis_heuristico',
     'heurísticas priorizadas': 'analisis_heuristico',
-    'comparativa': 'comparativa',
+    comparativa: 'comparativa',
     'comparativa de puntuaciones': 'comparativa',
-    'conclusión': 'conclusion',
-    'conclusion': 'conclusion',
-    'conclusiones': 'conclusion',
-    'cierre': 'conclusion',
+    conclusión: 'conclusion',
+    conclusion: 'conclusion',
+    conclusiones: 'conclusion',
+    cierre: 'conclusion',
     'investigación web adicional': 'conclusion',
   }
   const headerRegex = /^##\s+(.+)$/gm
@@ -549,7 +758,8 @@ function parseMarkdownHeaders(textContent) {
     const key = headerNameMap[headerTitle]
     if (!key) continue
     const startIdx = matches[i].index + matches[i][0].length
-    const endIdx = i + 1 < matches.length ? matches[i + 1].index : textContent.length
+    const endIdx =
+      i + 1 < matches.length ? matches[i + 1].index : textContent.length
     const sectionText = textContent.slice(startIdx, endIdx).trim()
     sections[key] = cleanSectionText(sectionText)
   }
@@ -606,15 +816,15 @@ function distributeTextByKeywords(content) {
   }
   // Mapa de headers markdown a secciones (para fallback)
   const headerFallbackMap = {
-    'introducción': 'introduccion',
-    'introduccion': 'introduccion',
-    'porcentajes': 'porcentajes',
+    introducción: 'introduccion',
+    introduccion: 'introduccion',
+    porcentajes: 'porcentajes',
     'tipos de respuesta': 'tipos_respuesta',
     'análisis heurístico': 'analisis_heuristico',
     'analisis heuristico': 'analisis_heuristico',
-    'comparativa': 'comparativa',
-    'conclusión': 'conclusion',
-    'conclusion': 'conclusion',
+    comparativa: 'comparativa',
+    conclusión: 'conclusion',
+    conclusion: 'conclusion',
   }
   for (const line of lines) {
     const trimmedLine = line.trim()
@@ -806,21 +1016,38 @@ export async function generateAiReportWithFallback(
           sections: parseAiReportSections(result),
         }
       }
+      // Ollama ya devuelve sections parseadas por assembleOllamaReport()
+      const sections = result.sections || parseAiReportSections(result.content)
       return {
         ...result,
         source: 'ollama',
-        sections: parseAiReportSections(result.content),
+        sections,
       }
     } catch (ollamaError) {
-      // Ollama también falló, usar fallback genérico
       console.error('[AI] ❌ Ollama falló:', ollamaError.message)
     }
   }
 
-  // Fallback final: lanzar error para que pdfGenerator use sus propios textos
-  console.log('[AI] ⚠️ AMBAS IAs fallaron. El PDF usará sus textos de respaldo.')
+  // Fallback final: devolver resultado vacío en vez de lanzar error
+  // para que el PDF use sus propios textos de respaldo
+  console.log(
+    '[AI] ⚠️ AMBAS IAs fallaron. El PDF usará sus textos de respaldo.',
+  )
   console.log('[AI] ===== FIN GENERACIÓN (Sin IA) =====')
-  throw new Error('No hay IA disponible. El PDF generará su propio contenido.')
+  return {
+    content: '',
+    webResearch: '',
+    source: 'fallback',
+    sections: {
+      introduccion: '',
+      porcentajes: '',
+      tipos_respuesta: '',
+      analisis_heuristico: '',
+      analisis_heuristico_blocks: [],
+      comparativa: '',
+      conclusion: '',
+    },
+  }
 }
 
 /**

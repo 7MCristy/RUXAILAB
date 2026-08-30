@@ -1004,7 +1004,8 @@ const previewPdfWithAi = async () => {
     } else {
       console.log('[previewPdfWithAi] 🆕 Generando secciones IA on-the-fly')
       const aiContent = await generateAiFinalReport(finalReportItem)
-      aiSections = parseAiReportSections(aiContent.content)
+      // Usar secciones ya parseadas (Ollama las ensambla con bloques) y solo re-parsear como fallback
+      aiSections = aiContent.sections || parseAiReportSections(aiContent.content)
       cachedAiSections.value = aiSections
       cachedAiContent.value = aiContent
       lastCommentsSnapshot.value = currentSnapshot

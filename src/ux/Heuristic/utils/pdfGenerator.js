@@ -889,7 +889,7 @@ export async function generateHeuristicPdf(reportData, options = {}) {
   )
   startSection('1. Introducción')
   if (reportData.aiIntroduccion) {
-    const paragraphs = reportData.aiIntroduccion.split(/\n\n+/)
+    const paragraphs = stripMarkdown(reportData.aiIntroduccion).split(/\n\n+/)
     for (const para of paragraphs) {
       const trimmed = para.trim()
       if (trimmed) writeParagraph(trimmed, { size: 10, spacing: 4 })
@@ -1030,7 +1030,7 @@ export async function generateHeuristicPdf(reportData, options = {}) {
   }
 
   if (aiSections?.porcentajes) {
-    const paragraphs = aiSections.porcentajes.split(/\n\n+/)
+    const paragraphs = stripMarkdown(aiSections.porcentajes).split(/\n\n+/)
     for (const para of paragraphs) {
       const trimmed = para.trim()
       if (trimmed) writeParagraph(trimmed)
@@ -1137,15 +1137,15 @@ export async function generateHeuristicPdf(reportData, options = {}) {
             }
           : {
               0: {
-                cellWidth: Math.round(contentW * 0.1),
+                cellWidth: Math.round(contentW * 0.09),
                 halign: 'center',
                 fontStyle: 'bold',
               },
               1: {
-                cellWidth: Math.round(contentW * 0.7),
+                cellWidth: Math.round(contentW * 0.69),
                 overflow: 'linebreak',
               },
-              2: { cellWidth: Math.round(contentW * 0.2), halign: 'center' },
+              2: { cellWidth: Math.round(contentW * 0.19), halign: 'center' },
             },
       })
       y = doc.lastAutoTable.finalY + 14
@@ -1184,7 +1184,7 @@ export async function generateHeuristicPdf(reportData, options = {}) {
   }
 
   if (aiSections?.tipos_respuesta) {
-    const paragraphs = aiSections.tipos_respuesta.split(/\n\n+/)
+    const paragraphs = stripMarkdown(aiSections.tipos_respuesta).split(/\n\n+/)
     for (const para of paragraphs) {
       const trimmed = para.trim()
       if (trimmed) writeParagraph(trimmed)
@@ -1256,11 +1256,16 @@ export async function generateHeuristicPdf(reportData, options = {}) {
     reportData.aiAnalisisHeuristico?.substring(0, 50) || 'vacío',
   )
 
-  for (const item of evidence.orderedByImpact) {
+  for (const item of evidence.orderedByPercentage) {
     ensureSpace(110)
     y += 12
 
-    const aiBlock = aiHeuristicBlocks[item.position - 1] || null
+    // Búsqueda por índice real (no por posición en el array): si alguna
+    // heurística no se pudo parsear, el array tiene huecos y un acceso
+    // directo aiHeuristicBlocks[item.position - 1] asignaría el bloque de
+    // OTRA heurística por error.
+    const aiBlock =
+      aiHeuristicBlocks.find((b) => b?.index === item.position - 1) || null
 
     // Title + severity badge (keep percentage here as it's the section identifier)
     writeParagraph(item.label, { bold: true, size: 13, spacing: 2 })
@@ -1469,35 +1474,48 @@ export async function generateHeuristicPdf(reportData, options = {}) {
     }
     writeParagraph(sdInterpretation, { size: 10, spacing: 5 })
 
-    // ── Diagnostico global cualitativo ───────────────────────────────────
-    const weakQuestions = item.questionSummaries.filter((q) => q.average < 0.5)
-    const strongQuestions = item.questionSummaries.filter(
-      (q) => q.average >= 0.85,
-    )
-
-    let globalDiagnosis = ''
-    if (weakQuestions.length > item.questionSummaries.length / 2) {
-      globalDiagnosis =
-        'El diagnóstico global de esta heurística es desfavorable. La mayoría de los criterios evaluados presentan cumplimiento bajo o nulo, lo que indica que esta área representa una fricción real y consistente para el usuario. Se recomienda priorizar su revisión en el siguiente ciclo de diseño.'
-    } else if (strongQuestions.length > item.questionSummaries.length / 2) {
-      globalDiagnosis =
-        'El diagnóstico global de esta heurística es favorable. La mayoría de criterios evaluados obtienen confirmación positiva por parte de los evaluadores, lo que indica que el sistema resuelve bien esta dimensión de uso.'
+    // ── Diagnóstico (usa el estado actual identificado por la IA cuando
+    //    está disponible; si no, recurre al diagnóstico determinista para
+    //    no dejar la sección vacía. Nunca se muestran ambos a la vez, para
+    //    evitar redundancia) ─────────────────────────────────────────────
+    if (aiBlock?.estadoActual) {
+      writeParagraph(stripMarkdown(aiBlock.estadoActual), {
+        size: 10,
+        spacing: 4,
+      })
     } else {
-      globalDiagnosis =
-        'El diagnóstico global de esta heurística es mixto. Conviven criterios bien resueltos con otros que presentan margen claro de mejora, lo que sugiere una implementación parcial o inconsistente dentro del flujo.'
+      const weakQuestions = item.questionSummaries.filter(
+        (q) => q.average < 0.5,
+      )
+      const strongQuestions = item.questionSummaries.filter(
+        (q) => q.average >= 0.85,
+      )
+      let globalDiagnosis = ''
+      if (weakQuestions.length > item.questionSummaries.length / 2) {
+        globalDiagnosis =
+          'El diagnóstico global de esta heurística es desfavorable. La mayoría de los criterios evaluados presentan cumplimiento bajo o nulo, lo que indica que esta área representa una fricción real y consistente para el usuario. Se recomienda priorizar su revisión en el siguiente ciclo de diseño.'
+      } else if (strongQuestions.length > item.questionSummaries.length / 2) {
+        globalDiagnosis =
+          'El diagnóstico global de esta heurística es favorable. La mayoría de criterios evaluados obtienen confirmación positiva por parte de los evaluadores, lo que indica que el sistema resuelve bien esta dimensión de uso.'
+      } else {
+        globalDiagnosis =
+          'El diagnóstico global de esta heurística es mixto. Conviven criterios bien resueltos con otros que presentan margen claro de mejora, lo que sugiere una implementación parcial o inconsistente dentro del flujo.'
+      }
+      writeParagraph(globalDiagnosis, { size: 10, spacing: 4 })
     }
-    writeParagraph(globalDiagnosis, { size: 10, spacing: 4 })
 
-    // ── Impacto negativo ─────────────────────────────────────────────────
+    // ── Impacto negativo (idem: prioriza el análisis de la IA) ────────────
     writeParagraph('Impacto negativo actual', {
       bold: true,
       size: 10,
       spacing: 2,
     })
-    writeParagraph(obtenerTextoImpactoNegativo(item), {
-      size: 10,
-      spacing: 4,
-    })
+    writeParagraph(
+      aiBlock?.impactoExperiencia
+        ? stripMarkdown(aiBlock.impactoExperiencia)
+        : obtenerTextoImpactoNegativo(item),
+      { size: 10, spacing: 4 },
+    )
 
     // ── Beneficio si mejora ──────────────────────────────────────────────
     writeParagraph('Beneficio esperado si se mejora', {
@@ -1509,23 +1527,27 @@ export async function generateHeuristicPdf(reportData, options = {}) {
     writeParagraph(buildPositiveImpact(item), { size: 10, spacing: 4 })
 
     if (aiBlock) {
-      // Heurística crítica/grave/moderada: 4 bloques
-
-      if (aiBlock.propuestaDeMejora) {
-        writeParagraph('Propuesta de mejora:', {
+      if (aiBlock.planAccion) {
+        writeParagraph('Propuesta de mejora', {
           bold: true,
           size: 10,
           spacing: 2,
         })
-        writeParagraph(aiBlock.propuestaDeMejora, { size: 10, spacing: 4 })
+        writeParagraph(stripMarkdown(aiBlock.planAccion), {
+          size: 10,
+          spacing: 4,
+        })
       }
       if (aiBlock.resumenEjecutivo) {
-        writeParagraph('Resumen ejecutivo:', {
+        writeParagraph('Resumen ejecutivo', {
           bold: true,
           size: 10,
           spacing: 2,
         })
-        writeParagraph(aiBlock.resumenEjecutivo, { size: 10, spacing: 4 })
+        writeParagraph(stripMarkdown(aiBlock.resumenEjecutivo), {
+          size: 10,
+          spacing: 4,
+        })
       }
     }
 
@@ -1580,7 +1602,7 @@ export async function generateHeuristicPdf(reportData, options = {}) {
   addPageHeader()
   startSection('5. Comparativa de puntuaciones por evaluador')
   if (aiSections?.comparativa) {
-    const paragraphs = aiSections.comparativa.split(/\n\n+/)
+    const paragraphs = stripMarkdown(aiSections.comparativa).split(/\n\n+/)
     for (const para of paragraphs) {
       const trimmed = para.trim()
       if (trimmed) writeParagraph(trimmed)
@@ -1742,7 +1764,9 @@ export async function generateHeuristicPdf(reportData, options = {}) {
 
   // ─── 6. CONCLUSION ────────────────────────────────────────────────────────
   startSection('6. Conclusión')
-  const conclusionText = aiSections?.conclusion || cleanStudyConclusion
+  const conclusionText = stripMarkdown(
+    aiSections?.conclusion || cleanStudyConclusion,
+  )
   if (conclusionText) {
     const paragraphs = conclusionText.split(/\n\n+/)
     for (const para of paragraphs) {

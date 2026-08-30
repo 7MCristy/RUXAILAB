@@ -131,13 +131,29 @@ export function buildOllamaPlan(
   webResearchContent = '',
 ) {
   const d = prepareData(reportItem, webResearchContent)
+  const promptText = promptIntroPorcentajes(d)
+  const promptTextConclusion = promptConclusion(d)
   console.log('[Ollama] Plan:', {
     testName: d.testName,
+    model,
     totalHeuristicas: d.heuristics.length,
     optimas: d.optimal.length,
     criticas: d.critical.length,
     lotes: Math.ceil(d.heuristics.length / HEURISTICS_PER_BATCH),
     tieneWebResearch: Boolean(webResearchContent),
+    contextWindow: 14336,
+    estimatedPromptChars: {
+      intro: promptText.length,
+      conclusion: promptTextConclusion.length,
+    },
+    estimatedPromptTokens: {
+      intro: Math.ceil(promptText.length / 3.5),
+      conclusion: Math.ceil(promptTextConclusion.length / 3.5),
+    },
+    preview: {
+      intro: promptText.slice(0, 200),
+      conclusion: promptTextConclusion.slice(0, 200),
+    },
   })
   const calls = []
   // Petición 1: Introducción + Porcentajes combinadas en una sola llamada

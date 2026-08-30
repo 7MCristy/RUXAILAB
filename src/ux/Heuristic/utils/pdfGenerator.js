@@ -556,6 +556,16 @@ export async function generateHeuristicPdf(reportData, options = {}) {
     aiSections,
   } = reportData
 
+  console.log('[PDF] 🔎 Estado de aiSections al entrar al renderer:', {
+    present: Boolean(aiSections),
+    keys: aiSections ? Object.keys(aiSections) : [],
+    lengths: aiSections
+      ? Object.fromEntries(
+          Object.entries(aiSections).map(([k, v]) => [k, typeof v === 'string' ? v.length : Array.isArray(v) ? v.length : 0]),
+        )
+      : {},
+  })
+
   const mode = options?.mode || 'download'
   const showQuickSummary = options?.showQuickSummary === true
   const useWarningTerm = showQuickSummary

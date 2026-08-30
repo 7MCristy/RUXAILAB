@@ -36,11 +36,68 @@ function saveUsage(data) {
 }
 
 function getUsageData() {
-  return loadUsage() || {
-    jina: { used: 0, windowStart: Date.now() },
-    gemini: { used: 0, windowStart: Date.now() },
-    tinyfish: { used: 0, windowStart: Date.now() },
-    readability: { used: 0, windowStart: Date.now() },
+  return (
+    loadUsage() || {
+      jina: { used: 0, windowStart: Date.now() },
+      gemini: { used: 0, windowStart: Date.now() },
+      ollama: { used: 0, windowStart: Date.now() },
+      tinyfish: { used: 0, windowStart: Date.now() },
+      readability: { used: 0, windowStart: Date.now() },
+    }
+  )
+}
+
+const AI_CONTEXT_KEY = 'ruxailab_ai_context'
+
+export function getAiContext() {
+  try {
+    const raw = localStorage.getItem(AI_CONTEXT_KEY)
+    if (!raw) {
+      return {
+        provider: '',
+        language: 'es',
+        webSearch: false,
+      }
+    }
+    const parsed = JSON.parse(raw)
+    return {
+      provider: parsed.provider || '',
+      language: parsed.language || 'es',
+      webSearch: !!parsed.webSearch,
+    }
+  } catch {
+    return {
+      provider: '',
+      language: 'es',
+      webSearch: false,
+    }
+  }
+}
+
+export function setAiContext({
+  provider = '',
+  language = 'es',
+  webSearch = false,
+} = {}) {
+  const current = getAiContext()
+  const next = {
+    provider: provider || current.provider || '',
+    language: language || current.language || 'es',
+    webSearch: Boolean(webSearch),
+  }
+  try {
+    localStorage.setItem(AI_CONTEXT_KEY, JSON.stringify(next))
+  } catch {
+    // localStorage full or unavailable
+  }
+  return next
+}
+
+export function clearAiContext() {
+  try {
+    localStorage.removeItem(AI_CONTEXT_KEY)
+  } catch {
+    // ignore
   }
 }
 

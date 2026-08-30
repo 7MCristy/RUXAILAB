@@ -6,7 +6,7 @@
  * ✅ Ollama como fallback
  */
 
-import { GoogleGenAI } from '@google/genai'
+import { GoogleGenAI, Type } from '@google/genai'
 import {
   buildHeuristicReportPrompt,
   SYSTEM_PROMPT,
@@ -31,6 +31,56 @@ const ENABLE_WEB_RESEARCH = process.env.VUE_APP_ENABLE_WEB_RESEARCH !== 'false'
 
 // Instancia del cliente Gemini (inicialización lazy)
 let geminiClient = null
+
+/**
+ * Esquema de salida forzado para Gemini (responseSchema + responseMimeType:
+ * 'application/json'). Con esto la API garantiza a nivel de servidor que la
+ * respuesta es un JSON válido con estas claves exactas — ya no dependemos
+ * de que el modelo repita literalmente marcadores de texto libre
+ * (===SECCION:X=== o ## Headers), que es donde fallaba el parseo anterior.
+ */
+const REPORT_JSON_SCHEMA = {
+  type: Type.OBJECT,
+  properties: {
+    introduccion: {
+      type: Type.STRING,
+      description:
+        'Introducción del informe: 5-7 párrafos en prosa continua y tono formal, sin resultados ni porcentajes todavía. Ver instrucciones detalladas en el prompt.',
+    },
+    porcentajes: {
+      type: Type.STRING,
+      description:
+        'Único párrafo denso (6-8 frases) que sintetiza el cumplimiento global y la madurez UX del sistema. Ver instrucciones detalladas en el prompt.',
+    },
+    tipos_respuesta: {
+      type: Type.STRING,
+      description:
+        'Párrafo breve (2-3 frases) sobre los tipos de respuesta usados. Cadena vacía si no hay datos de tipos de respuesta.',
+    },
+    analisis_heuristico: {
+      type: Type.STRING,
+      description:
+        'Análisis detallado por heurística, EXACTAMENTE con el formato de bloques H{numero}/[ESTADO_ACTUAL]/[IMPACTO_NEGATIVO]/[PROPUESTAS_DE_MEJORA]/[RESUMEN_EJECUTIVO] descrito en el prompt.',
+    },
+    comparativa: {
+      type: Type.STRING,
+      description:
+        'Comparativa de puntuaciones entre evaluadores: consenso, dispersión y validez del estudio. Ver instrucciones detalladas en el prompt.',
+    },
+    conclusion: {
+      type: Type.STRING,
+      description:
+        'Conclusión final del informe (8-12 frases): síntesis, hallazgos, potencial, roadmap y cierre, en narrativa continua sin viñetas ni etiquetas de subapartado.',
+    },
+  },
+  required: [
+    'introduccion',
+    'porcentajes',
+    'analisis_heuristico',
+    'comparativa',
+    'conclusion',
+  ],
+}
 
 async function checkOllamaAvailable(
   tagsUrl = 'http://localhost:11434/api/tags',
@@ -104,6 +154,13 @@ export async function generateAiReportWithGemini(finalReportItem) {
 
   try {
     console.log('[Gemini] Iniciando generación de informe...')
+    console.log('[Gemini] Configuración del modelo:', {
+      model: GEMINI_MODEL,
+      timeoutMs: GEMINI_TIMEOUT,
+      maxOutputTokens: 9500,
+      enableWebResearch: ENABLE_WEB_RESEARCH,
+      hasApiKey: Boolean(GEMINI_API_KEY),
+    })
 
     // Investigación web RAG: buscar información actualizada del sitio evaluado
     let webResearchContent = ''
@@ -124,9 +181,13 @@ export async function generateAiReportWithGemini(finalReportItem) {
     const userPrompt = buildHeuristicReportPrompt(
       finalReportItem,
       webResearchContent,
+      { format: 'json' },
     )
 
-    // Configuración de la generación
+    // Configuración de la generación. responseMimeType + responseSchema
+    // fuerzan a la API a devolver JSON válido con estas claves exactas
+    // (constrained decoding a nivel de servidor) — así el parseo posterior
+    // ya no depende de que el modelo repita marcadores de texto libre.
     const config = {
       model: GEMINI_MODEL,
       contents: [
@@ -140,6 +201,8 @@ export async function generateAiReportWithGemini(finalReportItem) {
         topP: 0.85,
         maxOutputTokens: 9500,
         systemInstruction: SYSTEM_PROMPT,
+        responseMimeType: 'application/json',
+        responseSchema: REPORT_JSON_SCHEMA,
       },
     }
 
@@ -167,7 +230,20 @@ export async function generateAiReportWithGemini(finalReportItem) {
             throw new Error('Respuesta vacía o formato inválido de Gemini API')
           }
 
-          return { content, webResearch: webResearchContent || '', userPrompt }
+          console.log('[Gemini] 🧾 Respuesta recibida:', {
+            length: content.length,
+            approxTokens: Math.ceil(content.length / 3.5),
+            preview: content.slice(0, 400),
+          })
+
+          const sections = parseGeminiJsonSections(content)
+
+          return {
+            content,
+            webResearch: webResearchContent || '',
+            userPrompt,
+            sections,
+          }
         } catch (fetchError) {
           clearTimeout(timeoutId)
 
@@ -223,6 +299,54 @@ export async function generateAiReportWithGemini(finalReportItem) {
 
     throw new Error(`Gemini API error: ${error.message}`)
   }
+}
+
+/**
+ * Parsea la respuesta JSON forzada de Gemini (responseSchema) en las 6
+ * secciones del informe. Como el esquema garantiza JSON válido con las
+ * claves correctas, esto reemplaza la cascada frágil de
+ * parseAiReportSections (marcadores de texto / headers / keywords) para el
+ * camino de Gemini. Si por algún motivo el contenido no fuese JSON válido
+ * (nunca debería pasar con responseSchema, pero se cubre por seguridad),
+ * recurre a parseAiReportSections sobre el texto crudo.
+ * @param {string} content - Texto crudo devuelto por Gemini
+ * @returns {Object} Secciones: { introduccion, porcentajes, tipos_respuesta, analisis_heuristico, analisis_heuristico_blocks, comparativa, conclusion }
+ */
+function parseGeminiJsonSections(content) {
+  let parsed
+  try {
+    parsed = JSON.parse(content)
+  } catch (jsonError) {
+    console.error(
+      '[Gemini] ❌ La respuesta no es JSON válido pese a responseSchema, usando fallback de texto libre:',
+      jsonError.message,
+    )
+    return parseAiReportSections(content)
+  }
+
+  const sections = {
+    introduccion: cleanSectionText(parsed?.introduccion || ''),
+    porcentajes: cleanSectionText(parsed?.porcentajes || ''),
+    tipos_respuesta: cleanSectionText(parsed?.tipos_respuesta || ''),
+    analisis_heuristico: cleanSectionText(parsed?.analisis_heuristico || ''),
+    comparativa: cleanSectionText(parsed?.comparativa || ''),
+    conclusion: cleanSectionText(parsed?.conclusion || ''),
+  }
+  sections.analisis_heuristico_blocks = parseHeuristicAnalysis(
+    parsed?.analisis_heuristico || '',
+  )
+
+  console.log('[Gemini] 📊 Secciones JSON parseadas:', {
+    introduccion: sections.introduccion.length,
+    porcentajes: sections.porcentajes.length,
+    tipos_respuesta: sections.tipos_respuesta.length,
+    analisis_heuristico: sections.analisis_heuristico.length,
+    analisis_heuristico_blocks: sections.analisis_heuristico_blocks.length,
+    comparativa: sections.comparativa.length,
+    conclusion: sections.conclusion.length,
+  })
+
+  return sections
 }
 
 /**
@@ -288,6 +412,7 @@ const generateAiReportWithOllama = async function (
       totalCalls: plan.calls.length,
       calls: plan.calls.map((c) => c.key),
       meta: plan.meta,
+      timeoutMs: OLLAMA_TIMEOUT_MS,
     })
 
     // ─── Ejecutar llamadas en paralelo (máx 3 concurrentes) ──────────────
@@ -489,6 +614,23 @@ const generateAiReportWithOllama = async function (
       .filter(Boolean)
       .join('\n\n')
 
+    console.log('[Ollama] 🧾 Texto final ensamblado:', {
+      totalChars: fullContent.length,
+      approxTokens: Math.ceil(fullContent.length / 3.5),
+      sections: {
+        introduccion: assembled.introduccion.length,
+        porcentajes: assembled.porcentajes.length,
+        tipos_respuesta: assembled.tipos_respuesta.length,
+        analisis_heuristico: assembled.analisis_heuristico.length,
+        comparativa: assembled.comparativa.length,
+        conclusion: assembled.conclusion.length,
+      },
+      preview: {
+        introduccion: assembled.introduccion.slice(0, 220),
+        conclusion: assembled.conclusion.slice(0, 220),
+      },
+    })
+
     return {
       content: fullContent,
       sections: assembled,
@@ -640,6 +782,14 @@ export function parseAiReportSections(content) {
     }
   }
 
+  console.log('[parseAiReportSections] 🧪 Raw content preview:', {
+    length: textContent.length,
+    approxTokens: Math.ceil(textContent.length / 3.5),
+    preview: textContent.slice(0, 400),
+    hasSectionMarkers: /===SECCION:/.test(textContent),
+    hasMarkdownHeaders: /^##\s+/m.test(textContent),
+  })
+
   const sectionMap = {
     INTRODUCCION: 'introduccion',
     PORCENTAJES: 'porcentajes',
@@ -713,6 +863,14 @@ export function parseAiReportSections(content) {
         .map(([k, v]) => [k, v.length]),
     ),
   )
+  console.log('[parseAiReportSections] 🧾 Preview por sección:', {
+    introduccion: sections.introduccion.slice(0, 180),
+    porcentajes: sections.porcentajes.slice(0, 180),
+    tipos_respuesta: sections.tipos_respuesta.slice(0, 180),
+    analisis_heuristico: sections.analisis_heuristico.slice(0, 180),
+    comparativa: sections.comparativa.slice(0, 180),
+    conclusion: sections.conclusion.slice(0, 180),
+  })
   console.log('═══════════════════════════════════════════════════════════════')
   return sections
 }
@@ -862,23 +1020,32 @@ export function parseHeuristicAnalysis(text) {
   if (!text) return []
 
   const blocks = []
-  // Divide por encabezados de heurística: "H1 — 45% — Nombre" o "H1 - 45% - Nombre"
-  const heuristicHeaderRegex = /^H(\d+)\s*[—–-]\s*(\d+)%\s*[—–-]\s*(.+)$/gm
+  // Divide por encabezados de heurística: el prompt (aiReportPrompt.js,
+  // sección ANALISIS_HEURISTICO) pide únicamente "H{numero}" en su propia
+  // línea — sin porcentaje ni título embebidos — así que el separador debe
+  // coincidir exactamente con eso.
+  const heuristicHeaderRegex = /^H(\d+)\b/gm
 
   const headerMatches = [...text.matchAll(heuristicHeaderRegex)]
+  const seenIndices = new Set()
 
   for (let i = 0; i < headerMatches.length; i++) {
     const match = headerMatches[i]
+    const index = parseInt(match[1], 10) - 1
+    // Descarta repeticiones: el modelo a veces reescribe la misma
+    // heurística más adelante en la respuesta.
+    if (seenIndices.has(index)) continue
+    seenIndices.add(index)
+
     const nextStart =
       i + 1 < headerMatches.length ? headerMatches[i + 1].index : text.length
     const blockText = text.slice(match.index, nextStart).trim()
 
     const id = `H${match[1]}`
-    const index = parseInt(match[1]) - 1
-    const compliance = `${match[2]}%`
-    const title = match[3].trim()
 
-    // Extraer sub-bloques [ETIQUETA]...[/ETIQUETA]
+    // Extraer sub-bloques [ETIQUETA]...[/ETIQUETA]. Las etiquetas deben
+    // coincidir EXACTAMENTE con las que pide aiReportPrompt.js:
+    // ESTADO_ACTUAL, IMPACTO_NEGATIVO, PROPUESTAS_DE_MEJORA, RESUMEN_EJECUTIVO.
     const extract = (tag) => {
       const regex = new RegExp(
         `\\[${tag}\\]\\s*([\\s\\S]*?)\\[\\/${tag}\\]`,
@@ -888,43 +1055,34 @@ export function parseHeuristicAnalysis(text) {
       return m ? m[1].trim() : ''
     }
 
-    const proposito = extract('PROPOSITO')
     const estadoActual = extract('ESTADO_ACTUAL')
-    const impactoExperiencia = extract('IMPACTO_EXPERIENCIA')
-    const planAccion = extract('PLAN_ACCION')
+    const impactoExperiencia = extract('IMPACTO_NEGATIVO')
+    const planAccion = extract('PROPUESTAS_DE_MEJORA')
     const resumenEjecutivo = extract('RESUMEN_EJECUTIVO')
-    const impactoMejora = extract('IMPACTO_MEJORA')
 
     // Heurísticas leves: si no tiene sub-bloques, es una frase resumen
     const isLight =
-      !estadoActual &&
-      !impactoExperiencia &&
-      !planAccion &&
-      !resumenEjecutivo &&
-      !impactoMejora
+      !estadoActual && !impactoExperiencia && !planAccion && !resumenEjecutivo
     const lightSummary = isLight
       ? blockText
-          .replace(/^H\d+\s*[—–-].*\n?/, '')
-          .replace(/\[\/?PROPOSITO\]/gi, '')
+          .replace(/^H\d+[^\n]*\n?/, '')
           .replace(/\[\/?ESTADO_ACTUAL\]/gi, '')
-          .replace(/\[\/?IMPACTO_EXPERIENCIA\]/gi, '')
-          .replace(/\[\/?PLAN_ACCION\]/gi, '')
+          .replace(/\[\/?IMPACTO_NEGATIVO\]/gi, '')
+          .replace(/\[\/?PROPUESTAS_DE_MEJORA\]/gi, '')
           .replace(/\[\/?RESUMEN_EJECUTIVO\]/gi, '')
-          .replace(/\[\/?IMPACTO_MEJORA\]/gi, '')
           .trim()
       : ''
 
     blocks.push({
       id,
       index,
-      compliance,
-      title,
-      proposito,
+      compliance: '',
+      title: '',
       estadoActual,
       impactoExperiencia,
       planAccion,
       resumenEjecutivo,
-      impactoMejora,
+      impactoMejora: '',
       lightSummary,
     })
   }
@@ -981,9 +1139,12 @@ export async function generateAiReportWithFallback(
             sections: parseAiReportSections(result),
           }
         }
+        // generateAiReportWithGemini ya devuelve sections parseadas desde
+        // el JSON estructurado (parseGeminiJsonSections) — no hace falta
+        // re-parsear el texto libre.
         return {
           ...result,
-          sections: parseAiReportSections(result.content),
+          sections: result.sections || parseAiReportSections(result.content),
           source: 'gemini',
         }
       } catch (geminiError) {

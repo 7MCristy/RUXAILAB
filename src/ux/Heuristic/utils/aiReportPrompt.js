@@ -339,6 +339,16 @@ ${commentsBlock}
  * @param {string} format - 'separators' (===SECCION:NOMBRE===) o 'markdown' (## Nombre)
  * @returns {string} Marcador de sección
  */
+const JSON_KEY_MAP = {
+  INTRODUCCION: 'introduccion',
+  PORCENTAJES: 'porcentajes',
+  TIPOS_RESPUESTA: 'tipos_respuesta',
+  ANALISIS_HEURISTICO: 'analisis_heuristico',
+  COMPARATIVA: 'comparativa',
+  CONCLUSION: 'conclusion',
+  INVESTIGACION_WEB: 'investigacion_web',
+}
+
 function sectionMarker(name, format) {
   if (format === 'markdown') {
     // Para Ollama/Qwen: usa ## Headers (mejor identificación)
@@ -353,7 +363,14 @@ function sectionMarker(name, format) {
     }
     return `## ${titleMap[name] || name}`
   }
-  // Para Gemini: usa ===SECCION:NOMBRE===
+  if (format === 'json') {
+    // Para Gemini con salida JSON forzada (responseSchema): esto es solo
+    // scaffolding legible para organizar las instrucciones del prompt, NO
+    // se le pide al modelo que lo repita — el JSON estructurado ya
+    // garantiza la clave correspondiente.
+    return `--- Instrucciones para la clave JSON "${JSON_KEY_MAP[name] || name}" ---`
+  }
+  // Para Gemini en modo texto libre (legacy): usa ===SECCION:NOMBRE===
   return `===SECCION:${name}===`
 }
 
@@ -489,7 +506,7 @@ export function buildHeuristicReportPrompt(
     responseTypesText += `\n  Total respondidas: ${totalAnswered} / ${totalPossible} preguntas posibles`
   }
 
-  return `
+  const promptText = `
 Genera un INFORME DE EVALUACIÓN HEURÍSTICA profesional con las 5 secciones que se indican a continuación.
 
 INSTRUCCIONES CRÍTICAS:
@@ -499,7 +516,11 @@ INSTRUCCIONES CRÍTICAS:
 - Haz referencias concretas al tipo de sitio web y su contexto de uso (basándote en la URL y descripción).
 - Las recomendaciones deben ser específicas, técnicas y aplicables directamente al sistema evaluado.
 - Mantén un tono profesional, riguroso y útil para un equipo de producto.
-- OBLIGATORIO: Separa cada sección con el marcador que se te indica: ${sectionMarker('INTRODUCCION', format)}, ${sectionMarker('PORCENTAJES', format)}, ${sectionMarker('TIPOS_RESPUESTA', format)}, ${sectionMarker('ANALISIS_HEURISTICO', format)}, ${sectionMarker('COMPARATIVA', format)}, ${sectionMarker('CONCLUSION', format)}. Sin estos marcadores el sistema NO puede separar las secciones del PDF.
+${
+  format === 'json'
+    ? `- OBLIGATORIO: tu respuesta debe ser el objeto JSON con el esquema indicado (claves: introduccion, porcentajes${responseTypesText ? ', tipos_respuesta' : ''}, analisis_heuristico, comparativa, conclusion). Cada clave contiene ÚNICAMENTE el texto en prosa de esa sección, sin repetir el título ni añadir encabezados markdown dentro del valor.`
+    : `- OBLIGATORIO: Separa cada sección con el marcador que se te indica: ${sectionMarker('INTRODUCCION', format)}, ${sectionMarker('PORCENTAJES', format)}, ${sectionMarker('TIPOS_RESPUESTA', format)}, ${sectionMarker('ANALISIS_HEURISTICO', format)}, ${sectionMarker('COMPARATIVA', format)}, ${sectionMarker('CONCLUSION', format)}. Sin estos marcadores el sistema NO puede separar las secciones del PDF.`
+}
 
 DATOS DEL SISTEMA EVALUADO:
 - Nombre: ${testName}
@@ -687,6 +708,27 @@ Instrucciones específicas para usar la investigación web:
 
 FIN DEL INFORME
 `.trim()
+
+  console.log('[aiReportPrompt] 📦 Prompt final construido', {
+    format,
+    chars: promptText.length,
+    approxTokens: Math.ceil(promptText.length / 3.5),
+    hasWebResearch: Boolean(webResearchContent),
+    sections: {
+      introduccion: promptText.includes('===SECCION:INTRODUCCION===') || promptText.includes('## Introduccion'),
+      porcentajes: promptText.includes('===SECCION:PORCENTAJES===') || promptText.includes('## Porcentajes'),
+      tiposRespuesta: promptText.includes('===SECCION:TIPOS_RESPUESTA===') || promptText.includes('## Tipos de respuesta'),
+      analisis: promptText.includes('===SECCION:ANALISIS_HEURISTICO===') || promptText.includes('## Análisis heurístico'),
+      comparativa: promptText.includes('===SECCION:COMPARATIVA===') || promptText.includes('## Comparativa'),
+      conclusion: promptText.includes('===SECCION:CONCLUSION===') || promptText.includes('## Conclusión'),
+    },
+    preview: {
+      introduccion: promptText.slice(0, 220),
+      conclusion: promptText.slice(-220),
+    },
+  })
+
+  return promptText
 }
 
 export function buildOllamaRequestBody(

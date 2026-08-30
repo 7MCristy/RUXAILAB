@@ -137,27 +137,16 @@
             </v-chip>
             <template v-if="!usingOllama">
               <v-chip
-                v-if="jinaHasQuota"
-                :key="'jina-chip'"
+                v-if="
+                  tokenUsage.readability && tokenUsage.readability.total > 0
+                "
+                :key="'readability-chip'"
                 size="small"
-                color="info"
+                color="teal"
                 variant="tonal"
-                prepend-icon="mdi-web"
+                prepend-icon="mdi-book-open-page-variant"
               >
-                Jina: {{ tokenUsage.jina.remaining.toLocaleString() }} /
-                {{ tokenUsage.jina.total.toLocaleString() }}
-              </v-chip>
-              <v-chip
-                v-else
-                :key="'tinyfish-chip'"
-                size="small"
-                color="success"
-                variant="tonal"
-                prepend-icon="mdi-brain"
-              >
-                TinyFish:
-                {{ tokenUsage.tinyfish.remaining.toLocaleString() }} /
-                {{ tokenUsage.tinyfish.total.toLocaleString() }}
+                Readability: local
               </v-chip>
             </template>
           </div>
@@ -251,6 +240,8 @@ import {
   hasQuota,
   getUsageData,
   LIMITS,
+  getAiContext,
+  setAiContext,
 } from '@/app/services/tokenTracker'
 
 const store = useStore()
@@ -282,7 +273,53 @@ const isPrefetchingAi = ref(false)
 const prefetchError = ref('')
 const lastCommentsSnapshot = ref('')
 const webSearchMessage = ref('') // ✅ NUEVO: Mensaje cuando se agotan los servicios de web search
+const detectReportLanguage = (text = '') => {
+  const sample = String(text || '').toLowerCase()
+  if (!sample) return 'es'
+
+  const catalanPatterns = [
+    ' per ',
+    ' que ',
+    ' amb ',
+    ' el ',
+    ' la ',
+    ' dels ',
+    ' les ',
+    ' també ',
+    ' aquest ',
+  ]
+  const englishPatterns = [
+    ' the ',
+    ' and ',
+    ' for ',
+    ' with ',
+    ' this ',
+    ' that ',
+    ' from ',
+    ' have ',
+    ' users ',
+  ]
+
+  if (catalanPatterns.some((pattern) => sample.includes(pattern))) return 'ca'
+  if (englishPatterns.some((pattern) => sample.includes(pattern))) return 'en'
+  return 'es'
+}
+
+const getCurrentAiMetadata = () => {
+  const context = getAiContext()
+  const source = aiSource.value || context.provider || ''
+  const language = context.language || 'es'
+  const webSearch = !!context.webSearch
+
+  return {
+    source,
+    language,
+    webSearch,
+  }
+}
+
 const aiSourceLabel = computed(() => {
+  const context = getCurrentAiMetadata()
   const labels = {
     gemini: 'Gemini AI',
     ollama: `Ollama: ${ollamaModelName.value} (local)`,
@@ -291,7 +328,14 @@ const aiSourceLabel = computed(() => {
     tinyfish: 'TinyFish',
     none: 'Sin investigación web',
   }
-  return labels[aiSource.value] || ''
+
+  const baseLabel =
+    labels[context.source] || (context.source ? context.source : '')
+  const languageLabel = context.language?.toUpperCase() || 'ES'
+  const webLabel = context.webSearch ? 'WebSearch' : 'Sin WebSearch'
+
+  if (!baseLabel) return `${languageLabel} · ${webLabel}`
+  return `${baseLabel} · ${languageLabel} · ${webLabel}`
 })
 
 function refreshTokenUsage() {
@@ -299,6 +343,7 @@ function refreshTokenUsage() {
     jina: getRemaining('jina'),
     gemini: getRemaining('gemini'),
     tinyfish: getRemaining('tinyfish'),
+    readability: getRemaining('readability'),
   }
 }
 const tokenUsage = ref(refreshTokenUsage())
@@ -308,15 +353,10 @@ const forceRefreshTokens = () => {
   tokenUsage.value = { ...fresh }
 }
 const geminiHasQuota = computed(() => hasQuota('gemini'))
-const jinaHasQuota = computed(() => hasQuota('jina'))
-const tinyfishHasQuota = computed(() => {
-  const data = getUsageData()?.tinyfish
-  return data && data.used < (LIMITS?.tinyfish?.total || 10_000_000)
-})
 const ollamaModelName = computed(
   () => process.env.VUE_APP_OLLAMA_MODEL || 'qwen2.5:1.5b',
 )
-const skipGemini = ref(true)
+const skipGemini = ref(false)
 const usingOllama = computed(
   () =>
     skipGemini.value || !geminiHasQuota.value || aiSource.value === 'ollama',
@@ -634,15 +674,11 @@ const buildFallbackConclusion = () => {
   )
   const globalSeverity = getSeverityLabel(globalCompliance)
   const top3Critical = rankingItems.slice(0, 3)
-  const globalWarnings = rankingItems.filter(
-    (h) => h.percentage < 50,
-  ).length
+  const globalWarnings = rankingItems.filter((h) => h.percentage < 50).length
 
   const evaluatorItems = evaluatorPercentages.value?.items || []
   const evaluatorSummary = evaluatorItems.length
-    ? evaluatorItems
-        .map((ev, i) => `Ev${i + 1}: ${ev.percentage}%`)
-        .join(', ')
+    ? evaluatorItems.map((ev, i) => `Ev${i + 1}: ${ev.percentage}%`).join(', ')
     : ''
 
   // 1. Determinar nivel de riesgo
@@ -836,7 +872,7 @@ const generateAiFinalReport = async (finalReportItem) => {
   try {
     // Usar flujo unificado: Ollama con fallback a texto genérico
     const result = await generateAiReportWithFallback(finalReportItem, {
-      skipGemini: true,
+      skipGemini: false,
     })
 
     const content = String(result?.content || '').trim()
@@ -855,6 +891,19 @@ const generateAiFinalReport = async (finalReportItem) => {
     if (aiSource.value) {
       console.log('[generateAiFinalReport] 🔌 Fuente:', aiSource.value)
     }
+
+    const reportLanguage = detectReportLanguage(
+      finalReportItem?.testDescription ||
+        finalReportItem?.title ||
+        props.heuristicComments
+        ? JSON.stringify(props.heuristicComments || {})
+        : '',
+    )
+    setAiContext({
+      provider: aiSource.value || 'gemini',
+      language: reportLanguage,
+      webSearch: Boolean(webResearch),
+    })
 
     forceRefreshTokens()
 
@@ -1005,7 +1054,8 @@ const previewPdfWithAi = async () => {
       console.log('[previewPdfWithAi] 🆕 Generando secciones IA on-the-fly')
       const aiContent = await generateAiFinalReport(finalReportItem)
       // Usar secciones ya parseadas (Ollama las ensambla con bloques) y solo re-parsear como fallback
-      aiSections = aiContent.sections || parseAiReportSections(aiContent.content)
+      aiSections =
+        aiContent.sections || parseAiReportSections(aiContent.content)
       cachedAiSections.value = aiSections
       cachedAiContent.value = aiContent
       lastCommentsSnapshot.value = currentSnapshot

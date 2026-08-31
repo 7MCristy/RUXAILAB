@@ -717,12 +717,24 @@ FIN DEL INFORME
     approxTokens: Math.ceil(promptText.length / 3.5),
     hasWebResearch: Boolean(webResearchContent),
     sections: {
-      introduccion: promptText.includes('===SECCION:INTRODUCCION===') || promptText.includes('## Introduccion'),
-      porcentajes: promptText.includes('===SECCION:PORCENTAJES===') || promptText.includes('## Porcentajes'),
-      tiposRespuesta: promptText.includes('===SECCION:TIPOS_RESPUESTA===') || promptText.includes('## Tipos de respuesta'),
-      analisis: promptText.includes('===SECCION:ANALISIS_HEURISTICO===') || promptText.includes('## Análisis heurístico'),
-      comparativa: promptText.includes('===SECCION:COMPARATIVA===') || promptText.includes('## Comparativa'),
-      conclusion: promptText.includes('===SECCION:CONCLUSION===') || promptText.includes('## Conclusión'),
+      introduccion:
+        promptText.includes('===SECCION:INTRODUCCION===') ||
+        promptText.includes('## Introduccion'),
+      porcentajes:
+        promptText.includes('===SECCION:PORCENTAJES===') ||
+        promptText.includes('## Porcentajes'),
+      tiposRespuesta:
+        promptText.includes('===SECCION:TIPOS_RESPUESTA===') ||
+        promptText.includes('## Tipos de respuesta'),
+      analisis:
+        promptText.includes('===SECCION:ANALISIS_HEURISTICO===') ||
+        promptText.includes('## Análisis heurístico'),
+      comparativa:
+        promptText.includes('===SECCION:COMPARATIVA===') ||
+        promptText.includes('## Comparativa'),
+      conclusion:
+        promptText.includes('===SECCION:CONCLUSION===') ||
+        promptText.includes('## Conclusión'),
     },
     preview: {
       introduccion: promptText.slice(0, 220),

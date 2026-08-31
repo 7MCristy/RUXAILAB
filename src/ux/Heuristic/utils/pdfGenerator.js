@@ -561,7 +561,10 @@ export async function generateHeuristicPdf(reportData, options = {}) {
     keys: aiSections ? Object.keys(aiSections) : [],
     lengths: aiSections
       ? Object.fromEntries(
-          Object.entries(aiSections).map(([k, v]) => [k, typeof v === 'string' ? v.length : Array.isArray(v) ? v.length : 0]),
+          Object.entries(aiSections).map(([k, v]) => [
+            k,
+            typeof v === 'string' ? v.length : Array.isArray(v) ? v.length : 0,
+          ]),
         )
       : {},
   })
@@ -1249,7 +1252,7 @@ export async function generateHeuristicPdf(reportData, options = {}) {
   y = doc.lastAutoTable.finalY + 20
 
   // ─── 4. ANALISIS DETALLADO ────────────────────────────────────────────────
-  const aiHeuristicBlocks = (reportData.aiAnalisisHeuristicoBlocks?.length)
+  const aiHeuristicBlocks = reportData.aiAnalisisHeuristicoBlocks?.length
     ? reportData.aiAnalisisHeuristicoBlocks
     : parseHeuristicAnalysis(reportData.aiAnalisisHeuristico || '')
   console.log(
@@ -1586,12 +1589,12 @@ export async function generateHeuristicPdf(reportData, options = {}) {
       if (useWarningTerm) {
         writeParagraph(
           `Durante la evaluación, ${w} ${pluralize(w, 'respuesta fue marcada', 'respuestas fueron marcadas')} con warning, lo que refuerza la necesidad de revisión específica en los criterios señalados.`,
-          { size: 10, color: COLORS.sub, spacing: 4 },
+          { size: 10, spacing: 4 },
         )
       } else {
         writeParagraph(
           `Durante la evaluación, ${w} ${pluralize(w, 'pregunta requiere un análisis más profundo al no poder verificarse solo con la navegación superficial', 'preguntas requieren un análisis más profundo al no poder verificarse solo con la navegación superficial')}, lo que refuerza la necesidad de revisión específica en los criterios señalados.`,
-          { size: 10, color: COLORS.sub, spacing: 4 },
+          { size: 10, spacing: 4 },
         )
       }
     }
@@ -1784,13 +1787,17 @@ export async function generateHeuristicPdf(reportData, options = {}) {
       if (trimmed) writeParagraph(trimmed)
     }
   } else {
-    const globalPctNum = Number(getNumber(evaluatorPercentages?.globalAverage || 0))
+    const globalPctNum = Number(
+      getNumber(evaluatorPercentages?.globalAverage || 0),
+    )
     let riskLevel = 'óptimo'
     if (globalPctNum < 60) riskLevel = 'crítico'
     else if (globalPctNum < 75) riskLevel = 'mejorable'
 
     const top3 = evidence.orderedByPercentage.slice(0, 3)
-    const top3Names = top3.map((h) => `${h.title} (${formatDecimal(h.percentage)}%)`).join(', ')
+    const top3Names = top3
+      .map((h) => `${h.title} (${formatDecimal(h.percentage)}%)`)
+      .join(', ')
 
     writeParagraph(
       `El sitio presenta un nivel de usabilidad ${riskLevel}, con un cumplimiento global del ${Number(getNumber(evaluatorPercentages?.globalAverage || 0)).toFixed(2)}% y ${totalWarnings} advertencias detectadas.`,

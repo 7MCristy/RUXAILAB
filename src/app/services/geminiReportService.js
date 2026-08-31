@@ -221,7 +221,7 @@ export async function generateAiReportWithGemini(finalReportItem) {
       config: {
         temperature: 0.35,
         topP: 0.85,
-        maxOutputTokens: 16384,
+        maxOutputTokens: 40384,
         systemInstruction: SYSTEM_PROMPT,
         responseMimeType: 'application/json',
         responseSchema: REPORT_JSON_SCHEMA,
@@ -364,7 +364,10 @@ function repairTruncatedGeminiJson(content) {
     if (raw == null) {
       // El valor quedó truncado antes de la comilla de cierre: toma todo
       // lo que haya desde la apertura hasta el final del texto recibido.
-      const openRegex = new RegExp(`"${key}"\\s*:\\s*"((?:\\\\.|[^"\\\\])*)$`, 's')
+      const openRegex = new RegExp(
+        `"${key}"\\s*:\\s*"((?:\\\\.|[^"\\\\])*)$`,
+        's',
+      )
       const openMatch = content.match(openRegex)
       raw = openMatch ? openMatch[1] : ''
     }

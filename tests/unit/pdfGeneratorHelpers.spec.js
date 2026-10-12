@@ -34,10 +34,10 @@ import {
   stripMarkdown,
   stripHtml,
   normalizeText,
-  extractCommentTexts,
   getNumber,
-  calcStandardDeviation,
-} from '@/ux/Heuristic/utils/pdfGenerator'
+} from '@/ux/Heuristic/utils/reportHelpers'
+import { extractCommentTexts } from '@/ux/Heuristic/utils/pdfGenerator'
+import { standardDeviation as calcStandardDeviation } from '@/ux/Heuristic/utils/statistics'
 
 describe('stripMarkdown', () => {
   it('elimina encabezados #', () => {

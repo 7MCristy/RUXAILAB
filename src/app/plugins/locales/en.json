@@ -90,6 +90,8 @@
     "analyzeProject": "Analyze the project and evaluators",
     "comment": "Comment",
     "comments": "Comments",
+    "evaluator": "Evaluator",
+    "evaluators": "Evaluators",
     "image": "Image",
     "images": "Images",
     "close": "Close",
@@ -740,6 +742,10 @@
     }
   },
   "HeuristicsTestView": {
+    "answer": {
+      "frequency": "Frequency",
+      "severity": "Severity"
+    },
     "messages": {
       "submitTest": "Are you sure you want to submit this test?",
       "submitOnce": "Are you sure you want to submit your test. You can only do it once.",
@@ -818,7 +824,44 @@
       "averageMinWarning": "Average min warning threshold",
       "groups": "groups",
       "metrics": "metrics",
-      "comments": "Comments"
+      "comments": "Comments",
+      "stats": {
+        "average": "Average",
+        "max": "Max.",
+        "min": "Min.",
+        "stdDev": "Std. Dev.",
+        "evaluators": "Evaluators"
+      },
+      "warnings": {
+        "title": "Impact of warnings",
+        "hint": "How far the evaluation shifts when warnings are taken into account",
+        "description": "Questions answered as unable to be verified by analyzing only the website have been marked as warnings. The percentage change has been calculated in two scenarios: highest possible score and lowest possible score.",
+        "scenarios": {
+          "max": "Average max warning threshold",
+          "min": "Average min warning threshold",
+          "average": "Average warning threshold"
+        }
+      },
+      "coverage": {
+        "title": "Evaluation coverage",
+        "subtitle": "Progress across all heuristic answers",
+        "heuristics": "Heuristics",
+        "responses": "Responses",
+        "answered": "Answered",
+        "pending": "Pending"
+      },
+      "charts": {
+        "imagesByHeuristic": {
+          "title": "Images by Heuristic",
+          "subtitle": "Horizontal distribution per heuristic",
+          "empty": "No image data"
+        },
+        "responsesByOption": {
+          "title": "Response Type",
+          "subtitle": "Circular distribution of selected options",
+          "empty": "No option data"
+        }
+      }
     },
     "evaluators": {
       "headers": {

@@ -89,6 +89,8 @@
     "analyzeProject": "Analizar el proyecto y los evaluadores",
     "comment": "Comentario",
     "comments": "Comentarios",
+    "evaluator": "Evaluador",
+    "evaluators": "Evaluadores",
     "image": "Imagen",
     "images": "Imágenes",
     "close": "Cerrar",
@@ -726,6 +728,10 @@
     }
   },
   "HeuristicsTestView": {
+    "answer": {
+      "frequency": "Frecuencia",
+      "severity": "Severidad"
+    },
     "messages": {
       "submitTest": "¿Estás seguro de que deseas enviar esta prueba?",
       "submitOnce": "¿Estás seguro de que deseas enviar tu prueba? Solo puedes enviarla una vez.",
@@ -803,7 +809,44 @@
       "averageMaxWarning": "Umbral medio máximo de alertas",
       "averageMinWarning": "Umbral medio mínimo de alertas",
       "groups": "grupos",
-      "metrics": "métricas"
+      "metrics": "métricas",
+      "stats": {
+        "average": "Promedio",
+        "max": "Máx.",
+        "min": "Mín.",
+        "stdDev": "Desv. estándar",
+        "evaluators": "Evaluadores"
+      },
+      "warnings": {
+        "title": "Impacto de las alertas",
+        "hint": "Cuánto cambia la evaluación al tener en cuenta las alertas",
+        "description": "Las preguntas marcadas como no verificables analizando solo la web se han marcado como alertas. El cambio de porcentaje se ha calculado en dos escenarios: la puntuación más alta posible y la más baja posible.",
+        "scenarios": {
+          "max": "Umbral medio máximo de alertas",
+          "min": "Umbral medio mínimo de alertas",
+          "average": "Umbral medio de alertas"
+        }
+      },
+      "coverage": {
+        "title": "Cobertura de la evaluación",
+        "subtitle": "Progreso de todas las respuestas heurísticas",
+        "heuristics": "Heurísticas",
+        "responses": "Respuestas",
+        "answered": "Respondidas",
+        "pending": "Pendientes"
+      },
+      "charts": {
+        "imagesByHeuristic": {
+          "title": "Imágenes por heurística",
+          "subtitle": "Distribución horizontal por heurística",
+          "empty": "Sin datos de imágenes"
+        },
+        "responsesByOption": {
+          "title": "Tipo de respuesta",
+          "subtitle": "Distribución circular de las opciones seleccionadas",
+          "empty": "Sin datos de opciones"
+        }
+      }
     },
     "evaluators": {
       "headers": {

@@ -4,34 +4,29 @@ import {
   formatTimeSpentFromMs,
   calculateTestTotals,
   calculateResponseTotals,
+  getSeverityLabel,
 } from '@/ux/Heuristic/utils/statistics'
+import {
+  normalizeText,
+  stripHtml,
+  stripMarkdown,
+  getNumber,
+  getHeuristicShortTitle,
+  getEvaluatorLabel,
+} from './reportHelpers'
 import { buildHeuristicEvidence } from './buildHeuristicEvidence'
 import { parseHeuristicAnalysis } from '@/app/services/geminiReportService'
-
-const FONT = 'helvetica'
-const M = 52
-const PAGE_W = 595.28
-const PAGE_H = 841.89
-const CONTENT_W = PAGE_W - M * 2
-const LH = 14
-const COLORS = {
-  text: [7, 0, 11],
-  sub: [140, 140, 140],
-  accent: [11, 16, 101],
-  tableHead: [44, 115, 181],
-  zebra: [246, 246, 246],
-  border: [170, 170, 170],
-  white: [255, 255, 255],
-  green: [56, 85, 36],
-  yellow: [224, 170, 102],
-  red: [96, 19, 25],
-}
-const SEVERITY_COLORS = {
-  Leve: [56, 85, 36],
-  Moderado: [242, 222, 169],
-  Grave: [224, 170, 102],
-  Crítico: [196, 7, 13],
-}
+import {
+  FONT,
+  M,
+  PAGE_W,
+  PAGE_H,
+  CONTENT_W,
+  LH,
+  COLORS,
+  SEVERITY_COLORS,
+} from './pdf/constants'
+import { addFooter, createPdfLayout } from './pdf/layout'
 
 function loadLogo(url, maxHeight) {
   return new Promise((resolve) => {
@@ -51,76 +46,9 @@ function loadLogo(url, maxHeight) {
   })
 }
 
-function addFooter(doc, pageNum) {
-  const y = PAGE_H - 20
-  doc.setFont(FONT, 'normal')
-  doc.setFontSize(8)
-  doc.setTextColor(...COLORS.sub)
-  doc.text(
-    `INFORME DE EVALUACIÓN HEURÍSTICA - Pág. ${pageNum}`,
-    PAGE_W / 2,
-    y,
-    { align: 'center' },
-  )
-}
-
-function getSeverityLabelFromPercentage(value) {
-  const n = getNumber(value, Number.NaN)
-  if (!Number.isFinite(n)) return 'Crítico'
-  if (n >= 75) return 'Leve'
-  if (n >= 50) return 'Moderado'
-  if (n >= 25) return 'Grave'
-  return 'Crítico'
-}
-
-function normalizeText(value) {
-  if (value && typeof value === 'object') {
-    if (typeof value.content === 'string') return normalizeText(value.content)
-    if (typeof value.text === 'string') return normalizeText(value.text)
-    if (typeof value.value === 'string') return normalizeText(value.value)
-    try {
-      return normalizeText(JSON.stringify(value))
-    } catch {
-      return ''
-    }
-  }
-
-  return String(value ?? '')
-    .replace(/\s+/g, ' ')
-    .trim()
-}
-
 function pluralize(count, singular, plural) {
   const n = Number(count)
   return n === 1 ? singular : plural
-}
-
-function stripHtml(value) {
-  return String(value ?? '')
-    .replace(/<[^>]*>/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
-}
-
-function stripMarkdown(value) {
-  return String(value ?? '')
-    .replace(/^#{1,6}\s+/gm, '')
-    .replace(/\*\*\*(.+?)\*\*\*/g, '$1')
-    .replace(/\*\*(.+?)\*\*/g, '$1')
-    .replace(/\*(.+?)\*/g, '$1')
-    .replace(/__(.+?)__/g, '$1')
-    .replace(/_(.+?)_/g, '$1')
-    .replace(/~~(.+?)~~/g, '$1')
-    .replace(/```[\s\S]*?```/g, '')
-    .replace(/`([^`]+)`/g, '$1')
-    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
-    .replace(/^\[([^\]]+)\]$/gm, '$1')
-    .replace(/^[-*+]\s+/gm, '')
-    .replace(/^\d+\.\s+/gm, '')
-    .replace(/^>\s+/gm, '')
-    .replace(/^---+$/gm, '')
-    .replace(/\n{3,}/g, '\n\n')
-    .trim()
 }
 
 function extractCommentTexts(answer) {
@@ -179,60 +107,6 @@ function obtenerTextoImpactoNegativo(item) {
   }
   return `Cumplimiento adecuado (${pctHeuristicoTexto}%). No obstante, ${questionReferences} presenta(n) puntuaciones por debajo del máximo, sugiriendo oportunidades de mejora.`
 }
-function getNumber(value, fallback = 0) {
-  const numericValue = Number.parseFloat(
-    String(value ?? '')
-      .replace('%', '')
-      .replace(',', '.'),
-  )
-  return Number.isFinite(numericValue) ? numericValue : fallback
-}
-
-function getHeuristicLabel(heuristic, index) {
-  const id = heuristic?.heuristicId || `H${index + 1}`
-  const title = normalizeText(heuristic?.heuristicTitle || heuristic?.title)
-  return title ? `${id} — ${title}` : id
-}
-
-function getHeuristicShortTitle(heuristic, index) {
-  return (
-    normalizeText(heuristic?.heuristicTitle || heuristic?.title) ||
-    `Heurística ${index + 1}`
-  )
-}
-
-function getEvaluatorLabel(item, index) {
-  return `Evaluador/a ${index + 1}`
-}
-
-function getQuestionLabel(question, index) {
-  const title = normalizeText(question?.title)
-  const text = normalizeText(question?.text)
-  if (title && text && title !== text) return `${index + 1}. ${title} — ${text}`
-  if (title) return `${index + 1}. ${title}`
-  if (text) return `${index + 1}. ${text}`
-  return `${index + 1}. Pregunta sin título`
-}
-
-function getHeuristicDomainWeight(title) {
-  const normalized = normalizeText(title).toLowerCase()
-  if (
-    /(color|legibilidad|est[eé]tico|minimalista|visual|apariencia|tipograf|estilo)/i.test(
-      normalized,
-    )
-  ) {
-    return 0.82
-  }
-  if (
-    /(ayuda|documentaci[oó]n|error|errores|prevenci[oó]n|guardar|latencia|estado|consistencia|control|memoria|autonom[ií]a|met[aá]foras|flexibilidad)/i.test(
-      normalized,
-    )
-  ) {
-    return 1.12
-  }
-  return 1
-}
-
 function getHeuristicPurposeText(title) {
   const normalized = normalizeText(title).toLowerCase()
   if (/visibilidad|estado/.test(normalized)) {
@@ -398,49 +272,6 @@ function getTimeColor(valueMs, maxMs) {
   if (ratio < 0.33) return { fill: [229, 243, 232], text: [30, 125, 50] }
   if (ratio < 0.66) return { fill: [255, 248, 220], text: [163, 126, 0] }
   return { fill: [255, 239, 217], text: [176, 96, 0] }
-}
-
-function getMaxQuestionScore(testOptions = []) {
-  const values = Array.isArray(testOptions)
-    ? testOptions
-        .map((item) => getNumber(item?.value, Number.NaN))
-        .filter((value) => Number.isFinite(value))
-    : []
-  return values.length ? Math.max(...values) : 0
-}
-
-function calculateHeuristicCompliance(
-  evaluatorHeuristics = [],
-  maxQuestionScore,
-) {
-  const evaluatorPercentages = evaluatorHeuristics
-    .map((heuristicAnswer) => {
-      const values = (heuristicAnswer?.heuristicQuestions || [])
-        .map((questionAnswer) =>
-          getNumber(questionAnswer?.heuristicAnswer?.value, Number.NaN),
-        )
-        .filter((value) => Number.isFinite(value))
-      const maxPossible = values.length * maxQuestionScore
-      if (!values.length || maxPossible <= 0) return Number.NaN
-      const total = values.reduce((sum, value) => sum + value, 0)
-      return (total * 100) / maxPossible
-    })
-    .filter((value) => Number.isFinite(value))
-
-  if (!evaluatorPercentages.length) return Number.NaN
-  return (
-    evaluatorPercentages.reduce((sum, value) => sum + value, 0) /
-    evaluatorPercentages.length
-  )
-}
-
-// Calculates standard deviation from an array of numbers
-function calcStandardDeviation(values) {
-  if (!values || values.length < 2) return 0
-  const mean = values.reduce((sum, v) => sum + v, 0) / values.length
-  const variance =
-    values.reduce((sum, v) => sum + Math.pow(v - mean, 2), 0) / values.length
-  return Math.sqrt(variance)
 }
 
 /**
@@ -648,7 +479,7 @@ export async function generateHeuristicPdf(reportData, options = {}) {
     finalResultData?.average ||
       `${evaluatorPercentages?.globalAverage || '0.00'}%`,
   )
-  const globalSeverity = getSeverityLabelFromPercentage(globalPct)
+  const globalSeverity = getSeverityLabel(globalPct)
   const averageTime = formatTimeSpentFromMs(finalResultData?.averageTimeMs || 0)
   const totalComments = getNumber(finalResultData?.totalComments || 0)
   const totalImages = getNumber(finalResultData?.totalImages || 0)
@@ -668,96 +499,22 @@ export async function generateHeuristicPdf(reportData, options = {}) {
   let y = M
   const tocEntries = []
 
-  const addPageHeader = () => {
-    addFooter(doc, pageNum)
-    if (pageNum > 1) {
-      doc.setFont(FONT, 'normal')
-      doc.setFontSize(8)
-      doc.setTextColor(...COLORS.sub)
-      const headerText = testTitle || 'Informe de evaluación'
-      doc.text(headerText, PAGE_W - M, M - 10, { align: 'right' })
-      y = M + 16
-    }
-  }
-
-  const ensureSpace = (needed) => {
-    if (y + needed > PAGE_H - M) {
-      doc.addPage()
-      pageNum += 1
-      addPageHeader()
-      doc.setFont(FONT, 'normal')
-      doc.setFontSize(11)
-      doc.setTextColor(...COLORS.text)
-    }
-  }
-
-  const startSection = (title, size = 18) => {
-    const lh = size + 4
-    ensureSpace(40)
-    y += 8
-    doc.setFont(FONT, 'bold')
-    doc.setFontSize(size)
-    doc.setTextColor(...COLORS.accent)
-    const titleLines = doc.splitTextToSize(title, CONTENT_W)
-    ensureSpace(titleLines.length * lh + 20)
-    tocEntries.push({ title, page: pageNum })
-    doc.text(titleLines, M, y)
-    y += titleLines.length * lh
-    doc.setDrawColor(...COLORS.accent)
-    doc.setLineWidth(0.4)
-    const lineLen = Math.min(size * 3.5, CONTENT_W * 0.4)
-    doc.line(M, y, M + lineLen, y)
-    y += size === 18 ? 28 : 22
-    doc.setFont(FONT, 'normal')
-    doc.setFontSize(11)
-    doc.setTextColor(...COLORS.text)
-  }
-
-  const writeParagraph = (text, opts = {}) => {
-    const lh = opts.lineHeight || LH
-    const x = opts.x || M
-    const width = opts.width || CONTENT_W
-    doc.setFont(FONT, opts.bold ? 'bold' : 'normal')
-    doc.setFontSize(opts.size || 11)
-    doc.setTextColor(...(opts.color || COLORS.text))
-    const lines = doc.splitTextToSize(normalizeText(text), width)
-    const fontSize = doc.getFontSize()
-    const scaleFactor = doc.internal.scaleFactor
-    const getTextWidth = (t) =>
-      (doc.getStringUnitWidth(t) * fontSize) / scaleFactor
-
-    for (let i = 0; i < lines.length; i++) {
-      ensureSpace(lh + 4)
-      doc.setFont(FONT, opts.bold ? 'bold' : 'normal')
-      doc.setFontSize(opts.size || 11)
-      doc.setTextColor(...(opts.color || COLORS.text))
-      const line = lines[i]
-      const words = line.split(' ').filter(Boolean)
-      if (words.length <= 1) {
-        doc.text(line, x, y, { align: 'left' })
-      } else {
-        const wordsWidth = words.reduce((sum, w) => sum + getTextWidth(w), 0)
-        const availableSpace = width - wordsWidth
-        const spaceWidth = availableSpace / (words.length - 1)
-        // Skip justification if gaps would be too wide; otherwise keep the same visual style.
-        if (spaceWidth > 18 || words.length < 4) {
-          doc.text(line, x, y, { align: 'left' })
-        } else {
-          let cx = x
-          words.forEach((word) => {
-            doc.text(word, cx, y)
-            cx += getTextWidth(word) + spaceWidth
-          })
-        }
-      }
-      y += lh
-    }
-
-    y += opts.spacing || 6
-    doc.setFont(FONT, 'normal')
-    doc.setFontSize(11)
-    doc.setTextColor(...COLORS.text)
-  }
+  const { newPage, ensureSpace, startSection, writeParagraph } =
+    createPdfLayout(
+      doc,
+      {
+        getY: () => y,
+        setY: (value) => {
+          y = value
+        },
+        getPageNum: () => pageNum,
+        setPageNum: (value) => {
+          pageNum = value
+        },
+        pushTocEntry: (entry) => tocEntries.push(entry),
+      },
+      testTitle,
+    )
 
   // ─── PORTADA ──────────────────────────────────────────────────────────────
   if (logo) {
@@ -874,9 +631,7 @@ export async function generateHeuristicPdf(reportData, options = {}) {
   })
 
   // ─── INDICE ───────────────────────────────────────────────────────────────
-  doc.addPage()
-  pageNum += 1
-  addPageHeader()
+  newPage()
   doc.setFont(FONT, 'bold')
   doc.setFontSize(22)
   doc.setTextColor(...COLORS.accent)
@@ -887,9 +642,7 @@ export async function generateHeuristicPdf(reportData, options = {}) {
   y += 40
 
   // ─── 1. INTRODUCCION ─────────────────────────────────────────────────────
-  doc.addPage()
-  pageNum += 1
-  addPageHeader()
+  newPage()
   console.log(
     '[PDF] reportData.aiSections:',
     reportData.aiSections ? 'PRESENTE' : 'AUSENTE',
@@ -958,9 +711,7 @@ export async function generateHeuristicPdf(reportData, options = {}) {
   }
 
   // ─── 2. PORCENTAJES DE USABILIDAD Y ANÁLISIS GLOBAL ─────────────────────────────────────────
-  doc.addPage()
-  pageNum += 1
-  addPageHeader()
+  newPage()
   console.log(
     '[PDF] aiPorcentajes:',
     reportData.aiPorcentajes?.substring(0, 50) || 'vacío',
@@ -994,7 +745,7 @@ export async function generateHeuristicPdf(reportData, options = {}) {
         if (data.section !== 'body') return
         if (data.column.index === 1) {
           const percentage = getNumber(data.cell.raw)
-          const severity = getSeverityLabelFromPercentage(percentage)
+          const severity = getSeverityLabel(percentage)
           const color = SEVERITY_COLORS[severity] || COLORS.zebra
           data.cell.styles.fillColor = color
           data.cell.styles.textColor = getContrastingTextColor(color)
@@ -1208,9 +959,7 @@ export async function generateHeuristicPdf(reportData, options = {}) {
    */
 
   // ─── 3. PRIORIDAD DE MEJORA ───────────────────────────────────────────────
-  doc.addPage()
-  pageNum += 1
-  addPageHeader()
+  newPage()
   startSection('3. Heurísticas priorizadas por nivel de severidad')
   writeParagraph(
     'La tabla siguiente presenta el cumplimiento calculado por heurística. Para cada evaluador se suman las puntuaciones de las preguntas aplicables, se multiplican por 100 y se dividen entre el número de preguntas aplicables multiplicado por la puntuación máxima. Después se promedian esos porcentajes entre evaluadores.',
@@ -1260,9 +1009,7 @@ export async function generateHeuristicPdf(reportData, options = {}) {
     aiHeuristicBlocks.length,
     'bloques',
   )
-  doc.addPage()
-  pageNum += 1
-  addPageHeader()
+  newPage()
   startSection('4. Análisis detallado por heurística')
   console.log(
     '[PDF] aiAnalisisHeuristico:',
@@ -1610,9 +1357,7 @@ export async function generateHeuristicPdf(reportData, options = {}) {
   }
 
   // ─── 5. COMPARATIVA POR EVALUADOR ────────────────────────────────────────
-  doc.addPage()
-  pageNum += 1
-  addPageHeader()
+  newPage()
   startSection('5. Comparativa de puntuaciones por evaluador')
   if (aiSections?.comparativa) {
     const paragraphs = stripMarkdown(aiSections.comparativa).split(/\n\n+/)
@@ -2031,18 +1776,8 @@ const generateHeuristicPdfWithAi = generateHeuristicPdf
 export {
   loadLogo,
   addFooter,
-  getSeverityLabelFromPercentage,
-  normalizeText,
   pluralize,
-  stripHtml,
-  stripMarkdown,
   extractCommentTexts,
-  getNumber,
-  getHeuristicLabel,
-  getHeuristicShortTitle,
-  getEvaluatorLabel,
-  getQuestionLabel,
-  getHeuristicDomainWeight,
   getHeuristicPurposeText,
   getQuestionQualitativeLabel,
   buildNegativeImpact,
@@ -2052,9 +1787,6 @@ export {
   getContrastingTextColor,
   parseMmSsToMs,
   getTimeColor,
-  getMaxQuestionScore,
-  calculateHeuristicCompliance,
-  calcStandardDeviation,
   buildHeuristicEvidence,
   renderCommentsTable,
   renderHeuristicCommentsTable,

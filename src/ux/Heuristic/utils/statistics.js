@@ -72,6 +72,7 @@ function percentage(value, result) {
  * Ejemplo: standardDeviation([1, 2, 3]) => 0.816... (variabilidad de datos)
  */
 function standardDeviation(array) {
+  if (!Array.isArray(array) || array.length === 0) return 0
   const average = array.reduce(
     (total, value) => total + value / array.length,
     0,
@@ -1039,7 +1040,13 @@ function buildGlobalExecutionAverage(evaluatorPercentages) {
   return { items, globalAverage }
 }
 
-function getSeverityLabel(percentageValue) {
+function getSeverityLabel(value) {
+  const percentageValue = Number.parseFloat(
+    String(value ?? '')
+      .replace('%', '')
+      .replace(',', '.'),
+  )
+  if (!Number.isFinite(percentageValue)) return 'Crítico'
   if (percentageValue >= 75) return 'Leve'
   if (percentageValue >= 50) return 'Moderado'
   if (percentageValue >= 25) return 'Grave'

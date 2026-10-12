@@ -6,15 +6,15 @@ import {
   getHeuristicLabel,
   getHeuristicShortTitle,
   calculateHeuristicCompliance,
-  calcStandardDeviation,
   getHeuristicDomainWeight,
-  getSeverityLabelFromPercentage,
   normalizeText,
   stripHtml,
-} from './pdfGenerator'
+} from './reportHelpers'
 import {
   getQuestionCommentTexts,
   classifyQuestionResponse,
+  standardDeviation,
+  getSeverityLabel,
 } from '@/ux/Heuristic/utils/statistics'
 
 /**
@@ -143,7 +143,7 @@ function buildHeuristicEvidence({
 
     const sdFromStats = getNumber(heuristicStat.sd, Number.NaN)
     const responseValues = questionSummaries.flatMap((item) => item.values)
-    const sdCalculated = calcStandardDeviation(responseValues)
+    const sdCalculated = standardDeviation(responseValues)
     const sd =
       Number.isFinite(sdFromStats) && sdFromStats > 0
         ? sdFromStats
@@ -218,7 +218,7 @@ function buildHeuristicEvidence({
       responseMax,
       responseSpread,
       impactScore,
-      severity: getSeverityLabelFromPercentage(percentage),
+      severity: getSeverityLabel(percentage),
       comments: (() => {
         const heuComments = findHeuristicComments(
           heuristicComments,

@@ -229,6 +229,7 @@ import {
   formatTimeSpentFromMs,
   statistics,
   standardDeviation,
+  getSeverityLabel,
 } from '@/ux/Heuristic/utils/statistics'
 import { STUDY_TYPES } from '@/shared/constants/methodDefinitions'
 import {
@@ -495,15 +496,6 @@ const heuristicsEvaluator = computed(() =>
 const heuristicsStatistics = computed(() =>
   buildHeuristicsStatistics(heuristicsEvaluator.value),
 )
-
-const getSeverityLabel = (value) => {
-  const percentage = Number.parseFloat(String(value ?? '').replace('%', ''))
-  if (!Number.isFinite(percentage)) return 'Crítico'
-  if (percentage >= 75) return 'Leve'
-  if (percentage >= 50) return 'Moderado'
-  if (percentage >= 25) return 'Grave'
-  return 'Crítico'
-}
 
 const evaluatorPercentages = computed(() => {
   const resultItems = resultEvaluator.value || []
